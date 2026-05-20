@@ -1,5 +1,6 @@
 // Sistema Clínico GFT v8 — Dr. Gerardo Félix Tapia
 import { useState, useEffect, useRef } from "react";
+import { compartirPDF } from "./pdf.js";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ── ASSETS ──────────────────────────────────────────────────
@@ -1459,12 +1460,21 @@ const PrintModal = ({titulo, children, onClose, onWA}) => {
 
   // Estado para indicar generación en progreso
   const [generandoPDF, setGenerandoPDF] = useState(false);
-  const [vistaFullscreen, setVistaFullscreen] = useState(false);
 
-  // Compartir: muestra el documento en pantalla completa para tomar screenshot
-  // En iOS, el usuario toma screenshot con botones físicos y luego comparte por WhatsApp
-  const compartir = () => {
-    setVistaFullscreen(true);
+  // Compartir: genera PDF real y abre hoja de compartir nativa (WhatsApp, etc.)
+  const compartir = async () => {
+    setGenerandoPDF(true);
+    try {
+      const resultado = await compartirPDF(ref, titulo || "Reporte");
+      if (!resultado) {
+        alert("Tu navegador no soporta compartir archivos. El PDF fue descargado.");
+      }
+    } catch (e) {
+      console.error("Error generando PDF:", e);
+      alert("Error al generar el PDF: " + e.message);
+    } finally {
+      setGenerandoPDF(false);
+    }
   };
 
   // Imprimir usando iframe oculto (única forma confiable en sandbox iOS)
@@ -1523,7 +1533,7 @@ const PrintModal = ({titulo, children, onClose, onWA}) => {
               style={{padding:"7px 16px",borderRadius:8,border:"none",
                 background:generandoPDF?C.suave:C.morado,color:"white",
                 cursor:generandoPDF?"wait":"pointer",fontWeight:700,fontSize:12}}>
-              📸 Pantalla completa
+              {generandoPDF ? "⏳ Generando..." : "📤 Compartir PDF"}
             </button>
             <button onClick={print} style={{padding:"7px 16px",borderRadius:8,border:"none",
               background:"white",color:C.azul,cursor:"pointer",fontWeight:700,fontSize:12}}>
@@ -1541,29 +1551,6 @@ const PrintModal = ({titulo, children, onClose, onWA}) => {
         </div>
       </div>
 
-      {/* Vista fullscreen para tomar screenshot */}
-      {vistaFullscreen && (
-        <div style={{position:"fixed",inset:0,background:"white",zIndex:10000,overflow:"auto"}}>
-          {/* Barra de instrucciones flotante */}
-          <div style={{position:"sticky",top:0,zIndex:10001,background:C.azul,
-            color:"white",padding:"10px 16px",display:"flex",alignItems:"center",
-            justifyContent:"space-between",gap:10,boxShadow:"0 2px 8px rgba(0,0,0,0.2)"}}>
-            <div style={{fontSize:11,fontWeight:600,flex:1,lineHeight:1.4}}>
-              📸 <b>Toma screenshot</b> (botón lateral + volumen ↑)<br/>
-              <span style={{opacity:0.8,fontSize:10}}>Luego compártelo por WhatsApp</span>
-            </div>
-            <button onClick={()=>setVistaFullscreen(false)}
-              style={{background:"white",color:C.azul,border:"none",borderRadius:8,
-                padding:"7px 14px",fontWeight:800,cursor:"pointer",fontSize:12}}>
-              ✕ Cerrar
-            </button>
-          </div>
-          <div style={{padding:"14px",background:"white"}}>
-            <div style={{background:"white",padding:14,maxWidth:680,margin:"0 auto"}}
-              dangerouslySetInnerHTML={{__html: ref.current ? ref.current.innerHTML : ""}}/>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
