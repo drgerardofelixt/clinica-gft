@@ -1,6 +1,7 @@
 // Sistema Clínico GFT v8 — Dr. Gerardo Félix Tapia
 import { useState, useEffect, useRef } from "react";
 import { compartirPDF } from "./pdf.js";
+import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita } from "./supabase.js";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ── ASSETS ──────────────────────────────────────────────────
@@ -4022,20 +4023,36 @@ export default function App() {
   const [agendarPara, setAgendarPara] = useState(null); // paciente para agendar cita
   const [confirmarCita, setConfirmarCita] = useState(null); // datos pendientes de guardar consulta
 
+  const cargarPacientes = async () => {
+    try {
+      const data = await getPacientes();
+      setPacientes(data);
+    } catch(e) {
+      console.error("Error cargando pacientes:", e);
+    } finally {
+      setCargando(false);
+    }
+  };
+
   useEffect(()=>{
-    sGet("gft_pacientes").then(d=>{ if(d) setPacientes(d); setCargando(false); });
+    cargarPacientes();
     sGet("gft_firma").then(d=>{ if(d) setFirmaB64(d); });
   },[]);
 
-  const save = async (lista) => { setPacientes(lista); await sSet("gft_pacientes",lista); };
   const savePac = async (p) => {
-    const ex = pacientes.find(x=>x.id===p.id);
-    await save(ex?pacientes.map(x=>x.id===p.id?p:x):[...pacientes,p]);
+    try {
+      const saved = await savePaciente(p);
+      await cargarPacientes();
+      if (saved) setActivo(saved);
+    } catch(e) { console.error("Error guardando paciente:", e); }
     setMNuevo(false);
   };
   const updPac = async (p) => {
-    await save(pacientes.map(x=>x.id===p.id?p:x));
-    setActivo(p);
+    try {
+      await savePaciente(p);
+      await cargarPacientes();
+      setActivo(p);
+    } catch(e) { console.error("Error actualizando paciente:", e); }
   };
   const saveFirma = async (b64) => {
     setFirmaB64(b64);

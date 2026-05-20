@@ -14,25 +14,66 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 export const getPacientes = async () => {
   const { data, error } = await supabase
     .from('pacientes')
-    .select(`
-      *,
-      consultas(*),
-      recetas(*),
-      laboratorios(*),
-      citas(*)
-    `)
+    .select(`*, consultas(*), recetas(*), laboratorios(*), citas(*)`)
     .order('nombre')
   if (error) throw error
   return data || []
 }
 
 export const savePaciente = async (paciente) => {
+  // Separar datos anidados del objeto paciente
+  const { consultas, recetas, laboratorios, citas, resultadosLabs, ...pacData } = paciente
+
+  // Guardar paciente principal
   const { data, error } = await supabase
     .from('pacientes')
-    .upsert(paciente, { onConflict: 'id' })
+    .upsert(pacData, { onConflict: 'id' })
     .select()
   if (error) throw error
-  return data[0]
+  const saved = data[0]
+
+  // Guardar consultas
+  if (consultas && consultas.length > 0) {
+    for (const c of consultas) {
+      const { consultas: _c, recetas: _r, laboratorios: _l, citas: _ci, ...cData } = c
+      await supabase.from('consultas').upsert(
+        { ...cData, paciente_id: saved.id },
+        { onConflict: 'id' }
+      )
+    }
+  }
+
+  // Guardar recetas
+  if (recetas && recetas.length > 0) {
+    for (const r of recetas) {
+      await supabase.from('recetas').upsert(
+        { ...r, paciente_id: saved.id },
+        { onConflict: 'id' }
+      )
+    }
+  }
+
+  // Guardar laboratorios
+  if (laboratorios && laboratorios.length > 0) {
+    for (const l of laboratorios) {
+      await supabase.from('laboratorios').upsert(
+        { ...l, paciente_id: saved.id },
+        { onConflict: 'id' }
+      )
+    }
+  }
+
+  // Guardar citas
+  if (citas && citas.length > 0) {
+    for (const ci of citas) {
+      await supabase.from('citas').upsert(
+        { ...ci, paciente_id: saved.id },
+        { onConflict: 'id' }
+      )
+    }
+  }
+
+  return saved
 }
 
 export const deletePaciente = async (id) => {
@@ -51,11 +92,6 @@ export const saveConsulta = async (consulta) => {
   return data[0]
 }
 
-export const deleteConsulta = async (id) => {
-  const { error } = await supabase.from('consultas').delete().eq('id', id)
-  if (error) throw error
-}
-
 // ── RECETAS ────────────────────────────────────────────────────
 
 export const saveReceta = async (receta) => {
@@ -69,7 +105,7 @@ export const saveReceta = async (receta) => {
 
 // ── LABORATORIOS ───────────────────────────────────────────────
 
-export const saveLab = async (lab) => {
+export const saveLaboratorio = async (lab) => {
   const { data, error } = await supabase
     .from('laboratorios')
     .upsert(lab, { onConflict: 'id' })
@@ -79,21 +115,6 @@ export const saveLab = async (lab) => {
 }
 
 // ── CITAS ──────────────────────────────────────────────────────
-
-export const getCitas = async (fechaDesde, fechaHasta) => {
-  let query = supabase
-    .from('citas')
-    .select('*, pacientes(nombre, telefono)')
-    .order('fecha', { ascending: true })
-    .order('hora', { ascending: true })
-
-  if (fechaDesde) query = query.gte('fecha', fechaDesde)
-  if (fechaHasta) query = query.lte('fecha', fechaHasta)
-
-  const { data, error } = await query
-  if (error) throw error
-  return data || []
-}
 
 export const saveCita = async (cita) => {
   const { data, error } = await supabase
@@ -107,44 +128,4 @@ export const saveCita = async (cita) => {
 export const deleteCita = async (id) => {
   const { error } = await supabase.from('citas').delete().eq('id', id)
   if (error) throw error
-}
-
-// ── ARCHIVOS / STORAGE ─────────────────────────────────────────
-
-export const subirArchivo = async (bucket, path, file) => {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .upload(path, file, { upsert: true })
-  if (error) throw error
-  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path)
-  return urlData.publicUrl
-}
-
-export const getArchivoUrl = (bucket, path) => {
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-  return data.publicUrl
-}
-
-// ── AUTENTICACIÓN ──────────────────────────────────────────────
-
-export const login = async (email, password) => {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) throw error
-  return data
-}
-
-export const logout = async () => {
-  const { error } = await supabase.auth.signOut()
-  if (error) throw error
-}
-
-export const getSession = async () => {
-  const { data } = await supabase.auth.getSession()
-  return data.session
-}
-
-export const onAuthChange = (callback) => {
-  return supabase.auth.onAuthStateChange((_event, session) => {
-    callback(session)
-  })
 }
