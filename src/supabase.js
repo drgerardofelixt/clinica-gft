@@ -9,71 +9,60 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
+// Campos que existen como columnas reales en la tabla pacientes
+const CAMPOS_PACIENTE = ['id','nombre','telefono','email','sexo','fecha_nacimiento','activo','created_at']
+
+// Serializa el objeto paciente completo a un registro de Supabase
+const pacienteToRow = (p) => {
+  const row = {
+    id: p.id,
+    nombre: p.nombre || '',
+    telefono: p.telefono || '',
+    email: p.email || '',
+    sexo: p.sexo || '',
+    activo: p.activo !== false,
+    datos_clinicos: JSON.stringify(p) // Guarda todo el objeto completo
+  }
+  return row
+}
+
+// Deserializa un registro de Supabase al objeto paciente completo
+const rowToPaciente = (row) => {
+  try {
+    const datos = row.datos_clinicos ? JSON.parse(row.datos_clinicos) : {}
+    return {
+      ...datos,
+      id: row.id,
+      nombre: row.nombre,
+      telefono: row.telefono,
+      email: row.email,
+      sexo: row.sexo,
+      activo: row.activo,
+    }
+  } catch {
+    return { id: row.id, nombre: row.nombre, telefono: row.telefono }
+  }
+}
+
 // ── PACIENTES ──────────────────────────────────────────────────
 
 export const getPacientes = async () => {
   const { data, error } = await supabase
     .from('pacientes')
-    .select(`*, consultas(*), recetas(*), laboratorios(*), citas(*)`)
+    .select('*')
     .order('nombre')
   if (error) throw error
-  return data || []
+  return (data || []).map(rowToPaciente)
 }
 
 export const savePaciente = async (paciente) => {
-  // Separar datos anidados del objeto paciente
-  const { consultas, recetas, laboratorios, citas, resultadosLabs, ...pacData } = paciente
-
-  // Guardar paciente principal
+  const row = pacienteToRow(paciente)
   const { data, error } = await supabase
     .from('pacientes')
-    .upsert(pacData, { onConflict: 'id' })
+    .upsert(row, { onConflict: 'id' })
     .select()
   if (error) throw error
-  const saved = data[0]
-
-  // Guardar consultas
-  if (consultas && consultas.length > 0) {
-    for (const c of consultas) {
-      const { consultas: _c, recetas: _r, laboratorios: _l, citas: _ci, ...cData } = c
-      await supabase.from('consultas').upsert(
-        { ...cData, paciente_id: saved.id },
-        { onConflict: 'id' }
-      )
-    }
-  }
-
-  // Guardar recetas
-  if (recetas && recetas.length > 0) {
-    for (const r of recetas) {
-      await supabase.from('recetas').upsert(
-        { ...r, paciente_id: saved.id },
-        { onConflict: 'id' }
-      )
-    }
-  }
-
-  // Guardar laboratorios
-  if (laboratorios && laboratorios.length > 0) {
-    for (const l of laboratorios) {
-      await supabase.from('laboratorios').upsert(
-        { ...l, paciente_id: saved.id },
-        { onConflict: 'id' }
-      )
-    }
-  }
-
-  // Guardar citas
-  if (citas && citas.length > 0) {
-    for (const ci of citas) {
-      await supabase.from('citas').upsert(
-        { ...ci, paciente_id: saved.id },
-        { onConflict: 'id' }
-      )
-    }
-  }
-
-  return saved
+  return rowToPaciente(data[0])
 }
 
 export const deletePaciente = async (id) => {
@@ -81,51 +70,7 @@ export const deletePaciente = async (id) => {
   if (error) throw error
 }
 
-// ── CONSULTAS ──────────────────────────────────────────────────
-
-export const saveConsulta = async (consulta) => {
-  const { data, error } = await supabase
-    .from('consultas')
-    .upsert(consulta, { onConflict: 'id' })
-    .select()
-  if (error) throw error
-  return data[0]
-}
-
-// ── RECETAS ────────────────────────────────────────────────────
-
-export const saveReceta = async (receta) => {
-  const { data, error } = await supabase
-    .from('recetas')
-    .upsert(receta, { onConflict: 'id' })
-    .select()
-  if (error) throw error
-  return data[0]
-}
-
-// ── LABORATORIOS ───────────────────────────────────────────────
-
-export const saveLaboratorio = async (lab) => {
-  const { data, error } = await supabase
-    .from('laboratorios')
-    .upsert(lab, { onConflict: 'id' })
-    .select()
-  if (error) throw error
-  return data[0]
-}
-
-// ── CITAS ──────────────────────────────────────────────────────
-
-export const saveCita = async (cita) => {
-  const { data, error } = await supabase
-    .from('citas')
-    .upsert(cita, { onConflict: 'id' })
-    .select()
-  if (error) throw error
-  return data[0]
-}
-
-export const deleteCita = async (id) => {
-  const { error } = await supabase.from('citas').delete().eq('id', id)
-  if (error) throw error
-}
+export const saveConsulta = async () => {}
+export const saveReceta = async () => {}
+export const saveLaboratorio = async () => {}
+export const saveCita = async () => {}
