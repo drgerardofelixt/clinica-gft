@@ -4204,7 +4204,7 @@ export default function App() {
   const [vista, setVista] = useState("dashboard");
   const [firmaB64, setFirmaB64] = useState(null);
   const [showOrdenRapida, setShowOrdenRapida] = useState(false);
-  const [agendarPara, setAgendarPara] = useState(null); // paciente para agendar cita
+  const [agendarPara, setAgendarPara] = useState(false); // false=cerrado, null=abierto sin paciente, objeto=abierto con paciente
   const [confirmarCita, setConfirmarCita] = useState(null); // datos pendientes de guardar consulta
 
   const cargarPacientes = async () => {
@@ -4441,11 +4441,11 @@ export default function App() {
       {showOrdenRapida && (
         <OrdenRapida onClose={()=>setShowOrdenRapida(false)} firmaB64={firmaB64}/>
       )}
-      {agendarPara !== null && (
-        <ModalAgenda
-          pacientes={pacientes}
-          paciente={agendarPara}
-          onClose={()=>setAgendarPara(null)}
+      {agendarPara !== false && (
+          <ModalAgenda
+            pacientes={pacientes}
+            paciente={agendarPara}
+            onClose={()=>setAgendarPara(false)}
           onAgendar={async (pac, fecha, hora, tipoCita, duracion) => {
             const citaNueva = {
               id: crypto.randomUUID(),
@@ -4468,7 +4468,7 @@ export default function App() {
               await cargarPacientes();
             } catch(e) { console.error("Error agendando:", e); }
 
-            setAgendarPara(null);
+            setAgendarPara(false);
 
             // Enviar confirmación WhatsApp si hay teléfono
             if (pacFinal.telefono) {
