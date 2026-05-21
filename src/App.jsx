@@ -543,7 +543,7 @@ const parseTanita = (text) => {
     if(ll.startsWith("initial")||ll.startsWith("history")){idxFin=i;break;}
   }
 
-  // Buscar 5 segmentos musculares en orden: Tronco, BrazoI, BrazoD, PiernaI, PiernaD
+  // Buscar 5 segmentos musculares en orden REAL del PDF: Tronco, BrazoI, PiernaI, BrazoD, PiernaD
   const musculoSegs = [];
   if (idxKcal >= 0) {
     for (let i=idxKcal+1; i<idxFin; i++) {
@@ -553,17 +553,18 @@ const parseTanita = (text) => {
       // Saltar target del músculo (65 kg estándar Tanita)
       if (v>=64.5 && v<=65.5 && musculoSegs.length===0) continue;
 
-      if (musculoSegs.length===0 && v>=15 && v<=60) musculoSegs.push(v);
-      else if (musculoSegs.length===1 && v>=0.5 && v<=8) musculoSegs.push(v);
-      else if (musculoSegs.length===2 && v>=0.5 && v<=8) musculoSegs.push(v);
-      else if (musculoSegs.length===3 && v>=4 && v<=20) musculoSegs.push(v);
-      else if (musculoSegs.length===4 && v>=4 && v<=20) { musculoSegs.push(v); break; }
+      if (musculoSegs.length===0 && v>=15 && v<=60) musculoSegs.push(v);          // Tronco
+      else if (musculoSegs.length===1 && v>=0.5 && v<=8) musculoSegs.push(v);     // Brazo I
+      else if (musculoSegs.length===2 && v>=4 && v<=20) musculoSegs.push(v);      // Pierna I
+      else if (musculoSegs.length===3 && v>=0.5 && v<=8) musculoSegs.push(v);     // Brazo D
+      else if (musculoSegs.length===4 && v>=4 && v<=20) { musculoSegs.push(v); break; } // Pierna D
     }
   }
+  // Asignar según orden real del PDF: T, BI, PI, BD, PD
   if (musculoSegs[0]!==undefined) r.musculoTronco  = musculoSegs[0];
   if (musculoSegs[1]!==undefined) r.musculoBrazoI  = musculoSegs[1];
-  if (musculoSegs[2]!==undefined) r.musculoBrazoD  = musculoSegs[2];
-  if (musculoSegs[3]!==undefined) r.musculoPiernaI = musculoSegs[3];
+  if (musculoSegs[2]!==undefined) r.musculoPiernaI = musculoSegs[2];
+  if (musculoSegs[3]!==undefined) r.musculoBrazoD  = musculoSegs[3];
   if (musculoSegs[4]!==undefined) r.musculoPiernaD = musculoSegs[4];
 
   // Buscar 5 segmentos de grasa% DESPUÉS del Tronco_M (no antes, evita targets)
@@ -586,8 +587,8 @@ const parseTanita = (text) => {
   }
   if (grasaSegs[0]!==undefined) r.grasaTronco  = grasaSegs[0];
   if (grasaSegs[1]!==undefined) r.grasaBrazoI  = grasaSegs[1];
-  if (grasaSegs[2]!==undefined) r.grasaBrazoD  = grasaSegs[2];
-  if (grasaSegs[3]!==undefined) r.grasaPiernaI = grasaSegs[3];
+  if (grasaSegs[2]!==undefined) r.grasaPiernaI = grasaSegs[2];
+  if (grasaSegs[3]!==undefined) r.grasaBrazoD  = grasaSegs[3];
   if (grasaSegs[4]!==undefined) r.grasaPiernaD = grasaSegs[4];
 
   return r;
@@ -2701,7 +2702,7 @@ const ModalConfig = ({firmaB64, onSave, onClose}) => {
 };
 
 // ── Vista Paciente ────────────────────────────────────────────
-const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes}) => {
+const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onCitaAgendada}) => {
   const [tab, setTab] = useState("progreso");
   const [showC, setShowC] = useState(false);
   const [showR, setShowR] = useState(false);
@@ -3449,8 +3450,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes}) =>
               const msg = `Hola ${p.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
               setTimeout(()=>enviarWA(p.telefono, msg), 300);
             }
-            // Abrir Google Calendar con la cita pre-llenada
-            setTimeout(()=>agregarAGoogleCalendar(p.nombre, p.telefono, fecha, hora, tipoCita, duracion), 800);
+            // Guardar info de última cita agendada para mostrar botón de Google Calendar
+            onCitaAgendada && onCitaAgendada({nombre: p.nombre, telefono: p.telefono, fecha, hora, tipoCita, duracion});
           }}
         />
       )}
@@ -4237,6 +4238,7 @@ export default function App() {
   const [firmaB64, setFirmaB64] = useState(null);
   const [showOrdenRapida, setShowOrdenRapida] = useState(false);
   const [agendarPara, setAgendarPara] = useState(false); // false=cerrado, null=abierto sin paciente, objeto=abierto con paciente
+  const [ultimaCita, setUltimaCita] = useState(null); // Para mostrar botón de Google Calendar
   const [confirmarCita, setConfirmarCita] = useState(null); // datos pendientes de guardar consulta
 
   const cargarPacientes = async () => {
@@ -4327,6 +4329,7 @@ export default function App() {
         firmaB64={firmaB64}
         onUpdate={updPac}
         onBack={()=>setActivo(null)}
+        onCitaAgendada={setUltimaCita}
       />
     );
   }
@@ -4470,6 +4473,32 @@ export default function App() {
       {showConfig && (
         <ModalConfig firmaB64={firmaB64} onSave={saveFirma} onClose={()=>setShowConfig(false)}/>
       )}
+      {ultimaCita && (
+        <div style={{position:"fixed",bottom:20,right:20,zIndex:9999,
+          background:"white",borderRadius:14,padding:16,maxWidth:340,
+          boxShadow:"0 10px 30px rgba(0,0,0,0.25)",border:"2px solid "+C.azul}}>
+          <div style={{fontWeight:800,fontSize:13,color:C.azul,marginBottom:6}}>
+            ✅ Cita agendada
+          </div>
+          <div style={{fontSize:11,color:C.suave,marginBottom:12}}>
+            <b>{ultimaCita.nombre}</b><br/>
+            {new Date(ultimaCita.fecha+"T00:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"long"})} · {ultimaCita.hora} hrs
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>{
+              agregarAGoogleCalendar(ultimaCita.nombre, ultimaCita.telefono, ultimaCita.fecha, ultimaCita.hora, ultimaCita.tipoCita, ultimaCita.duracion);
+            }} style={{flex:1,padding:"9px 12px",borderRadius:8,border:"none",
+              background:C.azul,color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
+              📅 Añadir a Google Calendar
+            </button>
+            <button onClick={()=>setUltimaCita(null)} style={{padding:"9px 12px",borderRadius:8,
+              border:"1px solid "+C.grisMedio,background:"white",color:C.texto,
+              cursor:"pointer",fontWeight:700,fontSize:12}}>
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
       {showOrdenRapida && (
         <OrdenRapida onClose={()=>setShowOrdenRapida(false)} firmaB64={firmaB64}/>
       )}
@@ -4510,8 +4539,8 @@ export default function App() {
               const msg = `Hola ${pacFinal.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
               setTimeout(()=>enviarWA(pacFinal.telefono, msg), 300);
             }
-            // Abrir Google Calendar con la cita pre-llenada
-            setTimeout(()=>agregarAGoogleCalendar(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion), 800);
+            // Guardar info de última cita para mostrar botón de Google Calendar
+            setUltimaCita({nombre: pacFinal.nombre, telefono: pacFinal.telefono, fecha, hora, tipoCita, duracion});
           }}
         />
       )}
