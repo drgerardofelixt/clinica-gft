@@ -3400,14 +3400,16 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes}) =>
           pacientes={pacientes||[p]}
           paciente={p}
           onClose={()=>setShowAgenda(false)}
-          onAgendar={(pac, fecha, hora) => {
+          onAgendar={(pac, fecha, hora, tipoCita, duracion) => {
             // Agregar como cita pendiente en consultas
             const citaNueva = {
-              id: Date.now().toString(),
+              id: crypto.randomUUID(),
               fecha: fecha,
               hora: hora,
               proxCita: fecha,
               proxHora: hora,
+              tipoCita: tipoCita,
+              duracion: duracion,
               esSoloCita: true,
               nota: "Cita agendada"
             };
@@ -3598,22 +3600,58 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
   const [nuevoNombre, setNuevoNombre] = useState("");
   const [nuevoTel, setNuevoTel] = useState("");
   const [mesOff, setMesOff] = useState(0);
+  // Tipo de cita: primera (60min) o seguimiento (30min)
+  // Si es paciente nuevo (shell rápido) o paciente sin consultas → primera vez
+  const tipoInicial = (paciente && (paciente.consultas||[]).filter(c=>!c.esSoloCita).length>0) ? "seguimiento" : "primera";
+  const [tipoCita, setTipoCita] = useState(tipoInicial);
+  const duracionMin = tipoCita === "primera" ? 60 : 30;
 
-  // Generar horarios disponibles (8am a 7pm cada 30 min)
-  const horarios = [];
-  for (let h=8; h<19; h++) {
-    for (let m=0; m<60; m+=30) {
-      horarios.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
-    }
-  }
+  // Helpers para tiempo
+  const hhmmToMin = (s) => { const [h,m] = s.split(":").map(Number); return h*60+m; };
+  const minToHhmm = (n) => `${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
 
-  // Citas ocupadas en la fecha seleccionada
+  // Genera horarios disponibles según día de la semana
+  // Lunes-Viernes: 9-13 y 15-18
+  // Sábado: 10-13
+  // Domingo: cerrado
+  const generarHorarios = (fechaStr) => {
+    if (!fechaStr) return [];
+    const d = new Date(fechaStr+"T00:00:00");
+    const dow = d.getDay(); // 0=Domingo, 6=Sábado
+    let bloques = [];
+    if (dow === 0) return []; // Domingo cerrado
+    if (dow === 6) bloques = [[10*60, 13*60]]; // Sábado
+    else bloques = [[9*60, 13*60], [15*60, 18*60]]; // L-V
+
+    const horas = [];
+    bloques.forEach(([ini, fin]) => {
+      // El último horario debe permitir que la cita termine antes del fin del bloque
+      for (let t = ini; t + duracionMin <= fin; t += 30) {
+        horas.push(minToHhmm(t));
+      }
+    });
+    return horas;
+  };
+
+  const horarios = generarHorarios(fechaSel);
+
+  // Citas ocupadas en la fecha seleccionada (con su duración)
   const ocupadas = pacientes.flatMap(p=>
-    (p.consultas||[]).filter(c=>c.proxCita===fechaSel && c.proxHora).map(c=>({
-      hora: c.proxHora, pac: p.nombre
-    }))
+    (p.consultas||[]).filter(c=>c.proxCita===fechaSel && c.proxHora).map(c=>{
+      // Si la consulta original tenía tipo, úsalo; si no, asumir 60min para primera, 30min seguimiento
+      const dur = c.duracion || (c.tipoCita === "primera" ? 60 : 30);
+      const ini = hhmmToMin(c.proxHora);
+      return { ini, fin: ini + dur, pac: p.nombre, hora: c.proxHora };
+    })
   );
-  const horasOcupadas = new Set(ocupadas.map(o=>o.hora));
+
+  // Una hora está ocupada si la cita propuesta (hora → hora+duracionMin) se solapa con alguna ocupada
+  const estaOcupada = (h) => {
+    const ini = hhmmToMin(h);
+    const fin = ini + duracionMin;
+    return ocupadas.some(o => ini < o.fin && fin > o.ini);
+  };
+  const horasOcupadas = new Set(horarios.filter(estaOcupada));
 
   // Calendario del mes
   const mesRef = new Date(hoy.getFullYear(), hoy.getMonth()+mesOff, 1);
@@ -3641,7 +3679,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
     if (mostrarNuevo) {
       if (!nuevoNombre.trim()) { alert("Ingresa el nombre del paciente"); return; }
       pacFinal = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         nombre: nuevoNombre.trim(),
         telefono: nuevoTel.trim(),
         edad: "",
@@ -3656,13 +3694,38 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
     }
     if (!pacFinal) { alert("Selecciona un paciente"); return; }
 
-    onAgendar(pacFinal, fechaSel, horaSel);
+    onAgendar(pacFinal, fechaSel, horaSel, tipoCita, duracionMin);
     onClose();
   };
 
   return (
     <Modal title="📅 Agendar cita" onClose={onClose} color={C.azul}>
       <div style={{padding:14}}>
+        {/* Selector tipo de cita */}
+        <div style={{marginBottom:16}}>
+          <div style={{fontWeight:800,color:C.azul,fontSize:12,marginBottom:8}}>
+            🕐 Tipo de cita
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{setTipoCita("primera"); setHoraSel("");}}
+              style={{flex:1,padding:"10px 12px",borderRadius:10,cursor:"pointer",
+                background:tipoCita==="primera"?C.azul:"white",
+                color:tipoCita==="primera"?"white":C.texto,
+                border:"2px solid "+(tipoCita==="primera"?C.azul:C.grisMedio),
+                fontWeight:700,fontSize:12}}>
+              ⭐ Primera vez (60 min)
+            </button>
+            <button onClick={()=>{setTipoCita("seguimiento"); setHoraSel("");}}
+              style={{flex:1,padding:"10px 12px",borderRadius:10,cursor:"pointer",
+                background:tipoCita==="seguimiento"?C.azul:"white",
+                color:tipoCita==="seguimiento"?"white":C.texto,
+                border:"2px solid "+(tipoCita==="seguimiento"?C.azul:C.grisMedio),
+                fontWeight:700,fontSize:12}}>
+              🔁 Seguimiento (30 min)
+            </button>
+          </div>
+        </div>
+
         {/* Selector de paciente si no viene predefinido */}
         {!paciente && (
           <div style={{marginBottom:16}}>
@@ -3770,6 +3833,15 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
         <div style={{fontWeight:800,color:C.azul,fontSize:12,marginBottom:8}}>
           🕐 Horarios — {new Date(fechaSel+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}
         </div>
+        {horarios.length === 0 ? (
+          <div style={{padding:"16px",background:C.rojoPale,border:"1px solid "+C.rojo+"30",
+            borderRadius:8,fontSize:12,color:C.rojo,fontWeight:700,marginBottom:14,textAlign:"center"}}>
+            🚫 No hay horarios disponibles este día
+            <div style={{fontSize:10,color:C.suave,marginTop:4,fontWeight:500}}>
+              Horario de consulta: Lun-Vie 9-13 y 15-18 hrs · Sáb 10-13 hrs
+            </div>
+          </div>
+        ) : (
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(70px,1fr))",
           gap:6,maxHeight:200,overflow:"auto",padding:6,background:C.gris,borderRadius:8,marginBottom:14}}>
           {horarios.map(h=>{
@@ -3793,6 +3865,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
             );
           })}
         </div>
+        )}
         {ocupadas.length>0 && (
           <div style={{fontSize:10,color:C.suave,marginBottom:10}}>
             🔴 {ocupadas.length} horario(s) ocupado(s) este día
@@ -3872,7 +3945,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida}) => {
     const fechaMx = new Date(c.fecha+"T00:00:00").toLocaleDateString("es-MX",{
       weekday:"long",day:"numeric",month:"long"
     });
-    const msg = `Buen día ${c.pac.nombre}, te envío este mensaje para recordarte y confirmar tu asistencia a tu cita el día de mañana ${fechaMx}${c.hora?" a las "+c.hora+" hrs":""}.\n\nPor favor confirma para reservar tu espacio.\n\nSaludos,\nDr. Gerardo Félix Tapia`;
+    const msg = `Buen día ${c.pac.nombre}, envío mensaje para recordarte y confirmar tu asistencia a tu cita el día ${fechaMx}${c.hora?" a las "+c.hora:""}.\n\nSaludos!`;
     enviarWA(c.pac.telefono, msg);
   };
 
@@ -4373,32 +4446,28 @@ export default function App() {
           pacientes={pacientes}
           paciente={agendarPara}
           onClose={()=>setAgendarPara(null)}
-          onAgendar={async (pac, fecha, hora) => {
-            // Buscar si paciente ya existe o crearlo
-            let pacList = pacientes;
-            let pacFinal = pac;
-            if (pac.esShellRapido) {
-              pacList = [...pacientes, pac];
-            }
-            // Agregar/actualizar la cita como una "consulta sin contenido"
-            // Mejor: guardamos la cita como un campo separado proxCitaPendiente en el paciente
+          onAgendar={async (pac, fecha, hora, tipoCita, duracion) => {
             const citaNueva = {
-              id: Date.now().toString(),
+              id: crypto.randomUUID(),
               fecha: fecha,
               hora: hora,
               proxCita: fecha,
               proxHora: hora,
+              tipoCita: tipoCita,
+              duracion: duracion,
               esSoloCita: true,
               nota: "Cita agendada"
             };
-            pacFinal = {
+            const pacFinal = {
               ...pac,
               consultas: [...(pac.consultas||[]), citaNueva]
             };
-            pacList = pacList.map(x=>x.id===pacFinal.id?pacFinal:x);
-            if (!pacList.find(x=>x.id===pacFinal.id)) pacList.push(pacFinal);
 
-            await save(pacList);
+            try {
+              await savePaciente(pacFinal);
+              await cargarPacientes();
+            } catch(e) { console.error("Error agendando:", e); }
+
             setAgendarPara(null);
 
             // Enviar confirmación WhatsApp si hay teléfono
