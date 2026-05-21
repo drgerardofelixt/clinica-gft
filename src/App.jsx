@@ -872,7 +872,7 @@ const LogoDoc = ({conCedula=true, compact=false}) => (
   <div style={{display:"flex",alignItems:"center",gap:14,
     paddingBottom:compact?10:14,borderBottom:"2.5px solid "+C.azul,marginBottom:compact?12:16}}>
     <img src={conCedula?IMG_LOGO_CED:IMG_LOGO} alt="Dr. Gerardo Félix Tapia"
-      style={{height:compact?66:86,width:"auto",objectFit:"contain",flexShrink:0}}/>
+      style={{height:compact?165:215,width:"auto",objectFit:"contain",flexShrink:0}}/>
     <div style={{marginLeft:"auto",textAlign:"right",fontSize:compact?7:8,color:C.suave,lineHeight:1.8}}>
       <div>Av. Adolfo de la Huerta 200A 2do piso</div>
       <div>Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
@@ -887,7 +887,6 @@ const FooterDoc = () => (
     textAlign:"center",fontSize:7.5,color:C.suave}}>
     <div style={{fontWeight:700,color:C.azul}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
     <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
-    <div style={{marginTop:3,fontStyle:"italic"}}>Documento confidencial · Conservar mínimo 5 años</div>
   </div>
 );
 
@@ -911,13 +910,15 @@ const CF = ({l, v, span=1}) => (
     <span style={{color:C.texto}}>{v||"—"}</span>
   </div>
 );
-const Firma = ({fecha="", hora=""}) => (
+const Firma = ({fecha="", hora="", firmaB64=null}) => (
   <div style={{marginTop:28,display:"flex",justifyContent:"center"}}>
     <div style={{textAlign:"center",minWidth:220}}>
+      {firmaB64 && (
+        <img src={firmaB64} alt="Firma" style={{height:60,marginBottom:-5,objectFit:"contain"}}/>
+      )}
       <div style={{borderTop:"1px solid "+C.texto,paddingTop:5,fontSize:8.5}}>
         <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
         <div>Céd. Prof: 15131213 | Reg. SSA: 10361/16</div>
-        {fecha && <div>{fmtF(fecha)}{hora?" · "+hora:""}</div>}
       </div>
     </div>
   </div>
@@ -1257,7 +1258,7 @@ const DocReceta = ({p, rec, firmaB64}) => {
 };
 
 
-const DocLabs = ({p, labs}) => (
+const DocLabs = ({p, labs, firmaB64}) => (
   <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
     <LogoDoc compact conCedula={true}/>
     <G4>
@@ -1281,7 +1282,7 @@ const DocLabs = ({p, labs}) => (
         <b>Indicaciones:</b> {labs.notas}
       </div>
     )}
-    <Firma fecha={labs.fecha}/>
+    <Firma fecha={labs.fecha} firmaB64={firmaB64}/>
     <FooterDoc/>
   </div>
 );
@@ -1471,7 +1472,7 @@ const Modal = ({title, children, onClose, color}) => {
 };
 
 // ── Print modal ───────────────────────────────────────────────
-const PrintModal = ({titulo, children, onClose, onWA}) => {
+const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
   const ref = useRef();
 
   // Generar PDF como Blob para compartir nativamente
@@ -1565,6 +1566,12 @@ const PrintModal = ({titulo, children, onClose, onWA}) => {
               fontSize:20,cursor:"pointer",color:"white",borderRadius:6,padding:"2px 8px"}}>×</button>
           </div>
         </div>
+        {extraHeader && (
+          <div style={{padding:"8px 20px",background:C.gris,borderBottom:"1px solid "+C.grisMedio,
+            display:"flex",justifyContent:"flex-end"}}>
+            {extraHeader}
+          </div>
+        )}
         <div style={{overflow:"auto",flex:1,padding:20}}>
           <div ref={ref} style={{background:"white",padding:28,maxWidth:660,
             margin:"0 auto",border:"1px solid "+C.grisMedio,borderRadius:8}}>
@@ -2681,6 +2688,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes}) =>
   const [showLabs, setShowLabs] = useState(false);
   const [showAgenda, setShowAgenda] = useState(false);
   const [doc, setDoc] = useState(null);
+  const [conFirmaLabs, setConFirmaLabs] = useState(false);
 
   const addConsulta = (d) => {
     // Asegurar que comp.peso usa el peso principal si comp.peso está vacío
@@ -3437,12 +3445,21 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes}) =>
       {doc && (
         <PrintModal
           titulo={{hc:"Historia Clínica",nota:"Nota de Evolución",receta:"Receta Médica",labs:"Orden de Labs",progreso:"Reporte de Progreso"}[doc.tipo]}
-          onClose={()=>setDoc(null)}
-          onWA={doc.tipo==="progreso"?waProgreso:null}>
+          onClose={()=>{setDoc(null); setConFirmaLabs(false);}}
+          onWA={doc.tipo==="progreso"?waProgreso:null}
+          extraHeader={doc.tipo==="labs" && firmaB64 ? (
+            <label style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",
+              background:conFirmaLabs?"#F0FFF9":C.gris,border:"2px solid "+(conFirmaLabs?C.verde:C.grisMedio),
+              borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700,
+              color:conFirmaLabs?C.verde:C.texto}}>
+              <input type="checkbox" checked={conFirmaLabs} onChange={e=>setConFirmaLabs(e.target.checked)}/>
+              ✍️ Incluir firma digital
+            </label>
+          ) : null}>
           {doc.tipo==="hc" && <DocHC p={p}/>}
           {doc.tipo==="nota" && <DocNota p={p} consulta={doc.consulta}/>}
           {doc.tipo==="receta" && <DocReceta p={p} rec={doc.receta} firmaB64={firmaB64}/>}
-          {doc.tipo==="labs" && <DocLabs p={p} labs={doc.labs}/>}
+          {doc.tipo==="labs" && <DocLabs p={p} labs={doc.labs} firmaB64={conFirmaLabs?firmaB64:null}/>}
           {doc.tipo==="progreso" && <DocProgreso p={p}/>}
         </PrintModal>
       )}
@@ -3451,7 +3468,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes}) =>
 };
 
 // ── Dashboard ─────────────────────────────────────────────────
-const OrdenRapida = ({onClose}) => {
+const OrdenRapida = ({onClose, firmaB64}) => {
   const [paso, setPaso] = useState("form"); // form, pdf
   const [tel, setTel] = useState("");
   const [nombre, setNombre] = useState("");
@@ -3460,6 +3477,7 @@ const OrdenRapida = ({onClose}) => {
   const [tipo, setTipo] = useState("iniciales");
   const [labs, setLabs] = useState(LABS_PRESET.iniciales);
   const [obs, setObs] = useState("");
+  const [conFirma, setConFirma] = useState(false);
 
   const togglelab = (l) => {
     setLabs(labs.includes(l) ? labs.filter(x=>x!==l) : [...labs, l]);
@@ -3537,6 +3555,17 @@ const OrdenRapida = ({onClose}) => {
                 fontSize:12,fontFamily:"inherit",resize:"vertical"}}/>
           </div>
 
+          {firmaB64 && (
+            <label style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",
+              background:conFirma?"#F0FFF9":C.gris,border:"2px solid "+(conFirma?C.verde:C.grisMedio),
+              borderRadius:8,cursor:"pointer",marginBottom:12,fontSize:12}}>
+              <input type="checkbox" checked={conFirma} onChange={e=>setConFirma(e.target.checked)}/>
+              <span style={{fontWeight:700,color:conFirma?C.verde:C.texto}}>
+                ✍️ Incluir firma digital en la orden
+              </span>
+            </label>
+          )}
+
           <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
             <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
             <Btn onClick={enviarOrdenWA} color={C.verde} icon="📱" disabled={!nombre||!tel||labs.length===0}>
@@ -3551,7 +3580,7 @@ const OrdenRapida = ({onClose}) => {
 
       {paso==="pdf" && (
         <PrintModal onClose={()=>setPaso("form")} titulo="Orden de laboratorios">
-          <DocLabs p={pacFake} labs={{fecha: new Date().toISOString().split("T")[0], estudios: labs, notas: obs}}/>
+          <DocLabs p={pacFake} labs={{fecha: new Date().toISOString().split("T")[0], estudios: labs, notas: obs}} firmaB64={conFirma?firmaB64:null}/>
         </PrintModal>
       )}
     </Modal>
@@ -4335,7 +4364,7 @@ export default function App() {
         <ModalConfig firmaB64={firmaB64} onSave={saveFirma} onClose={()=>setShowConfig(false)}/>
       )}
       {showOrdenRapida && (
-        <OrdenRapida onClose={()=>setShowOrdenRapida(false)}/>
+        <OrdenRapida onClose={()=>setShowOrdenRapida(false)} firmaB64={firmaB64}/>
       )}
       {agendarPara !== null && (
         <ModalAgenda
