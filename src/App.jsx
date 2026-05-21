@@ -3471,7 +3471,7 @@ const OrdenRapida = ({onClose}) => {
 
   const enviarOrdenWA = () => {
     if (!tel) { alert("Ingrese teléfono"); return; }
-    const msg = `Hola ${nombre||""}, te envío la orden de laboratorios solicitados:\n\n${labs.map(l=>"• "+l).join("\n")}${obs?"\n\nIndicaciones: "+obs:""}\n\nPor favor envíame los resultados cuando los tengas para agendar tu consulta.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
+    const msg = `Hola ${nombre||""}, te envío la orden de laboratorios solicitados:\n\n${labs.map(l=>"• "+l).join("\n")}${obs?"\n\nIndicaciones: "+obs:""}\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
     enviarWA(tel, msg);
   };
 
@@ -3551,7 +3551,7 @@ const OrdenRapida = ({onClose}) => {
 
       {paso==="pdf" && (
         <PrintModal onClose={()=>setPaso("form")} titulo="Orden de laboratorios">
-          <DocOrdLab p={pacFake} l={pacFake.laboratorios[0]}/>
+          <DocLabs p={pacFake} labs={{fecha: new Date().toISOString().split("T")[0], estudios: labs, notas: obs}}/>
         </PrintModal>
       )}
     </Modal>
