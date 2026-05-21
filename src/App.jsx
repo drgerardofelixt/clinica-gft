@@ -1,7 +1,7 @@
 // Sistema Clínico GFT v8 — Dr. Gerardo Félix Tapia
 import { useState, useEffect, useRef } from "react";
 import { compartirPDF } from "./pdf.js";
-import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase } from "./supabase.js";
+import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ── ASSETS ──────────────────────────────────────────────────
@@ -4161,7 +4161,7 @@ export default function App() {
   useEffect(()=>{
     if (!usuario) return;
     cargarPacientes();
-    sGet("gft_firma").then(d=>{ if(d) setFirmaB64(d); });
+    getConfig("firma_digital").then(d=>{ if(d) setFirmaB64(d); });
   },[usuario]);
 
   const savePac = async (p) => {
@@ -4181,7 +4181,9 @@ export default function App() {
   };
   const saveFirma = async (b64) => {
     setFirmaB64(b64);
-    await sSet("gft_firma",b64);
+    try {
+      await setConfig("firma_digital", b64);
+    } catch(e) { console.error("Error guardando firma:", e); }
   };
 
   if (verificandoAuth) {

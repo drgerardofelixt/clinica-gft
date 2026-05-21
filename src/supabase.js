@@ -52,3 +52,22 @@ export const saveConsulta = async () => {}
 export const saveReceta = async () => {}
 export const saveLaboratorio = async () => {}
 export const saveCita = async () => {}
+
+// ── CONFIGURACIÓN ──────────────────────────────────────────────
+
+export const getConfig = async (clave) => {
+  const { data, error } = await supabase
+    .from('configuracion')
+    .select('valor')
+    .eq('clave', clave)
+    .maybeSingle()
+  if (error) throw error
+  return data?.valor || null
+}
+
+export const setConfig = async (clave, valor) => {
+  const { error } = await supabase
+    .from('configuracion')
+    .upsert({ clave, valor, updated_at: new Date().toISOString() }, { onConflict: 'clave' })
+  if (error) throw error
+}
