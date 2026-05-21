@@ -3898,7 +3898,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
   );
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida}) => {
+const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes}) => {
   const [mesOffset, setMesOffset] = useState(0); // 0=mes actual, -1=anterior, +1=siguiente
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
