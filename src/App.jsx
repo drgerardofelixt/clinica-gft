@@ -96,6 +96,27 @@ const enviarWA = (telefono, mensaje) => {
   return true;
 };
 
+// Abre Google Calendar con los datos de la cita prellenados
+const agregarAGoogleCalendar = (nombre, telefono, fecha, hora, tipoCita, duracionMin) => {
+  // fecha = "2026-05-21", hora = "10:00"
+  const [year, month, day] = fecha.split("-");
+  const [hr, mn] = hora.split(":");
+  // Formato Google: YYYYMMDDTHHmmSS
+  const ini = `${year}${month}${day}T${hr}${mn}00`;
+  // Calcular hora fin
+  const iniDate = new Date(parseInt(year), parseInt(month)-1, parseInt(day), parseInt(hr), parseInt(mn));
+  const finDate = new Date(iniDate.getTime() + (duracionMin||30)*60000);
+  const fin = `${finDate.getFullYear()}${String(finDate.getMonth()+1).padStart(2,"0")}${String(finDate.getDate()).padStart(2,"0")}T${String(finDate.getHours()).padStart(2,"0")}${String(finDate.getMinutes()).padStart(2,"0")}00`;
+
+  const tipo = tipoCita === "primera" ? "Primera vez" : "Seguimiento";
+  const titulo = `${nombre} — ${tipo}`;
+  const detalles = `Cita: ${tipo} (${duracionMin} min)${telefono?"\\nTeléfono: "+telefono:""}`;
+  const ubicacion = "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo";
+
+  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(titulo)}&dates=${ini}/${fin}&details=${encodeURIComponent(detalles)}&location=${encodeURIComponent(ubicacion)}`;
+  window.open(url, "_blank");
+};
+
 const gradoIMC = (v) => {
   const n = parseFloat(v);
   if (!n) return "";
@@ -3428,6 +3449,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes}) =>
               const msg = `Hola ${p.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
               setTimeout(()=>enviarWA(p.telefono, msg), 300);
             }
+            // Abrir Google Calendar con la cita pre-llenada
+            setTimeout(()=>agregarAGoogleCalendar(p.nombre, p.telefono, fecha, hora, tipoCita, duracion), 800);
           }}
         />
       )}
@@ -3849,22 +3872,29 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
             const sel = h === horaSel;
             const pacOcupado = ocupadas.find(o=>o.hora===h);
             return (
-              <button key={h} onClick={()=>!ocupada && setHoraSel(h)}
-                disabled={ocupada}
-                title={ocupada?"Ocupado: "+pacOcupado.pac:""}
+              <button key={h} onClick={()=>setHoraSel(h)}
+                title={ocupada?"Ya hay cita: "+pacOcupado.pac+" — puedes encimar":""}
                 style={{
                   padding:"7px 4px",borderRadius:6,fontSize:11,fontWeight:700,
-                  border:"1px solid "+(sel?C.azul:ocupada?C.rojo+"40":C.grisMedio),
-                  background: sel?C.azul: ocupada?C.rojoPale:"white",
-                  color: sel?"white": ocupada?C.rojo:C.texto,
-                  cursor: ocupada?"not-allowed":"pointer",
-                  textDecoration: ocupada?"line-through":"none"
+                  border:"1px solid "+(sel?C.azul:ocupada?C.naranja:C.grisMedio),
+                  background: sel?C.azul: ocupada?"#FFF4E5":"white",
+                  color: sel?"white": ocupada?C.naranja:C.texto,
+                  cursor:"pointer",
+                  position:"relative"
                 }}>
                 {h}
+                {ocupada && <span style={{position:"absolute",top:-4,right:-4,fontSize:9}}>⚠️</span>}
               </button>
             );
           })}
         </div>
+        )}
+
+        {horaSel && horasOcupadas.has(horaSel) && (
+          <div style={{padding:"8px 12px",background:"#FFF4E5",border:"1px solid "+C.naranja,
+            borderRadius:8,fontSize:11,color:C.naranja,fontWeight:700,marginBottom:10}}>
+            ⚠️ Este horario ya tiene cita con <b>{ocupadas.find(o=>o.hora===horaSel)?.pac}</b>. Se encimará si confirmas.
+          </div>
         )}
         {ocupadas.length>0 && (
           <div style={{fontSize:10,color:C.suave,marginBottom:10}}>
@@ -4034,6 +4064,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               </div>
               <Btn onClick={()=>enviarRecordatorio(c)} color={C.verde} size="sm" icon="📱"
                 disabled={!c.pac.telefono}>Recordar</Btn>
+              <Btn onClick={()=>agregarAGoogleCalendar(c.pac.nombre, c.pac.telefono, c.fecha, c.hora||"09:00", c.tipoCita, c.duracion||30)}
+                color={C.azul} size="sm" icon="📅" outline>Google</Btn>
             </div>
           ))}
         </Card>
@@ -4478,6 +4510,8 @@ export default function App() {
               const msg = `Hola ${pacFinal.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
               setTimeout(()=>enviarWA(pacFinal.telefono, msg), 300);
             }
+            // Abrir Google Calendar con la cita pre-llenada
+            setTimeout(()=>agregarAGoogleCalendar(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion), 800);
           }}
         />
       )}
