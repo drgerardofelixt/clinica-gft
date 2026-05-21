@@ -1,7 +1,7 @@
 // Sistema Clínico GFT v8 — Dr. Gerardo Félix Tapia
 import { useState, useEffect, useRef } from "react";
 import { compartirPDF } from "./pdf.js";
-import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita } from "./supabase.js";
+import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase } from "./supabase.js";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 // ── ASSETS ──────────────────────────────────────────────────
@@ -1445,6 +1445,27 @@ const DocProgreso = ({p}) => {
         <div style={{color:C.texto}}>Continúe con su plan de tratamiento y nutrición.</div>
       </div>
       <FooterDoc/>
+    </div>
+  );
+};
+
+// ── Modal genérico ───────────────────────────────────────────
+const Modal = ({title, children, onClose, color}) => {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
+      overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
+      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:750,overflow:"hidden",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.2)",margin:"20px 0"}}>
+        <div style={{background:color||C.azul,padding:"14px 22px",display:"flex",
+          justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>{title}</div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",
+            color:"white",fontSize:18,cursor:"pointer",borderRadius:8,padding:"2px 10px",width:32,height:32}}>×</button>
+        </div>
+        <div style={{maxHeight:"80vh",overflow:"auto"}}>
+          {children}
+        </div>
+      </div>
     </div>
   );
 };
@@ -3850,7 +3871,13 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida}) => {
       </div>
 
       <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
-        <Btn onClick={()=>onAgendar(null)} color={C.azul} icon="📅">
+        <Btn onClick={()=>onNuevoPaciente && onNuevoPaciente()} color={C.verde} icon="+">
+          Nuevo paciente
+        </Btn>
+        <Btn onClick={()=>onIrPacientes && onIrPacientes()} color={C.azul} icon="👥">
+          Ver pacientes
+        </Btn>
+        <Btn onClick={()=>onAgendar(null)} color={C.morado} icon="📅">
           Agendar cita
         </Btn>
         <Btn onClick={onOrdenRapida} color={C.naranja} icon="🧪">
@@ -4010,7 +4037,62 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida}) => {
 };
 
 // ── APP ───────────────────────────────────────────────────────
+// ── LOGIN ────────────────────────────────────────────────────
+const Login = ({ onLogin }) => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState("");
+
+  const entrar = async (e) => {
+    if (e) e.preventDefault();
+    setError("");
+    setCargando(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      onLogin(data.user);
+    } catch (err) {
+      setError("Credenciales incorrectas. Verifica tu correo y contraseña.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,"+C.azul+","+C.azulClaro+")",
+      display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <form onSubmit={entrar} style={{background:"white",borderRadius:16,padding:36,maxWidth:400,width:"100%",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:24,fontWeight:900,color:C.azul,marginBottom:4}}>Dr. Gerardo Félix Tapia</div>
+          <div style={{fontSize:12,color:C.suave}}>Sistema clínico · Medicina Integral</div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:11,fontWeight:700,color:C.azul,display:"block",marginBottom:5}}>Correo electrónico</label>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required autoFocus
+            style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid "+C.grisMedio,fontSize:13,boxSizing:"border-box"}}/>
+        </div>
+        <div style={{marginBottom:18}}>
+          <label style={{fontSize:11,fontWeight:700,color:C.azul,display:"block",marginBottom:5}}>Contraseña</label>
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required
+            style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid "+C.grisMedio,fontSize:13,boxSizing:"border-box"}}/>
+        </div>
+        {error && <div style={{background:"#FEE",color:"#C00",padding:"8px 12px",borderRadius:8,
+          fontSize:11,marginBottom:14,fontWeight:600}}>{error}</div>}
+        <button type="submit" disabled={cargando}
+          style={{width:"100%",padding:"12px",borderRadius:8,border:"none",background:cargando?C.suave:C.azul,
+            color:"white",fontWeight:800,fontSize:13,cursor:cargando?"wait":"pointer"}}>
+          {cargando ? "Entrando..." : "Iniciar sesión"}
+        </button>
+      </form>
+    </div>
+  );
+};
+
 export default function App() {
+  const [usuario, setUsuario] = useState(null);
+  const [verificandoAuth, setVerificandoAuth] = useState(true);
   const [pacientes, setPacientes] = useState([]);
   const [activo, setActivo] = useState(null);
   const [mNuevo, setMNuevo] = useState(false);
@@ -4035,9 +4117,23 @@ export default function App() {
   };
 
   useEffect(()=>{
+    // Verificar si hay sesión activa al cargar
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUsuario(session?.user || null);
+      setVerificandoAuth(false);
+    });
+    // Escuchar cambios de auth (logout, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUsuario(session?.user || null);
+    });
+    return () => subscription.unsubscribe();
+  },[]);
+
+  useEffect(()=>{
+    if (!usuario) return;
     cargarPacientes();
     sGet("gft_firma").then(d=>{ if(d) setFirmaB64(d); });
-  },[]);
+  },[usuario]);
 
   const savePac = async (p) => {
     try {
@@ -4058,6 +4154,19 @@ export default function App() {
     setFirmaB64(b64);
     await sSet("gft_firma",b64);
   };
+
+  if (verificandoAuth) {
+    return (
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",
+        height:"100vh",background:C.gris}}>
+        <div style={{color:C.azul,fontWeight:800,fontSize:13}}>Verificando sesión…</div>
+      </div>
+    );
+  }
+
+  if (!usuario) {
+    return <Login onLogin={setUsuario}/>;
+  }
 
   if (cargando) {
     return (
@@ -4115,6 +4224,13 @@ export default function App() {
           <button onClick={()=>setShowConfig(true)}
             style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",
               fontSize:18,cursor:"pointer",borderRadius:8,padding:"6px 10px"}}>⚙️</button>
+          <button onClick={async()=>{
+            if(confirm("¿Cerrar sesión?")){
+              await supabase.auth.signOut();
+            }
+          }}
+            style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",
+              fontSize:14,cursor:"pointer",borderRadius:8,padding:"6px 10px"}} title="Cerrar sesión">🚪</button>
         </div>
       </div>
       {vista==="dashboard" && (
@@ -4129,13 +4245,18 @@ export default function App() {
               <div style={{fontSize:13,color:C.suave,marginBottom:24,maxWidth:380}}>
                 Registre su primer paciente para comenzar.
               </div>
-              <Btn onClick={()=>setMNuevo(true)} color={C.azul} size="lg" icon="+">
-                Registrar primer paciente
-              </Btn>
+              <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+                <Btn onClick={()=>setMNuevo(true)} color={C.verde} size="lg" icon="+">
+                  Registrar paciente
+                </Btn>
+                <Btn onClick={()=>setShowOrdenRapida(true)} color={C.naranja} size="lg" icon="🧪">
+                  Orden rápida de labs
+                </Btn>
+              </div>
             </div>
           </div>
         ) : (
-          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)}/>
+          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)} onNuevoPaciente={()=>setMNuevo(true)} onIrPacientes={()=>setVista("lista")}/>
         )
       )}
       {vista==="lista" && (
