@@ -2358,7 +2358,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
 const ModalPaciente = ({pac, onClose, onSave}) => {
   const [step, setStep] = useState(0);
   const [f, setF] = useState(pac||{
-    id:Date.now().toString(), nombre:"", edad:"", sexo:"Femenino",
+    id:crypto.randomUUID(), nombre:"", edad:"", sexo:"Femenino",
     fechaNacimiento:"", talla:"", telefono:"", email:"", domicilio:"",
     estadoCivil:"", escolaridad:"", ocupacion:"", curp:"",
     contactoEmergencia:"", telEmergencia:"", parentescoEmergencia:"",
