@@ -22,6 +22,37 @@ const C = {
   amarillo:"#D69E2E", amarilloPale:"#FFFBEB",
 };
 
+// ── COMPONENTE BOTÓN REUTILIZABLE ────────────────────────────
+const Btn = ({onClick, children, color=C.azul, outline=false, icon, size="md", disabled=false, style={}}) => {
+  const sizes = {
+    sm: {padding:"7px 14px", fontSize:12},
+    md: {padding:"10px 18px", fontSize:13},
+    lg: {padding:"13px 22px", fontSize:14},
+  };
+  const s = sizes[size] || sizes.md;
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      ...s,
+      borderRadius: 10,
+      border: outline ? `1.5px solid ${color}` : "none",
+      background: outline ? "white" : color,
+      color: outline ? color : "white",
+      cursor: disabled ? "not-allowed" : "pointer",
+      fontWeight: 700,
+      opacity: disabled ? 0.5 : 1,
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      whiteSpace: "nowrap",
+      transition: "opacity 0.15s",
+      ...style
+    }}>
+      {icon && <span>{icon}</span>}
+      {children}
+    </button>
+  );
+};
+
 // ── STORAGE ──────────────────────────────────────────────────
 const sGet = async (k) => {
   try {
