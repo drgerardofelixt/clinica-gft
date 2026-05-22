@@ -431,17 +431,16 @@ const pdfToText = async (file) => {
 
 // ── Tanita parser ────────────────────────────────────────────
 const parseTanita = (text) => {
-  // Parser v6 — verificado con 3 PDFs reales de Tanita RD-545
-  // Estrategia: extracción por rangos con tracking de valores ya usados
-  // Segmentos: buscar después de la línea "kcal" (estable en todos los layouts)
+  // Parser v7 — orden POSICIONAL del PDF Tanita RD-545
+  // El PDF tiene un layout fijo: extraemos por posición de los valores numéricos
   const lines = text.split("\n").map(l=>l.trim()).filter(l=>l.length>0);
   const r = {};
 
   const kgVal = (s) => { const m=String(s||"").match(/^(\d+\.?\d*)\s*kg$/); return m?parseFloat(m[1]):null; };
   const pctVal = (s) => { const m=String(s||"").match(/^(\d+\.?\d*)\s*%$/); return m?parseFloat(m[1]):null; };
-  const decVal = (s) => /^\d{2,3}\.\d{1,2}$/.test(String(s||"")) ? parseFloat(s) : null;
+  const numVal = (s) => { const m=String(s||"").match(/^(\d+\.?\d*)$/); return m?parseFloat(m[1]):null; };
 
-  // ── Fecha ──
+  // ── Fecha y hora ──
   for (let i=0; i<Math.min(6,lines.length); i++) {
     const m = lines[i].match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2})/);
     if (m) { r.fecha=`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; r.hora=m[4]; break; }
@@ -449,1161 +448,187 @@ const parseTanita = (text) => {
 
   // ── ID, nombre, talla, edad ──
   if (/^\d{6,}$/.test(lines[0]||"")) r.idTanita = lines[0];
-  for (let i=0; i<Math.min(5,lines.length); i++) {
-    let m = lines[i].match(/^(.+?)\s+(\d{2,3})\s*cm$/);
+  for (let i=0; i<Math.min(6,lines.length); i++) {
+    const m = lines[i].match(/^(.+?)\s+(\d{2,3})\s*cm$/);
     if (m) { r.nombre=m[1].trim(); r.talla=parseInt(m[2]); break; }
-    m = lines[i].match(/^(\d{2,3})\s*cm$/);
-    if (m) r.talla = parseInt(m[1]);
   }
-  for (let i=1; i<Math.min(5,lines.length); i++) {
+  for (let i=1; i<Math.min(6,lines.length); i++) {
     if (/^\d{2,3}$/.test(lines[i])) {
       const v=parseInt(lines[i]); if(v>=10&&v<=100){r.edad=v;break;}
     }
   }
 
-  // ── Tracking de valores ya asignados (para no duplicar) ──
-  const usadosKg = new Set();
-  const usadosPct = new Set();
+  // ── Recolectar TODOS los valores numéricos con unidad en orden ──
+  // El PDF Tanita siempre tiene este orden secuencial:
+  // [peso, peso_repetido, musculo, musculo_repetido, tronco_M, brazoI_M, piernaI_M, brazoD_M, piernaD_M, ...]
+  // IMPORTANTE: A veces hay múltiples valores en una sola línea (ej "36.3 % 36.4 %")
+  const valoresKg = []; // {valor, idx}
+  const valoresPct = [];
+  for (let i=0; i<lines.length; i++) {
+    const l = lines[i];
+    // Saltar líneas de rangos saludables (contienen guion entre números)
+    if (/\d+\s*-\s*\d+/.test(l)) continue;
+    // Buscar TODOS los matches de "X.X kg" o "X.X %" en la línea
+    const matchesKg = l.matchAll(/(\d+\.?\d*)\s*kg/g);
+    for (const m of matchesKg) valoresKg.push({v: parseFloat(m[1]), i});
+    const matchesPct = l.matchAll(/(\d+\.?\d*)\s*%/g);
+    for (const m of matchesPct) valoresPct.push({v: parseFloat(m[1]), i});
+  }
 
-  // ── MASA GRASA: primer kg en 5-50 ──
-  for (const l of lines) {
-    const v=kgVal(l); if(v&&v>=5&&v<=50){r.masaGrasa=v;usadosKg.add(v);break;}
+  // ── PESO: primer valor kg (aparece duplicado) ──
+  if (valoresKg.length >= 1) r.peso = valoresKg[0].v;
+
+  // ── MASA MUSCULAR: 3er valor kg distinto (después de peso x2) ──
+  // O el primer valor distinto al peso
+  let idxMusc = -1;
+  for (let i=1; i<valoresKg.length; i++) {
+    if (valoresKg[i].v !== r.peso) { idxMusc = i; break; }
   }
-  // ── MASA ÓSEA: primer kg en 1-6 ──
-  for (const l of lines) {
-    const v=kgVal(l); if(v&&v>=1&&v<=6){r.masaOsea=v;usadosKg.add(v);break;}
+  if (idxMusc >= 0) r.masaMuscular = valoresKg[idxMusc].v;
+
+  // ── 5 SEGMENTOS MUSCULARES (después de masa muscular x2) ──
+  // Orden real del PDF: Tronco, Brazo I, Pierna I, Brazo D, Pierna D
+  let idxSegStart = -1;
+  if (idxMusc >= 0) {
+    // Saltar duplicado de músculo
+    for (let i=idxMusc+1; i<valoresKg.length; i++) {
+      if (valoresKg[i].v !== r.masaMuscular) { idxSegStart = i; break; }
+    }
   }
-  // ── PROTEÍNA: primer kg en 5-25 no usado ──
-  for (const l of lines) {
-    const v=kgVal(l); if(v&&v>=5&&v<=25&&!usadosKg.has(v)){r.proteina=v;usadosKg.add(v);break;}
-  }
-  // ── PESO: primer kg en 50-200 ──
-  for (const l of lines) {
-    const v=kgVal(l); if(v&&v>=50&&v<=200){r.peso=v;usadosKg.add(v);break;}
-  }
-  // ── MLG: primer kg en 45-90 no usado ──
-  for (const l of lines) {
-    const v=kgVal(l); if(v&&v>=45&&v<=90&&!usadosKg.has(v)){r.masaLibreGrasa=v;usadosKg.add(v);break;}
-  }
-  // ── MÚSCULO: primer kg en 35-85 no usado ──
-  for (const l of lines) {
-    const v=kgVal(l); if(v&&v>=35&&v<=85&&!usadosKg.has(v)){r.masaMuscular=v;usadosKg.add(v);break;}
-  }
-  // ── AGUA KG: primer kg en 20-60 no usado ──
-  for (const l of lines) {
-    const v=kgVal(l); if(v&&v>=20&&v<=60&&!usadosKg.has(v)){r.aguaCorporalKg=v;usadosKg.add(v);break;}
+  if (idxSegStart >= 0 && idxSegStart+4 < valoresKg.length) {
+    r.musculoTronco  = valoresKg[idxSegStart].v;
+    r.musculoBrazoI  = valoresKg[idxSegStart+1].v;
+    r.musculoPiernaI = valoresKg[idxSegStart+2].v;
+    r.musculoBrazoD  = valoresKg[idxSegStart+3].v;
+    r.musculoPiernaD = valoresKg[idxSegStart+4].v;
   }
 
   // ── GRASA %: primer % en 5-60 ──
-  for (const l of lines) {
-    const v=pctVal(l); if(v&&v>=5&&v<=60){r.grasa=v;usadosPct.add(v);break;}
-  }
-  // ── AGUA %: primer % en 30-75 no usado ──
-  for (const l of lines) {
-    const v=pctVal(l); if(v&&v>=30&&v<=75&&!usadosPct.has(v)){r.aguaCorporal=v;usadosPct.add(v);break;}
+  if (valoresPct.length >= 1) {
+    for (const x of valoresPct) {
+      if (x.v >= 5 && x.v <= 65) { r.grasa = x.v; break; }
+    }
   }
 
-  // ── IMC: primer decimal 15-50 ──
-  for (const l of lines) {
-    const v=decVal(l); if(v&&v>=15&&v<=50){r.imc=v;break;}
+  // ── 5 SEGMENTOS DE GRASA (% después del primer %) ──
+  // Orden real: Tronco %, Brazo I %, Pierna I %, Brazo D %, Pierna D %
+  // El primer % es la grasa total, viene duplicado, luego van los 5 segmentos
+  if (r.grasa !== undefined) {
+    // Encontrar índice del primer % de grasa total (puede haber duplicado)
+    let segPctIdx = -1;
+    let skipped = 0;
+    for (let i=0; i<valoresPct.length; i++) {
+      if (valoresPct[i].v === r.grasa) { skipped++; continue; }
+      if (skipped >= 1) { segPctIdx = i; break; }
+    }
+    if (segPctIdx >= 0 && segPctIdx+4 < valoresPct.length) {
+      r.grasaTronco  = valoresPct[segPctIdx].v;
+      r.grasaBrazoI  = valoresPct[segPctIdx+1].v;
+      r.grasaPiernaI = valoresPct[segPctIdx+2].v;
+      r.grasaBrazoD  = valoresPct[segPctIdx+3].v;
+      r.grasaPiernaD = valoresPct[segPctIdx+4].v;
+    }
   }
-  // ── EDAD METABÓLICA: siguiente decimal 20-90 después del IMC ──
-  let foundIMC=false;
+
+  // ── MASA GRASA (kg): valor kg en rango ──
+  // Aparece después del peso y músculo. Lo buscamos por rango ya que es único
+  const valoresKgUsadosSet = new Set([r.peso, r.masaMuscular]);
+  for (const x of valoresKg) {
+    if (valoresKgUsadosSet.has(x.v)) continue;
+    if (x.v >= 5 && x.v <= 100) {
+      // Saltar segmentos ya asignados
+      if (x.v === r.musculoTronco || x.v === r.musculoBrazoI || 
+          x.v === r.musculoPiernaI || x.v === r.musculoBrazoD || x.v === r.musculoPiernaD) continue;
+      r.masaGrasa = x.v;
+      valoresKgUsadosSet.add(x.v);
+      break;
+    }
+  }
+
+  // ── MASA ÓSEA: kg en 1-7 ──
+  for (const x of valoresKg) {
+    if (valoresKgUsadosSet.has(x.v)) continue;
+    if (x.v >= 1 && x.v <= 7) {
+      r.masaOsea = x.v;
+      valoresKgUsadosSet.add(x.v);
+      break;
+    }
+  }
+
+  // ── PROTEÍNA: kg en 5-30 ──
+  for (const x of valoresKg) {
+    if (valoresKgUsadosSet.has(x.v)) continue;
+    if (x.v >= 5 && x.v <= 30) {
+      r.proteina = x.v;
+      valoresKgUsadosSet.add(x.v);
+      break;
+    }
+  }
+
+  // ── AGUA %: primer % en 30-75 no usado como grasa ──
+  for (const x of valoresPct) {
+    if (x.v === r.grasa) continue;
+    if (x.v === r.grasaTronco || x.v === r.grasaBrazoI || x.v === r.grasaPiernaI ||
+        x.v === r.grasaBrazoD || x.v === r.grasaPiernaD) continue;
+    if (x.v >= 30 && x.v <= 75) { r.aguaCorporal = x.v; break; }
+  }
+
+  // ── AGUA KG: kg restante en 20-100 ──
+  for (const x of valoresKg) {
+    if (valoresKgUsadosSet.has(x.v)) continue;
+    if (x.v >= 20 && x.v <= 100) {
+      r.aguaCorporalKg = x.v;
+      valoresKgUsadosSet.add(x.v);
+      break;
+    }
+  }
+
+  // ── MASA LIBRE DE GRASA: kg restante en 40-150 ──
+  for (const x of valoresKg) {
+    if (valoresKgUsadosSet.has(x.v)) continue;
+    if (x.v >= 40 && x.v <= 150) {
+      r.masaLibreGrasa = x.v;
+      valoresKgUsadosSet.add(x.v);
+      break;
+    }
+  }
+
+  // ── IMC: decimal sin unidad en 15-60 ──
   for (const l of lines) {
-    const v=decVal(l);
-    if(v&&v===r.imc){foundIMC=true;continue;}
-    if(foundIMC){const v2=decVal(l);if(v2&&v2>=20&&v2<=90){r.edadMetabolica=v2;break;}}
+    const m = l.match(/^(\d{2,3}\.\d{1,2})$/);
+    if (m) {
+      const v = parseFloat(m[1]);
+      if (v >= 15 && v <= 60) { r.imc = v; break; }
+    }
+  }
+
+  // ── EDAD METABÓLICA: decimal después del IMC en 20-90 ──
+  let foundIMC = false;
+  for (const l of lines) {
+    const m = l.match(/^(\d{2,3}\.\d{1,2})$/);
+    if (!m) continue;
+    const v = parseFloat(m[1]);
+    if (!foundIMC && v === r.imc) { foundIMC = true; continue; }
+    if (foundIMC && v >= 20 && v <= 99) { r.edadMetabolica = v; break; }
   }
 
   // ── BMR ──
   for (const l of lines) {
-    const m=l.match(/(\d{3,5})\s*kcal/); if(m){r.bmr=parseInt(m[1]);break;}
+    const m = l.match(/(\d{3,5})\s*kcal/);
+    if (m) { r.bmr = parseInt(m[1]); break; }
   }
 
-  // ── GRASA VISCERAL: número 1-30 sin kg/% después de kcal ──
-  let foundKcal=false;
+  // ── GRASA VISCERAL: número entero 1-59 después de kcal ──
+  let foundKcal = false;
   for (const l of lines) {
-    if(l.includes("kcal")){foundKcal=true;continue;}
-    if(foundKcal&&!l.includes("kg")&&!l.includes("%")) {
-      const v=parseFloat(l);
-      if(!isNaN(v)&&v>=1&&v<=30){r.grasaVisceral=v;break;}
+    if (l.includes("kcal")) { foundKcal = true; continue; }
+    if (foundKcal && !l.includes("kg") && !l.includes("%") && !l.includes(".")) {
+      const v = parseInt(l);
+      if (!isNaN(v) && v >= 1 && v <= 59) { r.grasaVisceral = v; break; }
     }
   }
-
-  // ── SEGMENTOS: SIEMPRE DESPUÉS DE LA LÍNEA "kcal" ──
-  let idxKcal = -1;
-  for (let i=0; i<lines.length; i++) {
-    if(lines[i].includes("kcal")){idxKcal=i;break;}
-  }
-
-  // Cortar antes de "Initial" o "History" para evitar contaminar con valores históricos
-  let idxFin = lines.length;
-  for (let i=0; i<lines.length; i++) {
-    const ll=lines[i].toLowerCase();
-    if(ll.startsWith("initial")||ll.startsWith("history")){idxFin=i;break;}
-  }
-
-  // Buscar 5 segmentos musculares en orden REAL del PDF: Tronco, BrazoI, PiernaI, BrazoD, PiernaD
-  const musculoSegs = [];
-  if (idxKcal >= 0) {
-    for (let i=idxKcal+1; i<idxFin; i++) {
-      const v = kgVal(lines[i]);
-      if (v===null) continue;
-      if (usadosKg.has(v)) continue;  // saltar valores principales repetidos
-      // Saltar target del músculo (65 kg estándar Tanita)
-      if (v>=64.5 && v<=65.5 && musculoSegs.length===0) continue;
-
-      if (musculoSegs.length===0 && v>=15 && v<=60) musculoSegs.push(v);          // Tronco
-      else if (musculoSegs.length===1 && v>=0.5 && v<=8) musculoSegs.push(v);     // Brazo I
-      else if (musculoSegs.length===2 && v>=4 && v<=20) musculoSegs.push(v);      // Pierna I
-      else if (musculoSegs.length===3 && v>=0.5 && v<=8) musculoSegs.push(v);     // Brazo D
-      else if (musculoSegs.length===4 && v>=4 && v<=20) { musculoSegs.push(v); break; } // Pierna D
-    }
-  }
-  // Asignar según orden real del PDF: T, BI, PI, BD, PD
-  if (musculoSegs[0]!==undefined) r.musculoTronco  = musculoSegs[0];
-  if (musculoSegs[1]!==undefined) r.musculoBrazoI  = musculoSegs[1];
-  if (musculoSegs[2]!==undefined) r.musculoPiernaI = musculoSegs[2];
-  if (musculoSegs[3]!==undefined) r.musculoBrazoD  = musculoSegs[3];
-  if (musculoSegs[4]!==undefined) r.musculoPiernaD = musculoSegs[4];
-
-  // Buscar 5 segmentos de grasa% DESPUÉS del Tronco_M (no antes, evita targets)
-  let idxTroncoM = -1;
-  if (r.musculoTronco !== undefined) {
-    for (let i=idxKcal+1; i<idxFin; i++) {
-      if (kgVal(lines[i]) === r.musculoTronco) { idxTroncoM = i; break; }
-    }
-  }
-
-  const grasaSegs = [];
-  if (idxTroncoM > 0) {
-    for (let i=idxTroncoM+1; i<idxFin; i++) {
-      const v = pctVal(lines[i]);
-      if (v===null) continue;
-      if (usadosPct.has(v)) continue;  // saltar agua%
-      if (v>=5 && v<=60 && grasaSegs.length<5) grasaSegs.push(v);
-      if (grasaSegs.length===5) break;
-    }
-  }
-  if (grasaSegs[0]!==undefined) r.grasaTronco  = grasaSegs[0];
-  if (grasaSegs[1]!==undefined) r.grasaBrazoI  = grasaSegs[1];
-  if (grasaSegs[2]!==undefined) r.grasaPiernaI = grasaSegs[2];
-  if (grasaSegs[3]!==undefined) r.grasaBrazoD  = grasaSegs[3];
-  if (grasaSegs[4]!==undefined) r.grasaPiernaD = grasaSegs[4];
 
   return r;
-};
-
-
-
-const parseLabs = async (texto) => {
-  const r = {
-    fecha:null, laboratorio:null, paciente:null,
-    glucosa:null, hba1c:null, insulina:null, homa:null,
-    colesterol:null, trigliceridos:null, hdl:null, ldl:null,
-    tsh:null, t4:null, creatinina:null, bun:null,
-    alt:null, ast:null, ggt:null, acidoUrico:null,
-    vitD:null, b12:null, ferritina:null, notasAdicionales:""
-  };
-
-  const lines = texto.split("\n").map(l=>l.trim()).filter(l=>l.length>2);
-
-  // Extraer primer número válido de una línea (ignora años, folios, etc.)
-  const primerNum = (line) => {
-    const nums = line.match(/\b(\d{1,4}[.,]\d{1,4})\b|\b(\d{1,4})\b/g);
-    if (!nums) return null;
-    for (const n of nums) {
-      const v = parseFloat(n.replace(",","."));
-      // Ignorar años (2020-2030) y números de folio largos (>9999)
-      if (!isNaN(v) && v < 9999 && !(v>=2020&&v<=2030)) return v;
-    }
-    return null;
-  };
-
-  // Buscar analito en línea: retorna el valor si la línea contiene el nombre
-  // EVITANDO líneas que son ratios o referencias (contienen "/")
-  const buscarEnLineas = (keys, minV, maxV, evitarRatio=true) => {
-    for (let i=0; i<lines.length; i++) {
-      const ll = lines[i].toLowerCase();
-      const esRatio = evitarRatio && (ll.includes("ratio") || ll.includes("relación") ||
-        (ll.includes("/") && !ll.includes("mg/") && !ll.includes("u/") && !ll.includes("g/") && !ll.includes("mmol/")));
-      if (esRatio) continue;
-      for (const key of keys) {
-        if (ll.includes(key.toLowerCase())) {
-          // Buscar número en la misma línea O en las siguientes 3 líneas
-          const contexto = lines.slice(i, i+4).join(" ");
-          const v = primerNum(contexto);
-          if (v!==null && v>=minV && v<=maxV) return v;
-        }
-      }
-    }
-    return null;
-  };
-
-  // Fecha
-  let m = texto.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
-  if (m) {
-    const y = m[3].length===2?"20"+m[3]:m[3];
-    r.fecha = y+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0");
-  }
-
-  // Laboratorio (primeras 10 líneas)
-  const labNames = ["chopo","biointermédica","biointermedica","salud digna",
-    "médica sur","christus","cima","san josé","laboratorio clínico","bioquímico"];
-  for (const ln of lines.slice(0,12)) {
-    for (const name of labNames) {
-      if (ln.toLowerCase().includes(name)) { r.laboratorio=ln; break; }
-    }
-    if (r.laboratorio) break;
-  }
-
-  // Glucosa: buscar línea con "glucosa" que NO sea "hemoglobina glicosilada"
-  for (let i=0; i<lines.length; i++) {
-    const ll = lines[i].toLowerCase();
-    if (ll.includes("glucosa") && !ll.includes("glicosilad") && !ll.includes("promedio") && !ll.includes("estimado")) {
-      const contexto = lines.slice(i, i+4).join(" ");
-      const v = primerNum(contexto);
-      if (v!==null && v>=40 && v<=600) { r.glucosa=v; break; }
-    }
-  }
-
-  // HbA1c: línea con hba1c o hemoglobina glicosilada
-  r.hba1c = buscarEnLineas(["hba1c","hemoglobina glicosilada","hemoglobina a1c","hb a1c"], 3, 15);
-
-  // Insulina
-  r.insulina = buscarEnLineas(["insulina","insulin"], 1, 300);
-
-  // HOMA-IR: leer del PDF o calcular si hay glucosa e insulina
-  r.homa = buscarEnLineas(["homa"], 0.1, 20);
-  if (r.homa == null && r.glucosa != null && r.insulina != null) {
-    const homaCalc = (parseFloat(r.glucosa) * parseFloat(r.insulina)) / 405;
-    if (homaCalc > 0 && homaCalc < 50) r.homa = parseFloat(homaCalc.toFixed(2));
-  }
-
-  // Colesterol TOTAL: buscar línea con "colesterol total" o solo "colesterol"
-  // PERO no triglicéridos, no HDL, no LDL
-  for (let i=0; i<lines.length; i++) {
-    const ll = lines[i].toLowerCase();
-    if (ll.includes("colesterol") && !ll.includes("hdl") && !ll.includes("ldl") && !ll.includes("vldl") && !ll.includes("no-hdl")) {
-      const contexto = lines.slice(i, i+4).join(" ");
-      const v = primerNum(contexto);
-      if (v!==null && v>=100 && v<=500) { r.colesterol=v; break; }
-    }
-  }
-
-  // Triglicéridos
-  r.trigliceridos = buscarEnLineas(["triglicéridos","trigliceridos","triglic"], 30, 2000);
-
-  // HDL
-  r.hdl = buscarEnLineas(["hdl"], 10, 120);
-
-  // LDL
-  r.ldl = buscarEnLineas(["ldl"], 10, 400);
-
-  // TSH
-  r.tsh = buscarEnLineas(["tsh","tirotropina"], 0.01, 50);
-
-  // T4 Libre
-  r.t4 = buscarEnLineas(["t4 libre","t4l","tiroxina libre","ft4"], 0.1, 5);
-
-  // Creatinina sérica — EVITAR líneas con "BUN/Creatinina" o "ratio"
-  for (let i=0; i<lines.length; i++) {
-    const ll = lines[i].toLowerCase();
-    if (ll.includes("creatinina") && !ll.includes("bun") && !ll.includes("/creat") && !ll.includes("ratio") && !ll.includes("relación")) {
-      const contexto = lines.slice(i, i+4).join(" ");
-      const v = primerNum(contexto);
-      if (v!==null && v>=0.1 && v<=20) { r.creatinina=v; break; }
-    }
-  }
-
-  // BUN / Nitrógeno Uréico — NO el ratio BUN/Creatinina
-  for (let i=0; i<lines.length; i++) {
-    const ll = lines[i].toLowerCase();
-    const esBUN = ll.includes("nitrógeno uréico") || ll.includes("nitrogeno ureico") ||
-      ll.includes("urea nitrógeno") || (ll.includes("bun") && !ll.includes("bun/") && !ll.includes("/creat"));
-    if (esBUN) {
-      const contexto = lines.slice(i, i+4).join(" ");
-      const v = primerNum(contexto);
-      if (v!==null && v>=1 && v<=150) { r.bun=v; break; }
-    }
-  }
-
-  // ALT/TGP
-  r.alt = buscarEnLineas(["alt (tgp)","alt(tgp)","tgp","alt ","alanina aminotransferasa","alanino transferasa"], 1, 500);
-
-  // AST/TGO
-  r.ast = buscarEnLineas(["ast (tgo)","ast(tgo)","tgo","ast ","aspartato","aspartato aminotransferasa"], 1, 500);
-
-  // GGT
-  r.ggt = buscarEnLineas(["ggt","gamma glutamil","gammaglutamil","gamma-glutamil"], 1, 500);
-
-  // Ácido Úrico — EVITAR línea de "BUN" que tiene valor parecido
-  for (let i=0; i<lines.length; i++) {
-    const ll = lines[i].toLowerCase();
-    if (ll.includes("ácido úrico") || ll.includes("acido urico") || ll.includes("uric acid")) {
-      const contexto = lines.slice(i, i+4).join(" ");
-      const v = primerNum(contexto);
-      if (v!==null && v>=1 && v<=15) { r.acidoUrico=v; break; }
-    }
-  }
-
-  // Vitamina D
-  r.vitD = buscarEnLineas(["vitamina d","vit d","25-oh","25oh","calcidiol"], 1, 150);
-
-  // B12
-  r.b12 = buscarEnLineas(["vitamina b12","vit b12","cobalamina","b12"], 100, 2000);
-
-  // Ferritina
-  r.ferritina = buscarEnLineas(["ferritina","ferritin"], 1, 2000);
-
-  const found = Object.entries(r).filter(([k,v])=>
-    v!==null && !["notasAdicionales","laboratorio","paciente","fecha"].includes(k)
-  ).length;
-
-  if (found===0) {
-    throw new Error("No se encontraron valores en el PDF. Verifique que el PDF contenga texto (no sea imagen escaneada).");
-  }
-  return r;
-};
-
-
-const Inp = ({label, value, onChange, tipo="text", required=false, disabled=false, placeholder=""}) => (
-  <div style={{display:"flex",flexDirection:"column",gap:4}}>
-    <label style={{fontSize:11,fontWeight:600,color:C.suave}}>
-      {label}{required && <span style={{color:C.rojo}}> *</span>}
-    </label>
-    <input
-      type={tipo==="number"?"text":tipo}
-      inputMode={tipo==="number"?"decimal":undefined}
-      value={value||""}
-      onChange={e=>onChange(e.target.value)}
-      disabled={disabled}
-      placeholder={placeholder}
-      style={{padding:"9px 12px",borderRadius:8,border:"1.5px solid "+C.grisMedio,fontSize:15,
-        background:disabled?"#F8FAFC":"white",outline:"none",WebkitAppearance:"none"}}
-      onFocus={e=>e.target.style.borderColor=C.azul}
-      onBlur={e=>e.target.style.borderColor=C.grisMedio}
-    />
-  </div>
-);
-
-const Sel = ({label, value, onChange, opts, required=false}) => (
-  <div style={{display:"flex",flexDirection:"column",gap:4}}>
-    <label style={{fontSize:11,fontWeight:600,color:C.suave}}>
-      {label}{required && <span style={{color:C.rojo}}> *</span>}
-    </label>
-    <select value={value||""} onChange={e=>onChange(e.target.value)}
-      style={{padding:"9px 12px",borderRadius:8,border:"1.5px solid "+C.grisMedio,fontSize:15,background:"white"}}>
-      {opts.map(o=><option key={o} value={o}>{o}</option>)}
-    </select>
-  </div>
-);
-
-const Txt = ({label, value, onChange, rows=3, placeholder=""}) => (
-  <div style={{display:"flex",flexDirection:"column",gap:4}}>
-    <label style={{fontSize:11,fontWeight:600,color:C.suave}}>{label}</label>
-    <textarea value={value||""} onChange={e=>onChange(e.target.value)} rows={rows} placeholder={placeholder}
-      style={{padding:"9px 12px",borderRadius:8,border:"1.5px solid "+C.grisMedio,fontSize:14,resize:"vertical",outline:"none"}}
-      onFocus={e=>e.target.style.borderColor=C.azul}
-      onBlur={e=>e.target.style.borderColor=C.grisMedio}
-    />
-  </div>
-);
-
-const Row = ({children, cols=3}) => (
-  <div style={{display:"grid",gridTemplateColumns:"repeat("+cols+",1fr)",gap:12,marginBottom:12}}>
-    {children}
-  </div>
-);
-
-const Sec = ({title, icon="", badge="", children}) => (
-  <div style={{marginBottom:20}}>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,paddingBottom:6,borderBottom:"2px solid "+C.grisMedio}}>
-      {icon && <span style={{fontSize:16}}>{icon}</span>}
-      <span style={{fontSize:12,fontWeight:700,color:C.azul,textTransform:"uppercase",letterSpacing:0.8}}>{title}</span>
-      {badge && <span style={{fontSize:10,background:C.verde+"20",color:C.verde,padding:"2px 10px",borderRadius:10,fontWeight:700}}>{badge}</span>}
-    </div>
-    {children}
-  </div>
-);
-
-const Btn = ({onClick, children, color=C.azul, outline=false, size="md", icon="", disabled=false}) => {
-  const pad = size==="sm"?"6px 14px":size==="lg"?"13px 28px":"9px 20px";
-  const fs = size==="sm"?12:13;
-  return (
-    <button onClick={onClick} disabled={disabled} style={{
-      padding:pad, borderRadius:10, fontSize:fs, fontWeight:700, cursor:disabled?"not-allowed":"pointer",
-      border:outline?"1.5px solid "+color:"none",
-      background:disabled?C.grisMedio:outline?"white":color,
-      color:disabled?C.suave:outline?color:"white",
-      display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap",
-      WebkitTapHighlightColor:"transparent",
-      boxShadow:outline||disabled?"none":"0 1px 3px rgba(0,0,0,0.12)",
-    }}>
-      {icon && <span>{icon}</span>}
-      {children}
-    </button>
-  );
-};
-
-const Tag = ({v, color=C.azul}) => (
-  <span style={{fontSize:11,background:color+"18",color,padding:"3px 10px",borderRadius:10,fontWeight:600}}>{v}</span>
-);
-
-const Card = ({children, style={}}) => (
-  <div style={{background:"white",borderRadius:14,padding:18,
-    boxShadow:"0 1px 4px rgba(0,0,0,0.06)",border:"1px solid "+C.grisMedio,...style}}>
-    {children}
-  </div>
-);
-
-// ── Voz ──────────────────────────────────────────────────────
-const MicBtn = ({onResult, label="Dictar"}) => {
-  const [on, setOn] = useState(false);
-  const ref = useRef(null);
-  const toggle = () => {
-    const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
-    if (!SR) { alert("Tu navegador no soporta dictado de voz. Usa Safari."); return; }
-    if (on) { ref.current && ref.current.stop(); setOn(false); return; }
-    const r = new SR();
-    r.lang="es-MX"; r.continuous=true; r.interimResults=false;
-    r.onresult = e => {
-      const t = Array.from(e.results).map(x=>x[0].transcript).join(" ");
-      onResult(t);
-    };
-    r.onerror = () => setOn(false);
-    r.onend = () => setOn(false);
-    ref.current = r;
-    r.start(); setOn(true);
-  };
-  return (
-    <button onClick={toggle} style={{
-      padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",
-      border:"1.5px solid "+(on?C.rojo:C.grisMedio),
-      background:on?C.rojoPale:"white",color:on?C.rojo:C.suave,
-      display:"flex",alignItems:"center",gap:5,
-    }}>
-      <span>{on?"⏹":"🎤"}</span>
-      {on?"Grabando...":label}
-    </button>
-  );
-};
-
-// ── Logo / Footer docs ────────────────────────────────────────
-const LogoDoc = ({conCedula=true, compact=false}) => (
-  <div style={{display:"flex",alignItems:"center",gap:14,
-    paddingBottom:compact?10:14,borderBottom:"2.5px solid "+C.azul,marginBottom:compact?12:16}}>
-    <img src={conCedula?IMG_LOGO_CED:IMG_LOGO} alt="Dr. Gerardo Félix Tapia"
-      style={{height:compact?165:215,width:"auto",objectFit:"contain",flexShrink:0}}/>
-    <div style={{marginLeft:"auto",textAlign:"right",fontSize:compact?7:8,color:C.suave,lineHeight:1.8}}>
-      <div>Av. Adolfo de la Huerta 200A 2do piso</div>
-      <div>Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-      <div style={{color:C.azul,fontWeight:700}}>(662) 298-4145</div>
-      <div style={{fontSize:8}}>dr.gerardofelix@gmail.com</div>
-    </div>
-  </div>
-);
-
-const FooterDoc = () => (
-  <div style={{marginTop:20,paddingTop:8,borderTop:"1px solid "+C.grisMedio,
-    textAlign:"center",fontSize:7.5,color:C.suave}}>
-    <div style={{fontWeight:700,color:C.azul}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-    <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
-  </div>
-);
-
-// ── Bloques doc ───────────────────────────────────────────────
-const BD = ({t, children}) => (
-  <div style={{marginBottom:9,breakInside:"avoid"}}>
-    <div style={{fontSize:8,fontWeight:800,color:"white",background:C.azul,
-      padding:"3px 8px",borderRadius:"3px 3px 0 0",letterSpacing:0.5}}>{t}</div>
-    <div style={{border:"1px solid "+C.grisMedio,borderTop:"none",
-      padding:"7px 10px",borderRadius:"0 0 3px 3px"}}>{children}</div>
-  </div>
-);
-const G4 = ({children}) => (
-  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:"3px 10px",marginBottom:3}}>
-    {children}
-  </div>
-);
-const CF = ({l, v, span=1}) => (
-  <div style={{gridColumn:"span "+span,fontSize:9}}>
-    <span style={{color:C.suave,fontWeight:700}}>{l}: </span>
-    <span style={{color:C.texto}}>{v||"—"}</span>
-  </div>
-);
-const Firma = ({fecha="", hora="", firmaB64=null}) => (
-  <div style={{marginTop:28,display:"flex",justifyContent:"center"}}>
-    <div style={{textAlign:"center",minWidth:220}}>
-      {firmaB64 && (
-        <img src={firmaB64} alt="Firma" style={{height:60,marginBottom:-5,objectFit:"contain"}}/>
-      )}
-      <div style={{borderTop:"1px solid "+C.texto,paddingTop:5,fontSize:8.5}}>
-        <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
-        <div>Céd. Prof: 15131213 | Reg. SSA: 10361/16</div>
-      </div>
-    </div>
-  </div>
-);
-
-// ── DOCUMENTOS IMPRIMIBLES ───────────────────────────────────
-const DocHC = ({p}) => {
-  const c0 = (p.consultas||[])[0]||{};
-  const imc = calcIMC(c0.peso, p.talla);
-  return (
-    <div style={{fontFamily:"Arial,sans-serif",fontSize:10,color:C.texto,lineHeight:1.55}}>
-      <LogoDoc conCedula={true}/>
-      <div style={{textAlign:"center",background:C.azul,color:"white",
-        padding:"4px 0",borderRadius:4,marginBottom:11,fontWeight:800,letterSpacing:2,fontSize:10}}>
-        HISTORIA CLÍNICA
-      </div>
-      <BD t="IDENTIFICACIÓN">
-        <G4>
-          <CF l="Nombre" v={p.nombre} span={2}/>
-          <CF l="Fecha" v={fmtF(p.fechaInicio)}/>
-          <CF l="Hora" v={p.horaRegistro}/>
-        </G4>
-        <G4>
-          <CF l="F. Nac." v={fmtF(p.fechaNacimiento)}/>
-          <CF l="Edad" v={p.edad+" años"}/>
-          <CF l="Sexo" v={p.sexo}/>
-          <CF l="CURP" v={p.curp}/>
-        </G4>
-        <G4>
-          <CF l="Domicilio" v={p.domicilio} span={2}/>
-          <CF l="Teléfono" v={p.telefono}/>
-          <CF l="Email" v={p.email}/>
-        </G4>
-        <G4>
-          <CF l="Contacto emergencia" v={p.contactoEmergencia}/>
-          <CF l="Tel." v={p.telEmergencia}/>
-          <CF l="Parentesco" v={p.parentescoEmergencia}/>
-          <CF l="Médico" v="Dr. Gerardo Félix Tapia"/>
-        </G4>
-      </BD>
-      <BD t="MOTIVO DE CONSULTA">
-        <div style={{padding:"4px 8px",background:C.gris,borderRadius:3,fontSize:9.5}}>
-          {p.motivoConsulta||"Inicia manejo farmacológico GLP-1."}
-        </div>
-      </BD>
-      <BD t="ANTECEDENTES HEREDOFAMILIARES">
-        <G4>
-          <CF l="DM2" v={p.hf&&p.hf.dm2}/>
-          <CF l="HTA" v={p.hf&&p.hf.hta}/>
-          <CF l="Obesidad" v={p.hf&&p.hf.obesidad}/>
-          <CF l="Cardiopatías" v={p.hf&&p.hf.cardiopatia}/>
-        </G4>
-      </BD>
-      <BD t="ANTECEDENTES PATOLÓGICOS">
-        <G4>
-          <CF l="Enf. crónicas" v={p.ant&&p.ant.cronicas}/>
-          <CF l="Alergias" v={p.ant&&p.ant.alergias}/>
-          <CF l="Cirugías" v={p.ant&&p.ant.cirugias}/>
-          <CF l="Medicamentos" v={p.ant&&p.ant.medicamentos}/>
-        </G4>
-      </BD>
-      <BD t="EXPLORACIÓN FÍSICA">
-        <G4>
-          <CF l="Peso" v={c0.peso+" kg"}/>
-          <CF l="Talla" v={p.talla+" cm"}/>
-          <CF l="IMC" v={imc}/>
-          <CF l="Grado" v={gradoIMC(imc)}/>
-        </G4>
-        <G4>
-          <CF l="TA" v={c0.ta}/>
-          <CF l="FC" v={c0.fc}/>
-          <CF l="SpO2" v={c0.spo2}/>
-          <CF l="Glucosa cap." v={c0.glucosaCapilar}/>
-        </G4>
-      </BD>
-      <BD t="LABORATORIOS INICIALES">
-        <G4>
-          <CF l="Glucosa" v={p.labsI&&p.labsI.glucosa}/>
-          <CF l="HbA1c" v={p.labsI&&p.labsI.hba1c}/>
-          <CF l="HOMA-IR" v={p.labsI&&p.labsI.homa}/>
-          <CF l="TSH" v={p.labsI&&p.labsI.tsh}/>
-        </G4>
-        <G4>
-          <CF l="Colesterol" v={p.labsI&&p.labsI.colesterol}/>
-          <CF l="Triglicéridos" v={p.labsI&&p.labsI.trigliceridos}/>
-          <CF l="HDL" v={p.labsI&&p.labsI.hdl}/>
-          <CF l="LDL" v={p.labsI&&p.labsI.ldl}/>
-        </G4>
-      </BD>
-      <BD t="DIAGNÓSTICO Y TRATAMIENTO">
-        <G4>
-          <CF l="Diagnóstico" v={p.dx&&p.dx.principal}/>
-          <CF l="Grado" v={p.ci&&p.ci.grado}/>
-          <CF l="GLP-1" v={p.ci&&p.ci.glp1}/>
-          <CF l="Dosis" v={p.ci&&p.ci.dosis}/>
-        </G4>
-      </BD>
-      <BD t="CONSENTIMIENTO INFORMADO">
-        <div style={{fontSize:9}}>
-          {["Explicación de efectos esperados y secundarios del GLP-1.",
-            "Conducta ante vómito, náusea o hipoglucemia.",
-            "Riesgo de pancreatitis, colelitiasis y otras complicaciones.",
-            "Importancia del seguimiento mensual.",
-            "El paciente comprende y otorga consentimiento por escrito."
-          ].map((t,i)=><div key={i}>☑ {t}</div>)}
-        </div>
-        <div style={{marginTop:14,display:"grid",gridTemplateColumns:"1fr 1fr",gap:30}}>
-          <div style={{textAlign:"center"}}>
-            <div style={{borderTop:"1px solid "+C.texto,paddingTop:4,fontSize:8}}>
-              <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
-              <div>Céd. Prof: 15131213 | Reg. SSA: 10361/16</div>
-            </div>
-          </div>
-          <div style={{textAlign:"center"}}>
-            <div style={{borderTop:"1px solid "+C.texto,paddingTop:4,fontSize:8}}>
-              <div style={{fontWeight:700}}>{p.nombre}</div>
-              <div>Firma del paciente</div>
-            </div>
-          </div>
-        </div>
-      </BD>
-      <FooterDoc/>
-    </div>
-  );
-};
-
-const DocNota = ({p, consulta}) => {
-  const arr = p.consultas||[];
-  const idx = arr.findIndex(c=>c.id===consulta.id);
-  const prev = idx>0?arr[idx-1]:null;
-  const perd = prev && prev.peso && consulta.peso
-    ? (parseFloat(prev.peso)-parseFloat(consulta.peso)).toFixed(2) : "";
-  const perdT = arr[0] && arr[0].peso && consulta.peso
-    ? (parseFloat(arr[0].peso)-parseFloat(consulta.peso)).toFixed(2) : "";
-  return (
-    <div style={{fontFamily:"Arial,sans-serif",fontSize:10,color:C.texto,lineHeight:1.55}}>
-      <LogoDoc compact conCedula={true}/>
-      <div style={{textAlign:"center",background:C.azulClaro,color:"white",
-        padding:"3px 0",borderRadius:4,marginBottom:11,fontWeight:800,letterSpacing:1,fontSize:9}}>
-        NOTA DE EVOLUCIÓN
-      </div>
-      <BD t="IDENTIFICACIÓN">
-        <G4>
-          <CF l="Paciente" v={p.nombre} span={2}/>
-          <CF l="Edad" v={p.edad+" años"}/>
-          <CF l="Expediente" v={(p.id||"").slice(-6).toUpperCase()}/>
-        </G4>
-        <G4>
-          <CF l="Fecha" v={fmtF(consulta.fecha)}/>
-          <CF l="Hora" v={consulta.hora}/>
-          <CF l="Consulta No." v={""+(idx+1)}/>
-          <CF l="Médico" v="Dr. Gerardo Félix Tapia"/>
-        </G4>
-      </BD>
-      <BD t="S — SUBJETIVO">
-        <div style={{padding:"4px 8px",background:C.gris,borderRadius:3,fontSize:9.5}}>
-          {consulta.subjetivo||"—"}
-        </div>
-      </BD>
-      <BD t="O — OBJETIVO">
-        <G4>
-          <CF l="Peso" v={consulta.peso+" kg"}/>
-          <CF l="IMC" v={calcIMC(consulta.peso,p.talla)}/>
-          <CF l="Circ. Abd." v={consulta.ca}/>
-          <CF l="TA" v={consulta.ta}/>
-        </G4>
-        {consulta.comp && consulta.comp.grasa && (
-          <G4>
-            <CF l="% Grasa" v={consulta.comp.grasa+"%"}/>
-            <CF l="Músculo" v={consulta.comp.musculo+" kg"}/>
-            <CF l="Agua" v={consulta.comp.agua+"%"}/>
-            <CF l="Visceral" v={consulta.comp.visceral}/>
-          </G4>
-        )}
-      </BD>
-      <BD t="A — ANÁLISIS">
-        <G4>
-          <CF l="Pérdida consulta" v={perd?"↓ "+perd+" kg":"—"}/>
-          <CF l="Pérdida total" v={perdT?"↓ "+perdT+" kg":"—"}/>
-          <CF l="Respuesta" v={consulta.respuesta}/>
-          <CF l="Efectos sec." v={consulta.efectos}/>
-        </G4>
-      </BD>
-      <BD t="P — PLAN">
-        <G4>
-          <CF l="Medicamento" v={consulta.medicamento}/>
-          <CF l="Dosis" v={consulta.dosis}/>
-          <CF l="Cambio" v={consulta.cambioDosis}/>
-          <CF l="Próxima cita" v={fmtF(consulta.proxCita)}/>
-        </G4>
-        <CF l="Plan" v={consulta.plan} span={4}/>
-      </BD>
-      <Firma fecha={consulta.fecha} hora={consulta.hora}/>
-      <FooterDoc/>
-    </div>
-  );
-};
-
-const DocReceta = ({p, rec, firmaB64}) => {
-  const esGLP  = rec.tipo === "glp1";
-  const esLista= rec.tipo === "lista";
-  const esLibre= rec.tipo === "libre";
-  const firma  = firmaB64 || IMG_FIRMA;
-
-  return (
-    <div style={{
-      fontFamily:"Arial,sans-serif", fontSize:11, color:"#1A2332",
-      background:"white", WebkitPrintColorAdjust:"exact", printColorAdjust:"exact",
-      display:"flex", flexDirection:"column",
-      width:"21cm", minHeight:"27.9cm", margin:"0 auto",
-    }}>
-      {/* ── LOGO ── */}
-      <div style={{padding:"26px 38px 0"}}>
-        <img src={IMG_LOGO_CED} alt="Logo"
-          style={{height:190, width:"auto", objectFit:"contain", display:"block",
-            WebkitPrintColorAdjust:"exact", printColorAdjust:"exact"}}/>
-      </div>
-
-      {/* ── PACIENTE / EDAD / FECHA ── */}
-      <div style={{padding:"18px 38px 0"}}>
-        <div style={{display:"flex", alignItems:"baseline", gap:8, marginBottom:12}}>
-          <span style={{fontSize:11, color:"#64748B", minWidth:62}}>Paciente:</span>
-          <div style={{flex:1, borderBottom:"1px solid #94A3B8", paddingBottom:3,
-            fontSize:12, fontWeight:600, color:"#1A2332"}}>{p.nombre}</div>
-        </div>
-        <div style={{display:"flex", gap:36, marginBottom:22}}>
-          <div style={{display:"flex", alignItems:"baseline", gap:8, flex:"0 0 auto"}}>
-            <span style={{fontSize:11, color:"#64748B", minWidth:38}}>Edad:</span>
-            <div style={{minWidth:80, borderBottom:"1px solid #94A3B8", paddingBottom:3,
-              fontSize:12, fontWeight:600, textAlign:"center"}}>{p.edad}</div>
-          </div>
-          <div style={{display:"flex", alignItems:"baseline", gap:8, flex:1}}>
-            <span style={{fontSize:11, color:"#64748B", minWidth:42}}>Fecha:</span>
-            <div style={{flex:1, borderBottom:"1px solid #94A3B8", paddingBottom:3,
-              fontSize:12, fontWeight:600, textAlign:"center"}}>{fmtF(rec.fecha)}</div>
-          </div>
-        </div>
-
-        {/* ── CONTENIDO ── */}
-        <div style={{flex:1, minHeight:240}}>
-
-          {esGLP && (
-            <div style={{marginBottom:8}}>
-              <div style={{fontWeight:700, fontSize:12, color:"#1B3F8B", marginBottom:8}}>
-                {rec.med}
-              </div>
-              {(rec.instr||[]).map((l,i)=>(
-                <div key={i} style={{marginBottom:5, fontSize:11, paddingLeft:4}}>{l}</div>
-              ))}
-            </div>
-          )}
-
-          {esLista && (rec.items||[]).filter(x=>x.ok!==false).map((item,i)=>(
-            <div key={i} style={{marginBottom:14}}>
-              <div style={{fontWeight:700, fontSize:12, color:"#1A2332"}}>
-                {i+1}. {item.n}
-              </div>
-              <div style={{paddingLeft:16, fontSize:11, color:"#1A2332", marginTop:2}}>
-                {item.i}
-              </div>
-            </div>
-          ))}
-
-          {esLibre && (rec.items||[]).map((item,i)=>(
-            <div key={i} style={{marginBottom:14}}>
-              {item.n && (
-                <div style={{fontWeight:700, fontSize:12}}>{i+1}. {item.n}</div>
-              )}
-              {item.i && (
-                <div style={{paddingLeft:16, fontSize:11, marginTop:2}}>{item.i}</div>
-              )}
-            </div>
-          ))}
-
-          {rec.notaPie && rec.notaPie.split("\n").map((l,i)=>(
-            <div key={i} style={{
-              fontWeight: l.startsWith("-") ? 700 : 400,
-              fontSize:11, marginTop: l.startsWith("-") ? 14 : 2,
-            }}>{l}</div>
-          ))}
-
-          {rec.notasExtra && (
-            <div style={{marginTop:12, fontWeight:700, fontSize:11}}>- {rec.notasExtra}</div>
-          )}
-
-          {rec.proxCita && (
-            <div style={{marginTop:14, color:"#1B3F8B", fontWeight:700, fontSize:11}}>
-              Próxima cita: {fmtF(rec.proxCita)}
-            </div>
-          )}
-        </div>
-
-        {/* ── FIRMA + NOMBRE ── */}
-        <div style={{
-          display:"flex", flexDirection:"column", alignItems:"center",
-          marginTop:40, marginBottom:20,
-        }}>
-          {rec.conFirma && (
-            <img src={firma} alt="Firma"
-              style={{height:72, width:"auto", objectFit:"contain", marginBottom:6,
-                WebkitPrintColorAdjust:"exact", printColorAdjust:"exact"}}/>
-          )}
-          {!rec.conFirma && <div style={{height:64}}/>}
-          <div style={{width:"60%", borderTop:"1.5px solid #1A2332", paddingTop:8, textAlign:"center"}}>
-            <div style={{fontWeight:700, fontSize:13}}>Dr. Gerardo Félix Tapia</div>
-            <div style={{fontSize:11.5, color:"#1A2332", marginTop:3}}>
-              Céd. Prof: 15131213 &nbsp;|&nbsp; Reg. SSA: 10361/16
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── FOOTER: DIRECCIÓN + ONDAS ── */}
-      <div style={{marginTop:"auto"}}>
-        <div style={{
-          textAlign:"center", fontSize:9, color:"#1B3F8B", fontWeight:700,
-          padding:"8px 0 10px", lineHeight:2.0,
-          WebkitPrintColorAdjust:"exact", printColorAdjust:"exact",
-        }}>
-          Av. Adolfo de la Huerta 200A 2do piso<br/>
-          Col. Pitic, CP: 83150.<br/>
-          Hermosillo, Sonora &nbsp;|&nbsp; (662) 298-4145<br/>
-          dr.gerardofelix@gmail.com
-        </div>
-        <div style={{
-          background:"linear-gradient(180deg, white 0%, #6B7FFF 100%)",
-          WebkitPrintColorAdjust:"exact", printColorAdjust:"exact",
-          overflow:"hidden", lineHeight:0,
-        }}>
-          <img src={IMG_ONDAS} alt=""
-            style={{width:"100%", display:"block", height:"auto",
-              WebkitPrintColorAdjust:"exact", printColorAdjust:"exact"}}/>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
-const DocLabs = ({p, labs, firmaB64}) => (
-  <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-    <LogoDoc compact conCedula={true}/>
-    <G4>
-      <CF l="Paciente" v={p.nombre} span={2}/>
-      <CF l="Edad" v={p.edad+" años"}/>
-      <CF l="Fecha" v={fmtF(labs.fecha)}/>
-    </G4>
-    <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
-    <div style={{fontSize:13,fontWeight:700,marginBottom:12,color:C.azul}}>
-      Laboratorios solicitados:
-    </div>
-    {(labs.estudios||[]).map((e,i)=>(
-      <div key={i} style={{display:"flex",alignItems:"center",gap:10,
-        padding:"5px 0",borderBottom:"1px solid "+C.gris}}>
-        <span style={{color:C.azul,fontWeight:700}}>—</span>
-        <span>{e}</span>
-      </div>
-    ))}
-    {labs.notas && (
-      <div style={{marginTop:10,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
-        <b>Indicaciones:</b> {labs.notas}
-      </div>
-    )}
-    <Firma fecha={labs.fecha} firmaB64={firmaB64}/>
-    <FooterDoc/>
-  </div>
-);
-
-const DocProgreso = ({p}) => {
-  const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
-  const primera = comps[0];
-  const ultima = comps[comps.length-1];
-  // Cambio: positivo significa "perdió", negativo "ganó"
-  const d = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")?(parseFloat(a)-parseFloat(b)).toFixed(2):"—";
-  // Para circunferencia abdominal: viene de consultas, no composición
-  const consultas = (p.consultas||[]).filter(c=>c.ca);
-  const caIni = consultas[0]?consultas[0].ca:null;
-  const caAct = consultas[consultas.length-1]?consultas[consultas.length-1].ca:null;
-
-  // Verificar si hay datos segmentales para mostrar
-  const tieneSegs = comps.some(c=>c.musculoTronco||c.grasaTronco);
-
-  return (
-    <div style={{fontFamily:"Arial,sans-serif",fontSize:10,color:C.texto,lineHeight:1.55}}>
-      <LogoDoc compact conCedula={false}/>
-      <div style={{textAlign:"center",background:"linear-gradient(135deg,"+C.verde+" 0%,"+C.azul+" 100%)",
-        color:"white",padding:"8px 0",borderRadius:6,marginBottom:14}}>
-        <div style={{fontSize:13,fontWeight:900,letterSpacing:1}}>REPORTE DE PROGRESO</div>
-        <div style={{fontSize:10,opacity:0.9,marginTop:2}}>{p.nombre}</div>
-        <div style={{fontSize:8,opacity:0.85,marginTop:2}}>
-          {comps.length} mediciones · {primera&&primera.fecha?fmtF(primera.fecha):""} → {ultima&&ultima.fecha?fmtF(ultima.fecha):""}
-        </div>
-      </div>
-
-      {/* Cuadros destacados */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14}}>
-        {[
-          {l:"Peso perdido",v:d(primera&&primera.peso,ultima&&ultima.peso)+" kg",c:C.verde},
-          {l:"Grasa reducida",v:d(primera&&primera.grasa,ultima&&ultima.grasa)+" %",c:C.naranja},
-          {l:"Músculo actual",v:((ultima&&ultima.musculo)||"—")+" kg",c:C.azul},
-          {l:"CA actual",v:caAct?caAct+" cm":"—",c:C.morado},
-        ].map(m=>(
-          <div key={m.l} style={{border:"1.5px solid "+m.c+"30",borderRadius:8,padding:"10px 12px",background:m.c+"08"}}>
-            <div style={{fontSize:8,fontWeight:700,color:C.suave,textTransform:"uppercase"}}>{m.l}</div>
-            <div style={{fontSize:18,fontWeight:900,color:m.c,marginTop:2}}>{m.v}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Tabla principal de composición */}
-      <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>📊 Composición corporal</div>
-      <table style={{width:"100%",borderCollapse:"collapse",fontSize:9.5,marginBottom:14}}>
-        <thead>
-          <tr style={{background:C.azul,color:"white"}}>
-            {["Métrica","Inicio","Actual","Cambio"].map(h=>(
-              <th key={h} style={{padding:"5px 8px",textAlign:"center"}}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {[
-            ["Peso",(primera&&primera.peso)?primera.peso+" kg":"—",(ultima&&ultima.peso)?ultima.peso+" kg":"—",
-             d(primera&&primera.peso,ultima&&ultima.peso)+" kg",C.verde],
-            ["IMC",(primera&&primera.imc)?primera.imc:"—",(ultima&&ultima.imc)?ultima.imc:"—",
-             d(primera&&primera.imc,ultima&&ultima.imc),C.azul],
-            ["% Grasa",(primera&&primera.grasa)?primera.grasa+"%":"—",(ultima&&ultima.grasa)?ultima.grasa+"%":"—",
-             d(primera&&primera.grasa,ultima&&ultima.grasa)+"%",C.naranja],
-            ["Músculo",(primera&&primera.musculo)?primera.musculo+" kg":"—",(ultima&&ultima.musculo)?ultima.musculo+" kg":"—",
-             d(ultima&&ultima.musculo,primera&&primera.musculo)+" kg",C.verde],
-            ["Agua",(primera&&primera.agua)?primera.agua+"%":"—",(ultima&&ultima.agua)?ultima.agua+"%":"—",
-             d(ultima&&ultima.agua,primera&&primera.agua)+"%",C.azulClaro],
-            ["Grasa visceral",(primera&&primera.visceral)?primera.visceral:"—",(ultima&&ultima.visceral)?ultima.visceral:"—",
-             d(primera&&primera.visceral,ultima&&ultima.visceral),C.rojo],
-            ["Edad metabólica",(primera&&primera.edadMet)?primera.edadMet+" años":"—",(ultima&&ultima.edadMet)?ultima.edadMet+" años":"—",
-             d(primera&&primera.edadMet,ultima&&ultima.edadMet)+" años",C.morado],
-            ["Circ. abdominal",caIni?caIni+" cm":"—",caAct?caAct+" cm":"—",
-             d(caIni,caAct)+" cm",C.morado],
-            ["Masa ósea",(primera&&primera.osea)?primera.osea+" kg":"—",(ultima&&ultima.osea)?ultima.osea+" kg":"—",
-             d(ultima&&ultima.osea,primera&&primera.osea)+" kg",C.suave],
-            ["BMR",(primera&&primera.bmr)?primera.bmr+" kcal":"—",(ultima&&ultima.bmr)?ultima.bmr+" kcal":"—",
-             d(ultima&&ultima.bmr,primera&&primera.bmr)+" kcal",C.morado],
-          ].map(([m,ini,act,cam,col],i)=>(
-            <tr key={i} style={{background:i%2===0?C.gris:"white"}}>
-              <td style={{padding:"5px 8px",fontWeight:700}}>{m}</td>
-              <td style={{padding:"5px 8px",textAlign:"center"}}>{ini}</td>
-              <td style={{padding:"5px 8px",textAlign:"center",fontWeight:700}}>{act}</td>
-              <td style={{padding:"5px 8px",textAlign:"center",color:col,fontWeight:800}}>{cam}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {/* Segmentos musculares */}
-      {tieneSegs && (
-        <>
-          <div style={{fontSize:11,fontWeight:800,color:C.verde,marginBottom:6}}>💪 Músculo por segmento (kg)</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:9.5,marginBottom:14}}>
-            <thead>
-              <tr style={{background:C.verde,color:"white"}}>
-                {["Zona","Inicio","Actual","Cambio"].map(h=>(
-                  <th key={h} style={{padding:"5px 8px",textAlign:"center"}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                ["Tronco","musculoTronco"],
-                ["Brazo izquierdo","musculoBI"],
-                ["Brazo derecho","musculoBD"],
-                ["Pierna izquierda","musculoPI"],
-                ["Pierna derecha","musculoPD"],
-              ].map(([nom,k],i)=>{
-                const ini = primera&&primera[k]?primera[k]+" kg":"—";
-                const act = ultima&&ultima[k]?ultima[k]+" kg":"—";
-                const cam = d(ultima&&ultima[k],primera&&primera[k])+" kg";
-                return (
-                  <tr key={i} style={{background:i%2===0?C.gris:"white"}}>
-                    <td style={{padding:"5px 8px",fontWeight:700}}>{nom}</td>
-                    <td style={{padding:"5px 8px",textAlign:"center"}}>{ini}</td>
-                    <td style={{padding:"5px 8px",textAlign:"center",fontWeight:700}}>{act}</td>
-                    <td style={{padding:"5px 8px",textAlign:"center",color:C.verde,fontWeight:800}}>{cam}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          <div style={{fontSize:11,fontWeight:800,color:C.naranja,marginBottom:6}}>🔥 Grasa por segmento (%)</div>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:9.5,marginBottom:14}}>
-            <thead>
-              <tr style={{background:C.naranja,color:"white"}}>
-                {["Zona","Inicio","Actual","Cambio"].map(h=>(
-                  <th key={h} style={{padding:"5px 8px",textAlign:"center"}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                ["Tronco","grasaTronco"],
-                ["Brazo izquierdo","grasaBI"],
-                ["Brazo derecho","grasaBD"],
-                ["Pierna izquierda","grasaPI"],
-                ["Pierna derecha","grasaPD"],
-              ].map(([nom,k],i)=>{
-                const ini = primera&&primera[k]?primera[k]+"%":"—";
-                const act = ultima&&ultima[k]?ultima[k]+"%":"—";
-                const cam = d(primera&&primera[k],ultima&&ultima[k])+"%";
-                return (
-                  <tr key={i} style={{background:i%2===0?C.gris:"white"}}>
-                    <td style={{padding:"5px 8px",fontWeight:700}}>{nom}</td>
-                    <td style={{padding:"5px 8px",textAlign:"center"}}>{ini}</td>
-                    <td style={{padding:"5px 8px",textAlign:"center",fontWeight:700}}>{act}</td>
-                    <td style={{padding:"5px 8px",textAlign:"center",color:C.naranja,fontWeight:800}}>{cam}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </>
-      )}
-
-      <div style={{background:C.verdePale,border:"1.5px solid "+C.verde+"30",borderRadius:8,
-        padding:10,marginTop:8,fontSize:10,textAlign:"center"}}>
-        <div style={{fontWeight:800,color:C.verde,marginBottom:3}}>¡Excelente avance!</div>
-        <div style={{color:C.texto}}>Continúe con su plan de tratamiento y nutrición.</div>
-      </div>
-      <FooterDoc/>
-    </div>
-  );
-};
-
-// ── Modal genérico ───────────────────────────────────────────
-const Modal = ({title, children, onClose, color}) => {
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
-      overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:750,overflow:"hidden",
-        boxShadow:"0 20px 60px rgba(0,0,0,0.2)",margin:"20px 0"}}>
-        <div style={{background:color||C.azul,padding:"14px 22px",display:"flex",
-          justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{color:"white",fontWeight:800,fontSize:15}}>{title}</div>
-          <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",
-            color:"white",fontSize:18,cursor:"pointer",borderRadius:8,padding:"2px 10px",width:32,height:32}}>×</button>
-        </div>
-        <div style={{maxHeight:"80vh",overflow:"auto"}}>
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── Print modal ───────────────────────────────────────────────
-const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
-  const ref = useRef();
-
-  // Generar PDF como Blob para compartir nativamente
-  const generarHtml = () => {
-    const css = `*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;padding:0;color:#1A2332}@page{margin:8mm size:letter}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}img{max-width:100%}}`;
-    return "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"+css+"</style></head><body>"+ref.current.innerHTML+"</body></html>";
-  };
-
-  // Estado para indicar generación en progreso
-  const [generandoPDF, setGenerandoPDF] = useState(false);
-
-  // Compartir: genera PDF real y abre hoja de compartir nativa (WhatsApp, etc.)
-  const compartir = async () => {
-    setGenerandoPDF(true);
-    try {
-      const resultado = await compartirPDF(ref, titulo || "Reporte");
-      if (!resultado) {
-        alert("Tu navegador no soporta compartir archivos. El PDF fue descargado.");
-      }
-    } catch (e) {
-      console.error("Error generando PDF:", e);
-      alert("Error al generar el PDF: " + e.message);
-    } finally {
-      setGenerandoPDF(false);
-    }
-  };
-
-  // Imprimir usando iframe oculto (única forma confiable en sandbox iOS)
-  const print = () => {
-    try {
-      // Crear iframe en el documento actual
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.right = "-9999px";
-      iframe.style.bottom = "-9999px";
-      iframe.style.width = "8.5in";
-      iframe.style.height = "11in";
-      iframe.style.border = "0";
-      document.body.appendChild(iframe);
-
-      const css = "*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{font-family:Arial,sans-serif;padding:8mm;color:#1A2332;background:white}img{max-width:100%}@page{margin:8mm;size:letter}@media print{*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}}";
-      const html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"+ (titulo||"Reporte") +"</title><style>"+css+"</style></head><body>"+ref.current.innerHTML+"</body></html>";
-
-      const doc = iframe.contentWindow.document;
-      doc.open(); doc.write(html); doc.close();
-
-      setTimeout(()=>{
-        try {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-          // Limpiar después de imprimir
-          setTimeout(()=>{ try{document.body.removeChild(iframe);}catch(e){} }, 5000);
-        } catch(e) {
-          console.error("Error imprimir:", e);
-          alert("No se pudo abrir el diálogo de impresión.");
-          try{document.body.removeChild(iframe);}catch(e){}
-        }
-      }, 500);
-    } catch(e) {
-      console.error(e);
-      alert("Error: " + e.message);
-    }
-  };
-
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:3000,
-      display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflow:"auto"}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:730,
-        maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-          padding:"12px 20px",background:C.azul}}>
-          <span style={{fontWeight:800,color:"white",fontSize:13}}>{titulo}</span>
-          <div style={{display:"flex",gap:8}}>
-            {onWA && (
-              <button onClick={onWA} style={{padding:"7px 16px",borderRadius:8,border:"none",
-                background:"#25D366",color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                📱 WhatsApp
-              </button>
-            )}
-            <button onClick={compartir} disabled={generandoPDF}
-              style={{padding:"7px 16px",borderRadius:8,border:"none",
-                background:generandoPDF?C.suave:C.morado,color:"white",
-                cursor:generandoPDF?"wait":"pointer",fontWeight:700,fontSize:12}}>
-              {generandoPDF ? "⏳ Generando..." : "📤 Compartir PDF"}
-            </button>
-            <button onClick={print} style={{padding:"7px 16px",borderRadius:8,border:"none",
-              background:"white",color:C.azul,cursor:"pointer",fontWeight:700,fontSize:12}}>
-              🖨️ Imprimir
-            </button>
-            <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",
-              fontSize:20,cursor:"pointer",color:"white",borderRadius:6,padding:"2px 8px"}}>×</button>
-          </div>
-        </div>
-        {extraHeader && (
-          <div style={{padding:"8px 20px",background:C.gris,borderBottom:"1px solid "+C.grisMedio,
-            display:"flex",justifyContent:"flex-end"}}>
-            {extraHeader}
-          </div>
-        )}
-        <div style={{overflow:"auto",flex:1,padding:20}}>
-          <div ref={ref} style={{background:"white",padding:28,maxWidth:660,
-            margin:"0 auto",border:"1px solid "+C.grisMedio,borderRadius:8}}>
-            {children}
-          </div>
-        </div>
-      </div>
-
-    </div>
-  );
 };
 
 // ── Tanita Uploader ──────────────────────────────────────────
