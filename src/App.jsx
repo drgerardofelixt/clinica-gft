@@ -1,4 +1,4 @@
-// Sistema Clínico GFT v8 — Dr. Gerardo Félix Tapia
+// Sistema Clínico GFT v9 — Dr. Gerardo Félix Tapia — Build 2026-05-24-08:15
 import { useState, useEffect, useRef } from "react";
 import { compartirPDF } from "./pdf.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
@@ -3266,7 +3266,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
   });
 
   const pacFiltrados = busqPac
-    ? pacientes.filter(p=>p.nombre.toLowerCase().includes(busqPac.toLowerCase())).slice(0,5)
+    ? pacientes.filter(p=>p && p.nombre && p.nombre.toLowerCase().includes(busqPac.toLowerCase())).slice(0,5)
     : [];
 
   const confirmarAgenda = () => {
@@ -3447,7 +3447,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
             const pacOcupado = ocupadas.find(o=>o.hora===h);
             return (
               <button key={h} onClick={()=>setHoraSel(h)}
-                title={ocupada?"Ya hay cita: "+pacOcupado.pac+" — puedes encimar":""}
+                title={ocupada?"Ya hay cita: "+(pacOcupado?.pac||"otro paciente")+" — puedes encimar":""}
                 style={{
                   padding:"7px 4px",borderRadius:6,fontSize:11,fontWeight:700,
                   border:"1px solid "+(sel?C.azul:ocupada?C.naranja:C.grisMedio),
@@ -3505,6 +3505,9 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
 const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes}) => {
   const [mesOffset, setMesOffset] = useState(0); // 0=mes actual, -1=anterior, +1=siguiente
   const hoy = new Date(); hoy.setHours(0,0,0,0);
+
+  // Sanitizar pacientes: asegurar que sea array y filtrar inválidos
+  pacientes = (pacientes||[]).filter(p => p && typeof p === "object");
 
   const totalC = pacientes.reduce((a,p)=>a+(p.consultas||[]).length,0);
 
