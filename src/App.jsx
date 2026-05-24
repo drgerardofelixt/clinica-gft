@@ -1,4 +1,4 @@
-// Sistema Clínico GFT v9 — Dr. Gerardo Félix Tapia — Build 2026-05-24-08:15
+// Sistema Clínico GFT v10 — Dr. Gerardo Félix Tapia — Build 2026-05-24-11:00 PARSER V8
 import { useState, useEffect, useRef } from "react";
 import { compartirPDF } from "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal } from "./googleCalendar.js";
@@ -866,10 +866,16 @@ const TanitaUp = ({nombre, onApply}) => {
               </div>
             )}
           </div>
-          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-            <Btn onClick={()=>{setSt("idle");setData(null);if(ref.current)ref.current.value="";}}
-              outline color={C.suave} size="sm">Cancelar</Btn>
-            <Btn onClick={apply} color={C.verde} icon="✓" size="sm">Aplicar</Btn>
+          <div style={{display:"flex",gap:8,justifyContent:"space-between",alignItems:"center"}}>
+            <Btn onClick={()=>{
+              const w = window.open("","_blank");
+              w.document.write(`<pre style="font-family:monospace;font-size:12px;padding:20px;white-space:pre-wrap">TEXTO CRUDO EXTRAÍDO DEL PDF:\n\n${rawText.replace(/</g,"&lt;")}\n\n--- DATOS PARSEADOS ---\n${JSON.stringify(data,null,2)}</pre>`);
+            }} outline color={C.naranja} size="sm">🔍 Ver datos crudos</Btn>
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={()=>{setSt("idle");setData(null);if(ref.current)ref.current.value="";}}
+                outline color={C.suave} size="sm">Cancelar</Btn>
+              <Btn onClick={apply} color={C.verde} icon="✓" size="sm">Aplicar</Btn>
+            </div>
           </div>
         </div>
       )}
