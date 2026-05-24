@@ -3269,11 +3269,6 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
       }
     });
   });
-  // Agregar eventos de Google Calendar
-  (gcalEventos||[]).forEach(ev=>{
-    const fechaEv = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
-    if (fechaEv) citasPorDia[fechaEv] = (citasPorDia[fechaEv]||0) + 1;
-  });
 
   const pacFiltrados = busqPac
     ? pacientes.filter(p=>p && p.nombre && p.nombre.toLowerCase().includes(busqPac.toLowerCase())).slice(0,5)
@@ -3703,37 +3698,162 @@ Saludos!`;
             <Btn onClick={()=>setMesOffset(0)} outline color={C.azul} size="sm">Volver al mes actual</Btn>
           </div>
         )}
-        {citasMes.length===0 ? (
-          <div style={{textAlign:"center",padding:30,color:C.suave}}>
-            <div style={{fontSize:32,marginBottom:8}}>📅</div>
-            <div style={{fontSize:12}}>Sin citas programadas en {mesStr}</div>
-          </div>
-        ) : citasMes.map((c,i)=>{
-          const esHoy = c.fecha===hoyStr;
-          const esManana = c.fecha===mananaStr;
-          const dias = Math.floor((new Date(c.fecha+"T00:00:00").getTime()-hoy.getTime())/86400000);
+
+        {/* Calendario mensual visual */}
+        {(() => {
+          const mesR = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
+          const primerD = mesR.getDay();
+          const diasM = new Date(mesR.getFullYear(), mesR.getMonth()+1, 0).getDate();
+          const hoyStr2 = hoy.toISOString().split("T")[0];
+
+          // Combinar citas de la app + Google Calendar
+          const citasDia = {};
+          pacientes.forEach(p=>{
+            (p.consultas||[]).forEach(c=>{
+              if (c.proxCita) {
+                if (!citasDia[c.proxCita]) citasDia[c.proxCita] = [];
+                citasDia[c.proxCita].push({nombre:p.nombre, hora:c.proxHora||"", tipo:"app"});
+              }
+            });
+          });
+          (gcalEventos||[]).forEach(ev=>{
+            const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+            const h = ev.start?.dateTime ? ev.start.dateTime.split("T")[1]?.slice(0,5) : "";
+            if (f) {
+              if (!citasDia[f]) citasDia[f] = [];
+              citasDia[f].push({nombre:ev.summary||"Evento", hora:h||"", tipo:"gcal"});
+            }
+          });
+
           return (
-            <div key={i} onClick={()=>onVer(c.pac)}
-              style={{display:"flex",alignItems:"center",gap:12,padding:"8px 12px",borderRadius:10,
-                background:esHoy?C.verdePale:esManana?C.amarilloPale:C.gris,
-                cursor:"pointer",marginBottom:6,
-                border:"1px solid "+(esHoy?C.verde:esManana?C.amarillo:C.grisMedio)}}>
-              <div style={{textAlign:"center",minWidth:55}}>
-                <div style={{fontSize:14,fontWeight:900,
-                  color:esHoy?C.verde:esManana?C.amarillo:C.azul}}>
-                  {fmtF(c.fecha).split(" ")[0]}
-                </div>
-                {c.hora && <div style={{fontSize:10,color:C.suave,fontWeight:700}}>{c.hora}</div>}
+            <>
+              {/* Cabecera días */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+                {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d,i)=>(
+                  <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
+                    color:i===0||i===6?C.rojo:C.suave,padding:"4px 0"}}>{d}</div>
+                ))}
               </div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:12}}>{c.pac?.nombre}</div>
-                <div style={{fontSize:10,color:C.suave}}>
-                  {esHoy?"Hoy":esManana?"Mañana":dias>0?`En ${dias} días`:`Hace ${-dias} días`}
-                </div>
+              {/* Días del mes */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:12}}>
+                {Array.from({length:primerD}).map((_,i)=><div key={"e"+i}/>)}
+                {Array.from({length:diasM}).map((_,i)=>{
+                  const dia = i+1;
+                  const fechaDia = `${mesR.getFullYear()}-${String(mesR.getMonth()+1).padStart(2,"0")}-${String(dia).padStart(2,"0")}`;
+                  const esHoy = fechaDia===hoyStr2;
+                  const citas = citasDia[fechaDia]||[];
+                  const nCitas = citas.length;
+                  const tieneGcal = citas.some(c=>c.tipo==="gcal");
+                  const tieneApp = citas.some(c=>c.tipo==="app");
+                  return (
+                    <div key={dia} style={{
+                      minHeight:44,borderRadius:6,padding:"3px 2px",
+                      background:esHoy?C.azul:nCitas>0?C.azulPale:"white",
+                      border:"1px solid "+(esHoy?C.azul:nCitas>0?C.azulClaro+"40":C.grisMedio),
+                      cursor:"default",position:"relative"
+                    }}>
+                      <div style={{textAlign:"center",fontSize:11,fontWeight:esHoy?900:600,
+                        color:esHoy?"white":nCitas>0?C.azul:C.texto}}>{dia}</div>
+                      {nCitas>0 && (
+                        <div style={{marginTop:1}}>
+                          {citas.slice(0,2).map((c,ci)=>(
+                            <div key={ci} style={{
+                              fontSize:8,lineHeight:1.2,padding:"1px 3px",borderRadius:3,marginBottom:1,
+                              background:c.tipo==="gcal"?"#4285F420":C.verde+"30",
+                              color:c.tipo==="gcal"?"#4285F4":C.verde,
+                              fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"
+                            }}>
+                              {c.hora?c.hora+" ":""}{c.nombre}
+                            </div>
+                          ))}
+                          {nCitas>2 && <div style={{fontSize:8,color:C.suave,textAlign:"center"}}>+{nCitas-2} más</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+
+              {/* Lista de citas del mes */}
+              {citasMes.length===0 && (gcalEventos||[]).filter(ev=>{
+                const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+                const fDate = new Date(f+"T00:00:00");
+                return fDate >= mesRef && fDate <= finMes;
+              }).length===0 ? (
+                <div style={{textAlign:"center",padding:"16px 0",color:C.suave,fontSize:12}}>
+                  Sin citas programadas en {mesStr}
+                </div>
+              ) : (
+                <>
+                  {/* Citas de la app */}
+                  {citasMes.map((c,i)=>{
+                    const esHoy = c.fecha===hoyStr;
+                    const esManana = c.fecha===mananaStr;
+                    const dias = Math.floor((new Date(c.fecha+"T00:00:00").getTime()-hoy.getTime())/86400000);
+                    return (
+                      <div key={i} onClick={()=>c.pac && onVer(c.pac)}
+                        style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",borderRadius:8,
+                          background:esHoy?C.verdePale:esManana?C.amarilloPale:C.gris,
+                          cursor:"pointer",marginBottom:4,
+                          border:"1px solid "+(esHoy?C.verde:esManana?C.amarillo:C.grisMedio)}}>
+                        <div style={{textAlign:"center",minWidth:40}}>
+                          <div style={{fontSize:12,fontWeight:900,color:esHoy?C.verde:esManana?C.amarillo:C.azul}}>
+                            {new Date(c.fecha+"T00:00:00").getDate()}
+                          </div>
+                          {c.hora && <div style={{fontSize:9,color:C.suave,fontWeight:700}}>{c.hora}</div>}
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:11}}>{c.pac?.nombre}</div>
+                          <div style={{fontSize:9,color:C.suave}}>
+                            {esHoy?"Hoy":esManana?"Mañana":dias>0?`En ${dias} días`:`Hace ${-dias} días`}
+                          </div>
+                        </div>
+                        <Tag color={C.azul} style={{fontSize:9}}>App</Tag>
+                      </div>
+                    );
+                  })}
+                  {/* Eventos de Google Calendar */}
+                  {(gcalEventos||[]).filter(ev=>{
+                    const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+                    const fDate = new Date(f+"T00:00:00");
+                    return fDate >= mesRef && fDate <= finMes;
+                  }).sort((a,b)=>{
+                    const fa = a.start?.dateTime||a.start?.date||"";
+                    const fb = b.start?.dateTime||b.start?.date||"";
+                    return fa.localeCompare(fb);
+                  }).map((ev,i)=>{
+                    const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+                    const h = ev.start?.dateTime ? ev.start.dateTime.split("T")[1]?.slice(0,5) : "";
+                    const esHoy = f===hoyStr;
+                    const esManana = f===mananaStr;
+                    const dias = Math.floor((new Date(f+"T00:00:00").getTime()-hoy.getTime())/86400000);
+                    return (
+                      <div key={"g"+i}
+                        style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",borderRadius:8,
+                          background:esHoy?"#E8F4FD":esManana?"#EEF7FF":"#F8FBFF",
+                          marginBottom:4,
+                          border:"1px solid "+(esHoy?"#4285F4":"#4285F420")}}>
+                        <div style={{textAlign:"center",minWidth:40}}>
+                          <div style={{fontSize:12,fontWeight:900,color:"#4285F4"}}>
+                            {new Date(f+"T00:00:00").getDate()}
+                          </div>
+                          {h && <div style={{fontSize:9,color:C.suave,fontWeight:700}}>{h}</div>}
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:11}}>{ev.summary||"Evento"}</div>
+                          <div style={{fontSize:9,color:C.suave}}>
+                            {esHoy?"Hoy":esManana?"Mañana":dias>0?`En ${dias} días`:`Hace ${-dias} días`}
+                          </div>
+                        </div>
+                        <Tag color="#4285F4" style={{fontSize:9}}>Google</Tag>
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </>
           );
-        })}
+        })()}
       </Card>
 
       {labsHoy.length>0 && (
