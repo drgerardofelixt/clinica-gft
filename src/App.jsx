@@ -53,6 +53,117 @@ const Btn = ({onClick, children, color=C.azul, outline=false, icon, size="md", d
   );
 };
 
+// ── COMPONENTES UI BÁSICOS ────────────────────────────────────
+const Card = ({children, style={}}) => (
+  <div style={{background:"white",borderRadius:14,border:"1px solid "+C.grisMedio,
+    padding:16,marginBottom:12,...style}}>
+    {children}
+  </div>
+);
+
+const Row = ({children, style={}}) => (
+  <div style={{display:"flex",gap:10,flexWrap:"wrap",...style}}>{children}</div>
+);
+
+const Sec = ({title, children, color, style={}}) => (
+  <div style={{marginBottom:18,...style}}>
+    {title && <div style={{fontWeight:800,fontSize:13,color:color||C.azul,
+      marginBottom:8,paddingBottom:5,borderBottom:"2px solid "+(color||C.azul)+"30"}}>
+      {title}
+    </div>}
+    {children}
+  </div>
+);
+
+const Tag = ({children, color=C.azul, style={}}) => (
+  <span style={{background:color+"18",color:color,borderRadius:20,
+    padding:"3px 10px",fontSize:11,fontWeight:700,...style}}>
+    {children}
+  </span>
+);
+
+const Txt = ({label, value, style={}}) => (
+  <div style={{marginBottom:6,...style}}>
+    {label && <div style={{fontSize:10,color:C.suave,fontWeight:700,textTransform:"uppercase",
+      letterSpacing:0.5,marginBottom:2}}>{label}</div>}
+    <div style={{fontSize:13,color:C.texto}}>{value||"—"}</div>
+  </div>
+);
+
+const Inp = ({label, value, onChange, type="text", placeholder="", rows, required, style={}, inputStyle={}}) => (
+  <div style={{marginBottom:12,...style}}>
+    {label && <label style={{display:"block",fontSize:11,fontWeight:700,color:C.suave,
+      textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}{required&&<span style={{color:C.rojo}}> *</span>}</label>}
+    {rows ? (
+      <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
+        style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
+          fontSize:13,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box",...inputStyle}}/>
+    ) : (
+      <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+        style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
+          fontSize:13,boxSizing:"border-box",...inputStyle}}/>
+    )}
+  </div>
+);
+
+const Sel = ({label, value, onChange, options=[], style={}, required}) => (
+  <div style={{marginBottom:12,...style}}>
+    {label && <label style={{display:"block",fontSize:11,fontWeight:700,color:C.suave,
+      textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}{required&&<span style={{color:C.rojo}}> *</span>}</label>}
+    <select value={value} onChange={onChange}
+      style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
+        fontSize:13,background:"white",boxSizing:"border-box"}}>
+      {options.map((o,i)=>(
+        <option key={i} value={typeof o==="object"?o.value:o}>
+          {typeof o==="object"?o.label:o}
+        </option>
+      ))}
+    </select>
+  </div>
+);
+
+const MicBtn = ({onResult, style={}}) => {
+  const [listening, setListening] = React.useState(false);
+  const start = () => {
+    try {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return alert("Voz no soportada");
+      const r = new SR();
+      r.lang = "es-MX"; r.interimResults = false;
+      r.onresult = e => onResult && onResult(e.results[0][0].transcript);
+      r.onend = () => setListening(false);
+      setListening(true);
+      r.start();
+    } catch(e) { setListening(false); }
+  };
+  return (
+    <button onClick={start} title="Dictar"
+      style={{background:listening?C.rojo:C.azulPale,border:"none",borderRadius:8,
+        padding:"8px 12px",cursor:"pointer",fontSize:16,...style}}>
+      🎤
+    </button>
+  );
+};
+
+// ── MODAL GENÉRICO ────────────────────────────────────────────
+const Modal = ({title, children, onClose, color}) => (
+  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
+    overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
+    <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:750,overflow:"hidden",
+      boxShadow:"0 20px 60px rgba(0,0,0,0.2)",margin:"20px 0"}}>
+      <div style={{background:color||C.azul,padding:"14px 22px",display:"flex",
+        justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{color:"white",fontWeight:800,fontSize:15}}>{title}</div>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",
+          color:"white",fontSize:18,cursor:"pointer",borderRadius:8,padding:"2px 10px",width:32,height:32}}>×</button>
+      </div>
+      <div style={{maxHeight:"80vh",overflow:"auto"}}>
+        {children}
+      </div>
+    </div>
+  </div>
+);
+
 // ── STORAGE ──────────────────────────────────────────────────
 const sGet = async (k) => {
   try {
@@ -660,6 +771,403 @@ const parseTanita = (text) => {
   }
 
   return r;
+};
+
+// ── COMPONENTES DE DOCUMENTOS ────────────────────────────────
+const CF = ({l, v, span=1}) => (
+  <div style={{gridColumn:`span ${span}`,marginBottom:4}}>
+    <div style={{fontSize:9,color:"#64748B",fontWeight:700,textTransform:"uppercase",letterSpacing:0.4}}>{l}</div>
+    <div style={{fontSize:11,color:"#1A2332",fontWeight:500}}>{v||"—"}</div>
+  </div>
+);
+
+const G4 = ({children}) => (
+  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:10}}>
+    {children}
+  </div>
+);
+
+const LogoDoc = ({compact=false, conCedula=true, firmaB64}) => (
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+    marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
+    <img src={IMG_LOGO} alt="Logo" style={{height:compact?165:215,objectFit:"contain"}}/>
+    <div style={{textAlign:"right",fontSize:10,color:"#64748B",lineHeight:1.6}}>
+      <div>Av. Adolfo de la Huerta 200A 2do piso</div>
+      <div>Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
+      <div style={{fontWeight:700,color:"#1B3F8B"}}>(662) 298-4145</div>
+      <div>dr.gerardofelix@gmail.com</div>
+      {conCedula && <div style={{marginTop:4,fontSize:9}}>Céd. Prof. 15131213 · Reg. SSA: 10361/16</div>}
+      {firmaB64 && <img src={firmaB64} alt="Firma" style={{height:40,marginTop:4}}/>}
+    </div>
+  </div>
+);
+
+const FooterDoc = () => (
+  <div style={{marginTop:20,paddingTop:8,borderTop:"1px solid #E2E8F0",
+    textAlign:"center",fontSize:9,color:"#94A3B8"}}>
+    <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
+    <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+  </div>
+);
+
+const Firma = ({fecha="", hora="", firmaB64}) => (
+  <div style={{marginTop:16,display:"flex",justifyContent:"flex-end"}}>
+    <div style={{textAlign:"center",minWidth:160}}>
+      {firmaB64 && <img src={firmaB64} alt="Firma" style={{height:50,marginBottom:4}}/>}
+      <div style={{borderTop:"1px solid #1A2332",paddingTop:4,fontSize:10,color:"#1A2332"}}>
+        <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
+        <div style={{fontSize:9,color:"#64748B"}}>Céd. Prof. 15131213</div>
+      </div>
+    </div>
+  </div>
+);
+
+// ── Print Modal ───────────────────────────────────────────────
+const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
+  const ref = React.useRef();
+  const [vistaFullscreen, setVistaFullscreen] = React.useState(false);
+
+  const print = () => {
+    try {
+      const iframe = document.createElement("iframe");
+      iframe.style.cssText = "position:fixed;right:-9999px;bottom:-9999px;width:8.5in;height:11in;border:0";
+      document.body.appendChild(iframe);
+      const css = "*{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact!important}body{font-family:Arial,sans-serif;padding:8mm;color:#1A2332;background:white}img{max-width:100%}@page{margin:8mm;size:letter}";
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${titulo||"Reporte"}</title><style>${css}</style></head><body>${ref.current.innerHTML}</body></html>`;
+      const doc = iframe.contentWindow.document;
+      doc.open(); doc.write(html); doc.close();
+      setTimeout(()=>{ try{ iframe.contentWindow.focus(); iframe.contentWindow.print(); setTimeout(()=>{ try{document.body.removeChild(iframe);}catch(e){} },5000); }catch(e){ alert("No se pudo imprimir"); try{document.body.removeChild(iframe);}catch(e){} } },500);
+    } catch(e) { alert("Error: "+e.message); }
+  };
+
+  const compartirPDF = async () => {
+    try {
+      const { default: html2canvas } = await import("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.min.js");
+      const canvas = await html2canvas(ref.current, {scale:2,useCORS:true});
+      canvas.toBlob(async blob => {
+        if (!blob) return;
+        const file = new File([blob], (titulo||"documento")+".png", {type:"image/png"});
+        if (navigator.share && navigator.canShare({files:[file]})) {
+          await navigator.share({files:[file], title: titulo||"Documento"});
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a"); a.href=url; a.download=(titulo||"documento")+".png";
+          a.click(); URL.revokeObjectURL(url);
+        }
+      }, "image/png");
+    } catch(e) { setVistaFullscreen(true); }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:3000,
+      display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflow:"auto"}}>
+      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:730,
+        maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          padding:"12px 20px",background:C.azul}}>
+          <span style={{fontWeight:800,color:"white",fontSize:13}}>{titulo}</span>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {extraHeader}
+            {onWA && (
+              <button onClick={onWA} style={{padding:"7px 16px",borderRadius:8,border:"none",
+                background:"#25D366",color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                📱 WhatsApp
+              </button>
+            )}
+            <button onClick={compartirPDF} style={{padding:"7px 16px",borderRadius:8,border:"none",
+              background:C.morado,color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
+              📤 Compartir PDF
+            </button>
+            <button onClick={print} style={{padding:"7px 16px",borderRadius:8,border:"none",
+              background:"white",color:C.azul,cursor:"pointer",fontWeight:700,fontSize:12}}>
+              🖨️ Imprimir
+            </button>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",
+              fontSize:20,cursor:"pointer",color:"white",borderRadius:6,padding:"2px 8px"}}>×</button>
+          </div>
+        </div>
+        <div style={{overflow:"auto",flex:1,padding:20}}>
+          <div ref={ref} style={{background:"white",padding:28,maxWidth:660,
+            margin:"0 auto",border:"1px solid "+C.grisMedio,borderRadius:8}}>
+            {children}
+          </div>
+        </div>
+      </div>
+      {vistaFullscreen && (
+        <div style={{position:"fixed",inset:0,background:"white",zIndex:10000,overflow:"auto"}}>
+          <div style={{position:"sticky",top:0,zIndex:10001,background:C.azul,color:"white",
+            padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+            <div style={{fontSize:11,fontWeight:600,flex:1,lineHeight:1.4}}>
+              📸 <b>Toma screenshot</b> (botón lateral + volumen ↑)<br/>
+              <span style={{opacity:0.8,fontSize:10}}>Luego compártelo por WhatsApp</span>
+            </div>
+            <button onClick={()=>setVistaFullscreen(false)}
+              style={{background:"white",color:C.azul,border:"none",borderRadius:8,
+                padding:"7px 14px",fontWeight:800,cursor:"pointer",fontSize:12}}>
+              ✕ Cerrar
+            </button>
+          </div>
+          <div style={{padding:14,background:"white"}}>
+            <div style={{background:"white",padding:14,maxWidth:680,margin:"0 auto"}}
+              dangerouslySetInnerHTML={{__html: ref.current?ref.current.innerHTML:""}}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── DOCUMENTOS CLÍNICOS ────────────────────────────────────────
+const DocHC = ({p}) => {
+  const ul = (p.consultas||[]).filter(c=>!c.esSoloCita);
+  const uc = ul[ul.length-1]||{};
+  return (
+    <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+      <LogoDoc conCedula={true}/>
+      <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
+        HISTORIA CLÍNICA
+      </div>
+      <G4>
+        <CF l="Nombre" v={p.nombre} span={2}/>
+        <CF l="Edad" v={p.edad+" años"}/>
+        <CF l="Sexo" v={p.sexo}/>
+        <CF l="Peso" v={uc.peso?uc.peso+" kg":"—"}/>
+        <CF l="Talla" v={p.talla?p.talla+" cm":"—"}/>
+        <CF l="IMC" v={uc.imc||"—"}/>
+        <CF l="Teléfono" v={p.telefono}/>
+      </G4>
+      <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
+      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Motivo de consulta</div>
+      <div style={{marginBottom:10}}>{uc.motivo||"—"}</div>
+      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Antecedentes</div>
+      <G4>
+        <CF l="Tabaquismo" v={(p.hf&&p.hf.tabaquismo)||"—"}/>
+        <CF l="Alcoholismo" v={(p.hf&&p.hf.alcoholismo)||"—"}/>
+        <CF l="Cardiopatías" v={(p.hf&&p.hf.cardiopatia)||"—"}/>
+        <CF l="Diabetes" v={(p.hf&&p.hf.diabetes)||"—"}/>
+      </G4>
+      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Exploración física</div>
+      <G4>
+        <CF l="Circ. Abd." v={uc.ca?uc.ca+" cm":"—"}/>
+        <CF l="TA" v={uc.ta||"—"}/>
+        <CF l="FC" v={uc.fc||"—"}/>
+        <CF l="SpO₂" v={uc.spo2||"—"}/>
+      </G4>
+      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Plan de tratamiento</div>
+      <div>{uc.plan||"—"}</div>
+      <Firma/>
+      <FooterDoc/>
+    </div>
+  );
+};
+
+const DocNota = ({p, consulta={}}) => (
+  <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+    <LogoDoc conCedula={true}/>
+    <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
+      NOTA DE EVOLUCIÓN
+    </div>
+    <G4>
+      <CF l="Paciente" v={p.nombre} span={2}/>
+      <CF l="Edad" v={p.edad+" años"}/>
+      <CF l="Fecha" v={consulta.fecha||"—"}/>
+      <CF l="Peso" v={consulta.peso?consulta.peso+" kg":"—"}/>
+      <CF l="IMC" v={consulta.imc||"—"}/>
+      <CF l="Circ. Abd." v={consulta.ca?consulta.ca+" cm":"—"}/>
+      <CF l="TA" v={consulta.ta||"—"}/>
+    </G4>
+    <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
+    <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Subjetivo</div>
+    <div style={{marginBottom:8}}>{consulta.motivo||"—"}</div>
+    <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Plan</div>
+    <div style={{marginBottom:8}}>{consulta.plan||"—"}</div>
+    <Firma/>
+    <FooterDoc/>
+  </div>
+);
+
+const DocReceta = ({p, rec={}, firmaB64}) => (
+  <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+    <LogoDoc conCedula={true} firmaB64={rec.conFirma?firmaB64:null}/>
+    <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
+      RECETA MÉDICA
+    </div>
+    <G4>
+      <CF l="Paciente" v={p.nombre} span={2}/>
+      <CF l="Edad" v={p.edad+" años"}/>
+      <CF l="Fecha" v={rec.fecha||"—"}/>
+    </G4>
+    <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
+    <div style={{fontWeight:700,color:C.azul,marginBottom:6,fontSize:13}}>Rx</div>
+    {(rec.medicamentos||[]).map((m,i)=>(
+      <div key={i} style={{marginBottom:8,paddingBottom:8,borderBottom:"1px solid "+C.gris}}>
+        <div style={{fontWeight:700}}>{m.nombre}</div>
+        <div style={{color:C.suave}}>{m.dosis} — {m.frecuencia} — {m.duracion}</div>
+        {m.indicaciones&&<div style={{fontSize:10,fontStyle:"italic"}}>{m.indicaciones}</div>}
+      </div>
+    ))}
+    {!rec.conFirma && <Firma/>}
+    <FooterDoc/>
+  </div>
+);
+
+const DocLabs = ({p, labs={}}) => (
+  <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+    <LogoDoc compact conCedula={true}/>
+    <G4>
+      <CF l="Paciente" v={p.nombre} span={2}/>
+      <CF l="Edad" v={p.edad+" años"}/>
+      <CF l="Fecha" v={labs.fecha||"—"}/>
+    </G4>
+    <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
+    <div style={{fontSize:13,fontWeight:700,marginBottom:12,color:C.azul}}>
+      Laboratorios solicitados:
+    </div>
+    {(labs.estudios||[]).map((e,i)=>(
+      <div key={i} style={{display:"flex",alignItems:"center",gap:10,
+        padding:"5px 0",borderBottom:"1px solid "+C.gris}}>
+        <span style={{color:C.azul,fontWeight:700}}>—</span>
+        <span>{e}</span>
+      </div>
+    ))}
+    {labs.notas&&(
+      <div style={{marginTop:10,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
+        <b>Indicaciones:</b> {labs.notas}
+      </div>
+    )}
+    <Firma fecha={labs.fecha}/>
+    <FooterDoc/>
+  </div>
+);
+
+const DocProgreso = ({p}) => {
+  const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
+  const primera = comps[0];
+  const ultima = comps[comps.length-1];
+  const d = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")?
+    (parseFloat(a)-parseFloat(b)).toFixed(2):"—";
+  const consultas = (p.consultas||[]).filter(c=>c.ca);
+  const caIni = consultas[0]?consultas[0].ca:null;
+  const caAct = consultas[consultas.length-1]?consultas[consultas.length-1].ca:null;
+  const n = comps.length;
+
+  const Col = ({label,ini,act,cambio,unit="",positive=false}) => {
+    const num = parseFloat(cambio);
+    const color = isNaN(num)||cambio==="—"?C.suave:
+      positive?(num>0?C.verde:C.rojo):(num<0?C.verde:num>0?C.rojo:C.suave);
+    return (
+      <tr>
+        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris}}>{label}</td>
+        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris,textAlign:"right"}}>{ini!=null&&ini!==""?ini+(unit?" "+unit:""):"—"}</td>
+        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris,textAlign:"right",fontWeight:700}}>{act!=null&&act!==""?act+(unit?" "+unit:""):"—"}</td>
+        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris,textAlign:"right",fontWeight:700,color}}>{cambio!=="—"&&!isNaN(num)?`${num>0?"+":""}${cambio}${unit?" "+unit:""}`:cambio}</td>
+      </tr>
+    );
+  };
+
+  return (
+    <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+      <LogoDoc conCedula={false}/>
+      <div style={{textAlign:"center",background:"linear-gradient(135deg,#1B3F8B,#5BC4A0)",
+        color:"white",borderRadius:10,padding:"14px 20px",marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:14}}>REPORTE DE PROGRESO</div>
+        <div style={{fontSize:12,opacity:0.9}}>{p.nombre}</div>
+        <div style={{fontSize:10,opacity:0.8}}>{n} mediciones · {primera&&primera.fecha} → {ultima&&ultima.fecha}</div>
+      </div>
+
+      {/* KPIs */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:16}}>
+        {[
+          {label:"PESO PERDIDO",value:primera&&ultima?Math.abs(d(primera.peso,ultima.peso))+" kg":"—",color:C.azul},
+          {label:"GRASA REDUCIDA",value:primera&&ultima?Math.abs(d(primera.grasa,ultima.grasa))+" %":"—",color:C.naranja},
+          {label:"MÚSCULO ACTUAL",value:ultima&&ultima.masaMuscular?ultima.masaMuscular+" kg":"—",color:C.verde},
+          {label:"CA ACTUAL",value:caAct?caAct+" cm":"—",color:C.morado},
+        ].map((k,i)=>(
+          <div key={i} style={{border:"1px solid "+k.color+"30",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+            <div style={{fontSize:9,color:C.suave,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{k.label}</div>
+            <div style={{fontSize:16,fontWeight:800,color:k.color}}>{k.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabla composición */}
+      <div style={{fontWeight:800,color:C.azul,marginBottom:8,fontSize:12}}>
+        📊 Composición corporal
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:11}}>
+        <thead>
+          <tr style={{background:C.azul,color:"white"}}>
+            <th style={{padding:"6px 8px",textAlign:"left"}}>Métrica</th>
+            <th style={{padding:"6px 8px",textAlign:"right"}}>Inicio</th>
+            <th style={{padding:"6px 8px",textAlign:"right"}}>Actual</th>
+            <th style={{padding:"6px 8px",textAlign:"right"}}>Cambio</th>
+          </tr>
+        </thead>
+        <tbody>
+          <Col label="Peso" ini={primera&&primera.peso} act={ultima&&ultima.peso} cambio={d(ultima&&ultima.peso,primera&&primera.peso)} unit="kg" positive={false}/>
+          <Col label="IMC" ini={primera&&primera.imc} act={ultima&&ultima.imc} cambio={d(ultima&&ultima.imc,primera&&primera.imc)} positive={false}/>
+          <Col label="% Grasa" ini={primera&&primera.grasa} act={ultima&&ultima.grasa} cambio={d(ultima&&ultima.grasa,primera&&primera.grasa)} unit="%" positive={false}/>
+          <Col label="Músculo" ini={primera&&primera.masaMuscular} act={ultima&&ultima.masaMuscular} cambio={d(ultima&&ultima.masaMuscular,primera&&primera.masaMuscular)} unit="kg" positive={true}/>
+          <Col label="Agua" ini={primera&&primera.aguaCorporal} act={ultima&&ultima.aguaCorporal} cambio={d(ultima&&ultima.aguaCorporal,primera&&primera.aguaCorporal)} unit="%" positive={true}/>
+          <Col label="Grasa visceral" ini={primera&&primera.grasaVisceral} act={ultima&&ultima.grasaVisceral} cambio={d(ultima&&ultima.grasaVisceral,primera&&primera.grasaVisceral)} positive={false}/>
+          <Col label="Edad metabólica" ini={primera&&primera.edadMetabolica} act={ultima&&ultima.edadMetabolica} cambio={d(ultima&&ultima.edadMetabolica,primera&&primera.edadMetabolica)} unit="años" positive={false}/>
+          <Col label="Circ. abdominal" ini={caIni} act={caAct} cambio={d(caAct,caIni)} unit="cm" positive={false}/>
+          <Col label="Masa ósea" ini={primera&&primera.masaOsea} act={ultima&&ultima.masaOsea} cambio={d(ultima&&ultima.masaOsea,primera&&primera.masaOsea)} unit="kg" positive={true}/>
+          <Col label="BMR" ini={primera&&primera.bmr} act={ultima&&ultima.bmr} cambio={d(ultima&&ultima.bmr,primera&&primera.bmr)} unit="kcal" positive={true}/>
+        </tbody>
+      </table>
+
+      {/* Segmentos */}
+      {primera&&ultima&&(
+        <>
+          <div style={{fontWeight:800,color:C.naranja,marginBottom:8,fontSize:12}}>💪 Músculo por segmento (kg)</div>
+          <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:11}}>
+            <thead>
+              <tr style={{background:C.naranja,color:"white"}}>
+                <th style={{padding:"6px 8px",textAlign:"left"}}>Zona</th>
+                <th style={{padding:"6px 8px",textAlign:"right"}}>Inicio</th>
+                <th style={{padding:"6px 8px",textAlign:"right"}}>Actual</th>
+                <th style={{padding:"6px 8px",textAlign:"right"}}>Cambio</th>
+              </tr>
+            </thead>
+            <tbody>
+              <Col label="Tronco" ini={primera.musculoTronco} act={ultima.musculoTronco} cambio={d(ultima.musculoTronco,primera.musculoTronco)} unit="kg" positive={true}/>
+              <Col label="Brazo izquierdo" ini={primera.musculoBrazoI} act={ultima.musculoBrazoI} cambio={d(ultima.musculoBrazoI,primera.musculoBrazoI)} unit="kg" positive={true}/>
+              <Col label="Brazo derecho" ini={primera.musculoBrazoD} act={ultima.musculoBrazoD} cambio={d(ultima.musculoBrazoD,primera.musculoBrazoD)} unit="kg" positive={true}/>
+              <Col label="Pierna izquierda" ini={primera.musculoPiernaI} act={ultima.musculoPiernaI} cambio={d(ultima.musculoPiernaI,primera.musculoPiernaI)} unit="kg" positive={true}/>
+              <Col label="Pierna derecha" ini={primera.musculoPiernaD} act={ultima.musculoPiernaD} cambio={d(ultima.musculoPiernaD,primera.musculoPiernaD)} unit="kg" positive={true}/>
+            </tbody>
+          </table>
+
+          <div style={{fontWeight:800,color:C.rojo,marginBottom:8,fontSize:12}}>🔥 Grasa por segmento (%)</div>
+          <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:11}}>
+            <thead>
+              <tr style={{background:C.rojo,color:"white"}}>
+                <th style={{padding:"6px 8px",textAlign:"left"}}>Zona</th>
+                <th style={{padding:"6px 8px",textAlign:"right"}}>Inicio</th>
+                <th style={{padding:"6px 8px",textAlign:"right"}}>Actual</th>
+                <th style={{padding:"6px 8px",textAlign:"right"}}>Cambio</th>
+              </tr>
+            </thead>
+            <tbody>
+              <Col label="Tronco" ini={primera.grasaTronco} act={ultima.grasaTronco} cambio={d(ultima.grasaTronco,primera.grasaTronco)} unit="%" positive={false}/>
+              <Col label="Brazo izquierdo" ini={primera.grasaBrazoI} act={ultima.grasaBrazoI} cambio={d(ultima.grasaBrazoI,primera.grasaBrazoI)} unit="%" positive={false}/>
+              <Col label="Brazo derecho" ini={primera.grasaBrazoD} act={ultima.grasaBrazoD} cambio={d(ultima.grasaBrazoD,primera.grasaBrazoD)} unit="%" positive={false}/>
+              <Col label="Pierna izquierda" ini={primera.grasaPiernaI} act={ultima.grasaPiernaI} cambio={d(ultima.grasaPiernaI,primera.grasaPiernaI)} unit="%" positive={false}/>
+              <Col label="Pierna derecha" ini={primera.grasaPiernaD} act={ultima.grasaPiernaD} cambio={d(ultima.grasaPiernaD,primera.grasaPiernaD)} unit="%" positive={false}/>
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <div style={{background:C.verdePale,border:"1.5px solid "+C.verde+"30",borderRadius:8,
+        padding:10,marginTop:8,fontSize:10,textAlign:"center"}}>
+        <div style={{fontWeight:800,color:C.verde,marginBottom:3}}>¡Excelente avance!</div>
+        <div style={{color:C.texto}}>Continúe con su plan de tratamiento y nutrición.</div>
+      </div>
+      <FooterDoc/>
+    </div>
+  );
 };
 
 // ── Tanita Uploader ──────────────────────────────────────────
