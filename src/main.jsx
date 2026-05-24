@@ -9,7 +9,13 @@ const formatError = (err) => {
   try { return JSON.stringify(err, null, 2); } catch(_) { return String(err); }
 };
 
+// Solo mostrar pantalla de error si es un error CRÍTICO de la app (no scripts externos)
 window.onerror = (msg, src, line, col, err) => {
+  // Ignorar "Script error." (errores de scripts cross-origin sin info útil)
+  if (!msg || msg === "Script error." || msg === "Script error" || !line) return;
+  // Ignorar errores que NO vienen del bundle principal (assets externos)
+  if (src && !src.includes("/assets/index-")) return;
+  
   document.body.innerHTML = `
     <div style="padding:20px;font-family:monospace;background:#fff;min-height:100vh">
       <h2 style="color:red">❌ Error en la app</h2>
@@ -25,6 +31,11 @@ window.onerror = (msg, src, line, col, err) => {
 
 window.onunhandledrejection = (e) => {
   const err = e.reason;
+  // Ignorar errores sin información útil
+  if (!err) return;
+  const msg = err.message || (typeof err === "string" ? err : "");
+  if (!msg || msg === "Script error.") return;
+  
   document.body.innerHTML = `
     <div style="padding:20px;font-family:monospace;background:#fff;min-height:100vh">
       <h2 style="color:red">❌ Error async</h2>
