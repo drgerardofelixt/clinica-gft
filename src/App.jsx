@@ -585,7 +585,11 @@ const pdfToText = async (file) => {
 
 // ── Tanita parser ────────────────────────────────────────────
 const parseTanita = (text) => {
-  // Parser v8 — posicional estricto basado en estructura real del PDF Tanita RD-545
+  // Parser v9 — basado en orden REAL del extractor de PDF de Tanita RD-545
+  // Orden real:
+  // 1-4: masaGrasa, masaOsea, proteina, ...
+  // 5: peso (151.7 kg) - este es el PRIMER valor grande que se repite 2x
+  // Luego sigue todo lo demás
   const lines = text.split("\n").map(l=>l.trim()).filter(l=>l.length>0);
   const r = {};
 
@@ -595,122 +599,148 @@ const parseTanita = (text) => {
     if (m) { r.fecha=`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; r.hora=m[4]; break; }
   }
 
-  // ── Recolectar valores kg y % en orden, saltando rangos (contienen guión) ──
-  const kgs = []; // [{v, line}]
+  // ── Recolectar valores con su índice de línea ──
+  const kgs = [];
   const pcts = [];
   for (let i=0; i<lines.length; i++) {
     const l = lines[i];
-    if (/\d+\s*-\s*\d+/.test(l)) continue; // saltar rangos saludables
-    // Múltiples valores por línea
+    if (/\d+\s*-\s*\d+/.test(l)) continue; // saltar rangos
     for (const m of l.matchAll(/(\d+\.?\d*)\s*kg/g)) kgs.push({v:parseFloat(m[1]),i});
     for (const m of l.matchAll(/(\d+\.?\d*)\s*%/g)) pcts.push({v:parseFloat(m[1]),i});
   }
 
-  // ── PESO: primer kg ──
-  if (kgs.length >= 1) r.peso = kgs[0].v;
-
-  // ── MASA MUSCULAR: primer kg diferente al peso ──
-  let idxMusc = -1;
-  for (let i=1; i<kgs.length; i++) {
-    if (Math.abs(kgs[i].v - r.peso) > 0.05) { idxMusc = i; break; }
+  // ── PESO: el primer valor kg que aparece DUPLICADO en el archivo ──
+  // En el orden real: 65.84(masaGrasa), 4.20(osea), 15.76(prot), 151.7(PESO)
+  // El peso se repite 2 veces seguidas o cercanas en la lista
+  const conteoKg = {};
+  for (const x of kgs) {
+    const k = x.v.toFixed(2);
+    conteoKg[k] = (conteoKg[k]||0) + 1;
   }
-  if (idxMusc >= 0) r.masaMuscular = kgs[idxMusc].v;
-
-  // ── SEGMENTOS MUSCULARES: 5 valores después del duplicado de músculo ──
-  // Orden PDF: Tronco, BrazoI, PiernaI, BrazoD, PiernaD
-  let idxSegMusc = -1;
-  if (idxMusc >= 0) {
-    for (let i=idxMusc+1; i<kgs.length; i++) {
-      if (Math.abs(kgs[i].v - r.masaMuscular) > 0.05) { idxSegMusc = i; break; }
+  
+  // El peso es el primer valor que aparece ≥2 veces Y es grande (>40)
+  // El músculo total también aparece 2+ veces
+  const repetidos = [];
+  for (const x of kgs) {
+    if (conteoKg[x.v.toFixed(2)] >= 2 && !repetidos.find(r=>Math.abs(r-x.v)<0.05)) {
+      repetidos.push(x.v);
     }
   }
-  if (idxSegMusc >= 0 && idxSegMusc+4 < kgs.length) {
-    r.musculoTronco  = kgs[idxSegMusc].v;
-    r.musculoBrazoI  = kgs[idxSegMusc+1].v;
-    r.musculoPiernaI = kgs[idxSegMusc+2].v;
-    r.musculoBrazoD  = kgs[idxSegMusc+3].v;
-    r.musculoPiernaD = kgs[idxSegMusc+4].v;
+  
+  // De los repetidos: el más grande es el peso, el segundo es músculo, el tercero masa libre grasa, etc.
+  // Ordenamos de mayor a menor
+  const repOrdenado = [...repetidos].sort((a,b)=>b-a);
+  
+  // El PESO es el mayor de los repetidos
+  if (repOrdenado.length >= 1) r.peso = repOrdenado[0];
+  // MASA LIBRE DE GRASA es típicamente el 2do mayor (85.86 en este caso)
+  // MASA MUSCULAR es el 3ro (81.75)
+  // Pero hay que confirmar con rangos: músculo < masa libre de grasa < peso
+  if (repOrdenado.length >= 3) {
+    // peso > masaLibreGrasa > masaMuscular
+    r.masaLibreGrasa = repOrdenado[1];
+    r.masaMuscular = repOrdenado[2];
+  } else if (repOrdenado.length === 2) {
+    r.masaMuscular = repOrdenado[1];
+  }
+  
+  // MASA GRASA: aparece 2 veces también (65.84 en este caso)
+  // Pero ya puede estar en repOrdenado. Si no está como peso/MM/MLG, es masaGrasa
+  // Buscar en repOrdenado un valor que NO sea peso/MM/MLG y que tenga sentido
+  for (const v of repOrdenado) {
+    if (v === r.peso || v === r.masaMuscular || v === r.masaLibreGrasa) continue;
+    // masaGrasa típicamente está entre 5-150
+    if (v >= 5 && v <= 200) { r.masaGrasa = v; break; }
+  }
+  // Si no se encontró masa grasa en repetidos, buscar en singles
+  if (r.masaGrasa == null) {
+    for (const x of kgs) {
+      if (x.v === r.peso || x.v === r.masaMuscular || x.v === r.masaLibreGrasa) continue;
+      // Tomar el primer kg que aparece (suele ser masa grasa al inicio)
+      if (x.v >= 5 && x.v <= 200) { r.masaGrasa = x.v; break; }
+    }
   }
 
-  // ── GRASA TOTAL %: primer % en rango 5-70 ──
+  // ── MASA ÓSEA: kg en rango 1-8, primer match en orden ──
+  for (const x of kgs) {
+    if (x.v >= 1 && x.v <= 8) { r.masaOsea = x.v; break; }
+  }
+
+  // ── PROTEÍNA: kg en rango 8-30 que no sea otro valor conocido ──
+  const usadosKg = new Set([r.peso, r.masaMuscular, r.masaLibreGrasa, r.masaGrasa, r.masaOsea].filter(v=>v!=null));
+  for (const x of kgs) {
+    if (usadosKg.has(x.v)) continue;
+    if (x.v >= 8 && x.v <= 30) { r.proteina = x.v; break; }
+  }
+  if (r.proteina) usadosKg.add(r.proteina);
+
+  // ── GRASA TOTAL %: primer % en rango 5-70 (la grasa total) ──
   for (const x of pcts) {
     if (x.v >= 5 && x.v <= 70) { r.grasa = x.v; break; }
   }
 
-  // ── SEGMENTOS DE GRASA: 5 valores % después del duplicado de grasa total ──
-  // Orden PDF: Tronco, BrazoI, PiernaI, BrazoD, PiernaD
-  if (r.grasa !== undefined) {
-    let idxSegGrasa = -1;
-    let skipped = 0;
-    for (let i=0; i<pcts.length; i++) {
-      if (Math.abs(pcts[i].v - r.grasa) < 0.05) { skipped++; continue; }
-      if (skipped >= 1) { idxSegGrasa = i; break; }
-    }
-    if (idxSegGrasa >= 0 && idxSegGrasa+4 < pcts.length) {
-      r.grasaTronco  = pcts[idxSegGrasa].v;
-      r.grasaBrazoI  = pcts[idxSegGrasa+1].v;
-      r.grasaPiernaI = pcts[idxSegGrasa+2].v;
-      r.grasaBrazoD  = pcts[idxSegGrasa+3].v;
-      r.grasaPiernaD = pcts[idxSegGrasa+4].v;
-    }
-  }
-
-  // ── MASA GRASA (kg): primer kg no usado en categorías previas ──
-  const usados = new Set([r.peso, r.masaMuscular, r.musculoTronco, r.musculoBrazoI,
-    r.musculoPiernaI, r.musculoBrazoD, r.musculoPiernaD].filter(v=>v!=null));
-  let idxGrasaKg = -1;
-  for (let i=0; i<kgs.length; i++) {
-    const v = kgs[i].v;
-    let usado = false;
-    for (const u of usados) { if (Math.abs(v-u)<0.05) { usado=true; break; } }
-    if (!usado && v >= 5 && v <= 200) { r.masaGrasa = v; idxGrasaKg = i; break; }
-  }
-
-  // ── MASA LIBRE DE GRASA: siguiente kg no usado después de masaGrasa ──
-  if (idxGrasaKg >= 0) {
-    const usados2 = new Set([...usados, r.masaGrasa].filter(v=>v!=null));
-    for (let i=idxGrasaKg+1; i<kgs.length; i++) {
-      const v = kgs[i].v;
-      let usado = false;
-      for (const u of usados2) { if (Math.abs(v-u)<0.05) { usado=true; break; } }
-      if (!usado && v >= 20 && v <= 200) { r.masaLibreGrasa = v; break; }
-    }
-  }
-
-  // ── AGUA CORPORAL %: buscar valor XX.XX% con decimales que no sea grasa ni segmento ──
-  // El agua corporal siempre tiene decimales (ej: 43.50%) y aparece después de los segmentos
-  const grasasUsadas = new Set([r.grasa, r.grasaTronco, r.grasaBrazoI, r.grasaPiernaI,
-    r.grasaBrazoD, r.grasaPiernaD].filter(v=>v!=null));
+  // ── AGUA CORPORAL %: hay un % en formato "43.50%" o "40.40%" (con decimales y rango 30-75) ──
+  // Aparece DIFERENTE a grasa
   for (const x of pcts) {
-    let usado = false;
-    for (const u of grasasUsadas) { if (Math.abs(x.v-u)<0.05) { usado=true; break; } }
-    if (!usado && x.v >= 30 && x.v <= 75) { r.aguaCorporal = x.v; break; }
+    if (Math.abs(x.v - (r.grasa||0)) < 0.05) continue;
+    if (x.v >= 30 && x.v <= 75) { r.aguaCorporal = x.v; break; }
   }
 
-  // ── AGUA CORPORAL kg: buscar después de masaLibreGrasa ──
-  const todosUsadosKg = new Set([r.peso, r.masaMuscular, r.musculoTronco, r.musculoBrazoI,
-    r.musculoPiernaI, r.musculoBrazoD, r.musculoPiernaD, r.masaGrasa, r.masaLibreGrasa].filter(v=>v!=null));
+  // ── SEGMENTOS MUSCULARES (kg) ──
+  // En el orden real del PDF aparecen DESPUÉS del visceral:
+  // 40 kg (tronco), 5.6 kg, 5.5 kg (brazos I,D), 15.7 kg, 15 kg (piernas I,D)
+  // Estos son los kg que NO han sido asignados aún
+  const todosUsados = new Set([r.peso, r.masaMuscular, r.masaLibreGrasa, r.masaGrasa, r.masaOsea, r.proteina].filter(v=>v!=null));
+  
+  // Filtrar kgs no usados, en orden
+  const restantesKg = [];
   for (const x of kgs) {
-    let usado = false;
-    for (const u of todosUsadosKg) { if (Math.abs(x.v-u)<0.05) { usado=true; break; } }
-    if (!usado && x.v >= 10 && x.v <= 120) { r.aguaCorporalKg = x.v; todosUsadosKg.add(x.v); break; }
+    if (todosUsados.has(x.v)) continue;
+    // Evitar duplicados
+    if (restantesKg.find(y=>Math.abs(y.v-x.v)<0.001 && y.i===x.i)) continue;
+    restantesKg.push(x);
+  }
+  
+  // Buscar Tronco M: kg en rango 15-60 (no usado)
+  let troncoIdx = -1;
+  for (let i=0; i<restantesKg.length; i++) {
+    if (restantesKg[i].v >= 15 && restantesKg[i].v <= 60) {
+      r.musculoTronco = restantesKg[i].v;
+      troncoIdx = i;
+      break;
+    }
+  }
+  
+  // Después del tronco vienen: Brazo I, Brazo D (rangos 0.5-8) y Pierna I, Pierna D (rangos 4-25)
+  // El orden real es: Tronco, BrazoI, BrazoD, PiernaI, PiernaD
+  // O puede ser: Tronco, BrazoI, PiernaI, BrazoD, PiernaD
+  // En el ejemplo: 40, 5.6, 5.5, 15.7, 15 = Tronco, BrazoI, BrazoD, PiernaI, PiernaD
+  if (troncoIdx >= 0) {
+    const sigs = restantesKg.slice(troncoIdx+1).filter(x=>x.v>=0.5 && x.v<=25);
+    // Patrón: 2 valores brazos pequeños (<=8) seguidos de 2 valores piernas grandes (>=4)
+    if (sigs.length >= 4) {
+      r.musculoBrazoI  = sigs[0].v;
+      r.musculoBrazoD  = sigs[1].v;
+      r.musculoPiernaI = sigs[2].v;
+      r.musculoPiernaD = sigs[3].v;
+    }
   }
 
-  // ── MASA ÓSEA: kg en 1-8 no usado ──
-  for (const x of kgs) {
-    let usado = false;
-    for (const u of todosUsadosKg) { if (Math.abs(x.v-u)<0.05) { usado=true; break; } }
-    if (!usado && x.v >= 1 && x.v <= 8) { r.masaOsea = x.v; todosUsadosKg.add(x.v); break; }
+  // ── SEGMENTOS DE GRASA (%) ──
+  // En el orden real: 50, 37.7, 37.1, 33.1, 36.1 = Tronco, BrazoI, BrazoD, PiernaI, PiernaD
+  // Los segmentos vienen después de la grasa total y del agua corporal
+  const usadosPct = new Set([r.grasa, r.aguaCorporal].filter(v=>v!=null));
+  const restantesPct = pcts.filter(x => !usadosPct.has(x.v));
+  
+  if (restantesPct.length >= 5) {
+    r.grasaTronco  = restantesPct[0].v;
+    r.grasaBrazoI  = restantesPct[1].v;
+    r.grasaBrazoD  = restantesPct[2].v;
+    r.grasaPiernaI = restantesPct[3].v;
+    r.grasaPiernaD = restantesPct[4].v;
   }
 
-  // ── PROTEÍNA: kg en 5-30 no usado ──
-  for (const x of kgs) {
-    let usado = false;
-    for (const u of todosUsadosKg) { if (Math.abs(x.v-u)<0.05) { usado=true; break; } }
-    if (!usado && x.v >= 5 && x.v <= 30) { r.proteina = x.v; todosUsadosKg.add(x.v); break; }
-  }
-
-  // ── IMC: número decimal en 15-60 que aparece solo en su línea ──
+  // ── IMC: decimal sin unidad en 15-60 ──
   for (const l of lines) {
     const m = l.match(/^(\d{2,3}\.\d{1,2})$/);
     if (m) {
@@ -719,7 +749,7 @@ const parseTanita = (text) => {
     }
   }
 
-  // ── EDAD METABÓLICA: número decimal en 20-99 que aparece solo después del IMC ──
+  // ── EDAD METABÓLICA: decimal después del IMC en 20-99 ──
   let foundIMC = false;
   for (const l of lines) {
     const m = l.match(/^(\d{2,3}\.\d{1,2})$/);
@@ -729,14 +759,13 @@ const parseTanita = (text) => {
     if (foundIMC && v >= 20 && v <= 99) { r.edadMetabolica = v; break; }
   }
 
-  // ── BMR (kcal): número seguido de kcal ──
+  // ── BMR ──
   for (const l of lines) {
     const m = l.match(/(\d{3,5})\s*kcal/);
     if (m) { r.bmr = parseInt(m[1]); break; }
   }
 
-  // ── GRASA VISCERAL: número con decimales en 1-59 (puede ser X.X como 24.5) ──
-  // Aparece después del BMR, es un número solo en su línea
+  // ── GRASA VISCERAL: número solo en su línea después de BMR ──
   let foundBMR = false;
   for (const l of lines) {
     if (l.match(/\d+\s*kcal/)) { foundBMR=true; continue; }
