@@ -133,7 +133,7 @@ const Sel = ({label, value, onChange, options=[], style={}, required}) => (
 );
 
 const MicBtn = ({onResult, style={}}) => {
-  const [listening, setListening] = React.useState(false);
+  const [listening, setListening] = useState(false);
   const start = () => {
     try {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -836,8 +836,8 @@ const Firma = ({fecha="", hora="", firmaB64}) => (
 
 // ── Print Modal ───────────────────────────────────────────────
 const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
-  const ref = React.useRef();
-  const [vistaFullscreen, setVistaFullscreen] = React.useState(false);
+  const ref = useRef();
+  const [vistaFullscreen, setVistaFullscreen] = useState(false);
 
   const print = () => {
     try {
