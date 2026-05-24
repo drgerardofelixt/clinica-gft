@@ -3523,9 +3523,11 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const mesStr = mesRef.toLocaleDateString("es-MX",{month:"long",year:"numeric"});
 
   const todasCitas = pacientes
-    .flatMap(p=>(p.consultas||[]).filter(c=>c.proxCita).map(c=>({
+    .flatMap(p=>(p.consultas||[]).filter(c=>c.proxCita && p && p.nombre).map(c=>({
       pac:p, fecha:c.proxCita, hora:c.proxHora||"",
-    })));
+      tipoCita:c.tipoCita||"seguimiento", duracion:c.duracion||30
+    })))
+    .filter(c=>c.pac && c.pac.nombre); // Filtrar citas sin paciente válido
 
   const citasMes = todasCitas
     .filter(c=>{
@@ -3546,11 +3548,14 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
     .sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
   const enviarRecordatorio = (c) => {
+    if (!c || !c.pac) return;
     const fechaMx = new Date(c.fecha+"T00:00:00").toLocaleDateString("es-MX",{
       weekday:"long",day:"numeric",month:"long"
     });
-    const msg = `Buen día ${c.pac.nombre}, envío mensaje para recordarte y confirmar tu asistencia a tu cita el día ${fechaMx}${c.hora?" a las "+c.hora:""}.\n\nSaludos!`;
-    enviarWA(c.pac.telefono, msg);
+    const msg = `Buen día ${c.pac.nombre||"paciente"}, envío mensaje para recordarte y confirmar tu asistencia a tu cita el día ${fechaMx}${c.hora?" a las "+c.hora:""}.
+
+Saludos!`;
+    enviarWA(c.pac.telefono||"sin telefono", msg);
   };
 
   const recientes = [...pacientes].sort((a,b)=>{
