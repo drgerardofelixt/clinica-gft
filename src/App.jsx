@@ -1,6 +1,7 @@
 // Sistema Clínico GFT v9 — Dr. Gerardo Félix Tapia — Build 2026-05-24-08:15
 import { useState, useEffect, useRef } from "react";
 import { compartirPDF } from "./pdf.js";
+import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
@@ -248,24 +249,26 @@ const enviarWA = (telefono, mensaje) => {
 };
 
 // Abre Google Calendar con los datos de la cita prellenados
-const agregarAGoogleCalendar = (nombre, telefono, fecha, hora, tipoCita, duracionMin) => {
-  // fecha = "2026-05-21", hora = "10:00"
-  const [year, month, day] = fecha.split("-");
-  const [hr, mn] = hora.split(":");
-  // Formato Google: YYYYMMDDTHHmmSS
-  const ini = `${year}${month}${day}T${hr}${mn}00`;
-  // Calcular hora fin
-  const iniDate = new Date(parseInt(year), parseInt(month)-1, parseInt(day), parseInt(hr), parseInt(mn));
-  const finDate = new Date(iniDate.getTime() + (duracionMin||30)*60000);
-  const fin = `${finDate.getFullYear()}${String(finDate.getMonth()+1).padStart(2,"0")}${String(finDate.getDate()).padStart(2,"0")}T${String(finDate.getHours()).padStart(2,"0")}${String(finDate.getMinutes()).padStart(2,"0")}00`;
-
-  const tipo = tipoCita === "primera" ? "Primera vez" : "Seguimiento";
-  const titulo = `${nombre} — ${tipo}`;
-  const detalles = `Cita: ${tipo} (${duracionMin} min)${telefono?"\\nTeléfono: "+telefono:""}`;
-  const ubicacion = "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo";
-
-  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(titulo)}&dates=${ini}/${fin}&details=${encodeURIComponent(detalles)}&location=${encodeURIComponent(ubicacion)}`;
-  window.open(url, "_blank");
+const agregarAGoogleCalendar = async (nombre, telefono, fecha, hora, tipoCita, duracionMin) => {
+  if (isGoogleAuthorized()) {
+    const resultado = await crearEventoGCal(nombre, telefono, fecha, hora, tipoCita, duracionMin);
+    if (resultado) {
+      alert("✅ Cita agregada a Google Calendar");
+    } else {
+      // Fallback: abrir URL manual
+      const [year, month, day] = fecha.split("-");
+      const [hr, mn] = hora.split(":");
+      const ini = `${year}${month}${day}T${hr}${mn}00`;
+      const iniDate = new Date(parseInt(year), parseInt(month)-1, parseInt(day), parseInt(hr), parseInt(mn));
+      const finDate = new Date(iniDate.getTime() + (duracionMin||30)*60000);
+      const fin = `${finDate.getFullYear()}${String(finDate.getMonth()+1).padStart(2,"0")}${String(finDate.getDate()).padStart(2,"0")}T${String(finDate.getHours()).padStart(2,"0")}${String(finDate.getMinutes()).padStart(2,"0")}00`;
+      const tipo = tipoCita === "primera" ? "Primera vez" : "Seguimiento";
+      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(nombre+" — "+tipo)}&dates=${ini}/${fin}&location=${encodeURIComponent("Av. Adolfo de la Huerta 200A 2do piso, Hermosillo")}`;
+      window.open(url, "_blank");
+    }
+  } else {
+    authorizeGoogleCalendar();
+  }
 };
 
 const gradoIMC = (v) => {
@@ -3024,6 +3027,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
               setTimeout(()=>enviarWA(p.telefono, msg), 300);
             }
             // Guardar info de última cita agendada para mostrar botón de Google Calendar
+            // Crear en Google Calendar automáticamente si está conectado
+            crearEventoGCal(p.nombre, p.telefono, fecha, hora, tipoCita, duracion);
             onCitaAgendada && onCitaAgendada({nombre: p.nombre, telefono: p.telefono, fecha, hora, tipoCita, duracion});
           }}
         />
@@ -3264,6 +3269,11 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
       }
     });
   });
+  // Agregar eventos de Google Calendar
+  (gcalEventos||[]).forEach(ev=>{
+    const fechaEv = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+    if (fechaEv) citasPorDia[fechaEv] = (citasPorDia[fechaEv]||0) + 1;
+  });
 
   const pacFiltrados = busqPac
     ? pacientes.filter(p=>p && p.nombre && p.nombre.toLowerCase().includes(busqPac.toLowerCase())).slice(0,5)
@@ -3502,7 +3512,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
   );
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes}) => {
+const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect}) => {
   const [mesOffset, setMesOffset] = useState(0); // 0=mes actual, -1=anterior, +1=siguiente
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
@@ -3598,6 +3608,29 @@ Saludos!`;
           Orden rápida de labs
         </Btn>
       </div>
+
+      {/* Google Calendar Status */}
+      <Card style={{marginBottom:16,background:gcalAuthed?C.verdePale:C.gris,
+        border:"1.5px solid "+(gcalAuthed?C.verde:C.grisMedio)}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:20}}>📅</span>
+            <div>
+              <div style={{fontWeight:800,fontSize:13,color:gcalAuthed?C.verde:C.suave}}>
+                {gcalAuthed ? "Google Calendar conectado" : "Google Calendar desconectado"}
+              </div>
+              <div style={{fontSize:11,color:C.suave}}>
+                {gcalAuthed ? `${gcalEventos.length} eventos próximos sincronizados` : "Conecta para sincronizar tus citas"}
+              </div>
+            </div>
+          </div>
+          {gcalAuthed ? (
+            <Btn onClick={onGcalDisconnect} outline color={C.rojo} size="sm">Desconectar</Btn>
+          ) : (
+            <Btn onClick={onGcalConnect} color={C.azul} size="sm">🔗 Conectar Google Calendar</Btn>
+          )}
+        </div>
+      </Card>
 
       {citasHoy.length>0 && (
         <Card style={{marginBottom:16,background:"linear-gradient(135deg,"+C.verdePale+" 0%,white 100%)",
@@ -3819,7 +3852,29 @@ export default function App() {
   const [firmaB64, setFirmaB64] = useState(null);
   const [showOrdenRapida, setShowOrdenRapida] = useState(false);
   const [agendarPara, setAgendarPara] = useState(false); // false=cerrado, null=abierto sin paciente, objeto=abierto con paciente
-  const [ultimaCita, setUltimaCita] = useState(null); // Para mostrar botón de Google Calendar
+  const [ultimaCita, setUltimaCita] = useState(null);
+  const [gcalAuthed, setGcalAuthed] = useState(false);
+  const [gcalEventos, setGcalEventos] = useState([]);
+
+  // Inicializar Google Calendar al cargar
+  useEffect(() => {
+    initGoogleCalendar().then(() => {
+      setGcalAuthed(isGoogleAuthorized());
+    }).catch(e => console.warn("Google Calendar no disponible:", e));
+
+    const onAuthed = async () => {
+      setGcalAuthed(true);
+      const eventos = await leerEventosGCal();
+      setGcalEventos(eventos);
+    };
+    const onRevoked = () => { setGcalAuthed(false); setGcalEventos([]); };
+    window.addEventListener("gcal_authed", onAuthed);
+    window.addEventListener("gcal_revoked", onRevoked);
+    return () => {
+      window.removeEventListener("gcal_authed", onAuthed);
+      window.removeEventListener("gcal_revoked", onRevoked);
+    };
+  }, []);
   const [confirmarCita, setConfirmarCita] = useState(null); // datos pendientes de guardar consulta
 
   const cargarPacientes = async () => {
@@ -3976,7 +4031,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)} onNuevoPaciente={()=>setMNuevo(true)} onIrPacientes={()=>setVista("lista")}/>
+          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)} onNuevoPaciente={()=>setMNuevo(true)} onIrPacientes={()=>setVista("lista")} gcalAuthed={gcalAuthed} gcalEventos={gcalEventos} onGcalConnect={()=>authorizeGoogleCalendar()} onGcalDisconnect={()=>revokeGoogleAccess()}/>
         )
       )}
       {vista==="lista" && (
@@ -4120,7 +4175,8 @@ export default function App() {
               const msg = `Hola ${pacFinal.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
               setTimeout(()=>enviarWA(pacFinal.telefono, msg), 300);
             }
-            // Guardar info de última cita para mostrar botón de Google Calendar
+            // Crear en Google Calendar automáticamente si está conectado
+            crearEventoGCal(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion);
             setUltimaCita({nombre: pacFinal.nombre, telefono: pacFinal.telefono, fecha, hora, tipoCita, duracion});
           }}
         />
