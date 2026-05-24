@@ -3527,7 +3527,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
       pac:p, fecha:c.proxCita, hora:c.proxHora||"",
       tipoCita:c.tipoCita||"seguimiento", duracion:c.duracion||30
     })))
-    .filter(c=>c.pac && c.pac.nombre); // Filtrar citas sin paciente válido
+    .filter(c=>c.pac && c.pac?.nombre); // Filtrar citas sin paciente válido
 
   const citasMes = todasCitas
     .filter(c=>{
@@ -3552,10 +3552,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
     const fechaMx = new Date(c.fecha+"T00:00:00").toLocaleDateString("es-MX",{
       weekday:"long",day:"numeric",month:"long"
     });
-    const msg = `Buen día ${c.pac.nombre||"paciente"}, envío mensaje para recordarte y confirmar tu asistencia a tu cita el día ${fechaMx}${c.hora?" a las "+c.hora:""}.
+    const msg = `Buen día ${c.pac?.nombre||"paciente"}, envío mensaje para recordarte y confirmar tu asistencia a tu cita el día ${fechaMx}${c.hora?" a las "+c.hora:""}.
 
 Saludos!`;
-    enviarWA(c.pac.telefono||"sin telefono", msg);
+    enviarWA(c.pac?.telefono||"sin telefono", msg);
   };
 
   const recientes = [...pacientes].sort((a,b)=>{
@@ -3612,9 +3612,9 @@ Saludos!`;
                 <div style={{fontSize:8,color:C.suave}}>hora</div>
               </div>
               <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:13}}>{c.pac.nombre}</div>
+                <div style={{fontWeight:700,fontSize:13}}>{c.pac?.nombre}</div>
                 <div style={{fontSize:10,color:C.suave}}>
-                  {c.pac.edad?c.pac.edad+" años":""}{c.pac.telefono?" · 📱 "+c.pac.telefono:""}
+                  {c.pac?.edad?c.pac?.edad+" años":""}{c.pac?.telefono?" · 📱 "+c.pac?.telefono:""}
                 </div>
               </div>
             </div>
@@ -3638,12 +3638,12 @@ Saludos!`;
                 <div style={{fontSize:14,fontWeight:800,color:C.azul}}>{c.hora||"—"}</div>
               </div>
               <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:12}}>{c.pac.nombre}</div>
-                <div style={{fontSize:10,color:C.suave}}>{c.pac.telefono||"Sin teléfono"}</div>
+                <div style={{fontWeight:700,fontSize:12}}>{c.pac?.nombre}</div>
+                <div style={{fontSize:10,color:C.suave}}>{c.pac?.telefono||"Sin teléfono"}</div>
               </div>
               <Btn onClick={()=>enviarRecordatorio(c)} color={C.verde} size="sm" icon="📱"
-                disabled={!c.pac.telefono}>Recordar</Btn>
-              <Btn onClick={()=>agregarAGoogleCalendar(c.pac.nombre, c.pac.telefono, c.fecha, c.hora||"09:00", c.tipoCita, c.duracion||30)}
+                disabled={!c.pac?.telefono}>Recordar</Btn>
+              <Btn onClick={()=>agregarAGoogleCalendar(c.pac?.nombre, c.pac?.telefono, c.fecha, c.hora||"09:00", c.tipoCita, c.duracion||30)}
                 color={C.azul} size="sm" icon="📅" outline>Google</Btn>
             </div>
           ))}
@@ -3690,7 +3690,7 @@ Saludos!`;
                 {c.hora && <div style={{fontSize:10,color:C.suave,fontWeight:700}}>{c.hora}</div>}
               </div>
               <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:12}}>{c.pac.nombre}</div>
+                <div style={{fontWeight:700,fontSize:12}}>{c.pac?.nombre}</div>
                 <div style={{fontSize:10,color:C.suave}}>
                   {esHoy?"Hoy":esManana?"Mañana":dias>0?`En ${dias} días`:`Hace ${-dias} días`}
                 </div>
