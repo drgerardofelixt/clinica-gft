@@ -90,21 +90,30 @@ const Txt = ({label, value, style={}}) => (
   </div>
 );
 
-const Inp = ({label, value, onChange, type="text", placeholder="", rows, required, style={}, inputStyle={}}) => (
-  <div style={{marginBottom:12,...style}}>
+const Inp = ({label, value, onChange, type, tipo, placeholder="", rows, required, style={}, inputStyle={}}) => {
+  const t = type || tipo || "text";
+  // Acepta onChange como setter directo o como handler de evento
+  const handleChange = (e) => {
+    if (typeof onChange === "function") {
+      // Si onChange acepta un evento, pasa el evento; si no, pasa el valor directamente
+      try { onChange(e); } catch(_) { try { onChange(e.target.value); } catch(__) {} }
+    }
+  };
+  return (
+  <div style={{marginBottom:12,flex:1,...style}}>
     {label && <label style={{display:"block",fontSize:11,fontWeight:700,color:C.suave,
       textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}{required&&<span style={{color:C.rojo}}> *</span>}</label>}
     {rows ? (
-      <textarea value={value} onChange={onChange} placeholder={placeholder} rows={rows}
+      <textarea value={value} onChange={handleChange} placeholder={placeholder} rows={rows}
         style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
           fontSize:13,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box",...inputStyle}}/>
     ) : (
-      <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+      <input type={t} value={value} onChange={handleChange} placeholder={placeholder}
         style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
           fontSize:13,boxSizing:"border-box",...inputStyle}}/>
     )}
   </div>
-);
+);};
 
 const Sel = ({label, value, onChange, options=[], style={}, required}) => (
   <div style={{marginBottom:12,...style}}>
