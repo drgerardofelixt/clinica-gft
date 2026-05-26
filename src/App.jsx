@@ -93,11 +93,18 @@ const Txt = ({label, value, style={}}) => (
 
 const Inp = ({label, value, onChange, type, tipo, placeholder="", rows, required, style={}, inputStyle={}}) => {
   const t = type || tipo || "text";
-  // Acepta onChange como setter directo o como handler de evento
+  // Detecta si onChange espera un evento (1 parámetro tipo objeto con target) o un valor directo (string)
+  // Para esto inspeccionamos la longitud del nombre del setter: setNombre, setEdad son setters de React (esperan valor)
+  // Los handlers personalizados que esperan eventos suelen ser funciones anónimas
   const handleChange = (e) => {
-    if (typeof onChange === "function") {
-      // Si onChange acepta un evento, pasa el evento; si no, pasa el valor directamente
-      try { onChange(e); } catch(_) { try { onChange(e.target.value); } catch(__) {} }
+    if (typeof onChange !== "function") return;
+    const fnStr = onChange.toString();
+    // Si la función tiene "e.target" o "evt.target" en su cuerpo, espera evento
+    if (fnStr.includes(".target") || fnStr.includes("event") || fnStr.includes("(e)") || fnStr.includes("(evt)")) {
+      onChange(e);
+    } else {
+      // Setter de useState: pasarle el valor directo
+      onChange(e.target.value);
     }
   };
   return (
@@ -105,11 +112,11 @@ const Inp = ({label, value, onChange, type, tipo, placeholder="", rows, required
     {label && <label style={{display:"block",fontSize:11,fontWeight:700,color:C.suave,
       textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}{required&&<span style={{color:C.rojo}}> *</span>}</label>}
     {rows ? (
-      <textarea value={value} onChange={handleChange} placeholder={placeholder} rows={rows}
+      <textarea value={typeof value==="object"?"":value||""} onChange={handleChange} placeholder={placeholder} rows={rows}
         style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
           fontSize:13,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box",...inputStyle}}/>
     ) : (
-      <input type={t} value={value} onChange={handleChange} placeholder={placeholder}
+      <input type={t} value={typeof value==="object"?"":value||""} onChange={handleChange} placeholder={placeholder}
         style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
           fontSize:13,boxSizing:"border-box",...inputStyle}}/>
     )}
@@ -480,18 +487,76 @@ const LABS_PRESET = {
   iniciales:["BHC","Perfil Lípidos","Glucosa","HbA1c","Insulina Sérica","Índice HOMA-IR","Perfil Tiroideo","Perfil Hepático","Creatinina","Ácido Úrico","Perfil Ginecológico"],
   seguimiento:["BHC","Perfil Lípidos","HbA1c","Índice HOMA-IR","Perfil Hepático"],
 };
+// ── LABORATORIOS: campos, rangos de referencia y categorías ─────
+// Cada campo tiene: k=clave, l=label, u=unidad, min/max=rangos normales
+// g=grupo (general, lipidos, hepatico, tiroideo, gineco)
+// sexo=null (ambos) o "M"/"F" (solo ese sexo)
 const CAMPOS_LABS = [
-  {k:"glucosa",l:"Glucosa",u:"mg/dL"},{k:"hba1c",l:"HbA1c",u:"%"},
-  {k:"insulina",l:"Insulina",u:"μUI/mL"},{k:"homa",l:"HOMA-IR",u:""},
-  {k:"colesterol",l:"Colesterol Total",u:"mg/dL"},{k:"trigliceridos",l:"Triglicéridos",u:"mg/dL"},
-  {k:"hdl",l:"HDL",u:"mg/dL"},{k:"ldl",l:"LDL",u:"mg/dL"},
-  {k:"tsh",l:"TSH",u:"mUI/L"},{k:"t4",l:"T4 Libre",u:"ng/dL"},
-  {k:"creatinina",l:"Creatinina",u:"mg/dL"},{k:"bun",l:"BUN",u:"mg/dL"},
-  {k:"alt",l:"ALT",u:"U/L"},{k:"ast",l:"AST",u:"U/L"},
-  {k:"ggt",l:"GGT",u:"U/L"},{k:"acidoUrico",l:"Ácido Úrico",u:"mg/dL"},
-  {k:"vitD",l:"Vitamina D",u:"ng/mL"},{k:"b12",l:"Vitamina B12",u:"pg/mL"},
-  {k:"ferritina",l:"Ferritina",u:"ng/mL"},
+  // ── METABOLISMO ──
+  {k:"glucosa",l:"Glucosa",u:"mg/dL",min:70,max:99,g:"general"},
+  {k:"hba1c",l:"HbA1c",u:"%",min:4,max:5.6,g:"general"},
+  {k:"insulina",l:"Insulina",u:"μUI/mL",min:2.6,max:24.9,g:"general"},
+  {k:"homa",l:"HOMA-IR",u:"",min:0.5,max:2.5,g:"general"},
+  // ── LÍPIDOS ──
+  {k:"colesterol",l:"Colesterol Total",u:"mg/dL",min:0,max:200,g:"lipidos"},
+  {k:"trigliceridos",l:"Triglicéridos",u:"mg/dL",min:0,max:150,g:"lipidos"},
+  {k:"hdl",l:"HDL",u:"mg/dL",min:40,max:999,g:"lipidos"},
+  {k:"ldl",l:"LDL",u:"mg/dL",min:0,max:100,g:"lipidos"},
+  // ── HEPÁTICO ──
+  {k:"alt",l:"ALT",u:"U/L",min:0,max:40,g:"hepatico"},
+  {k:"ast",l:"AST",u:"U/L",min:0,max:40,g:"hepatico"},
+  {k:"ggt",l:"GGT",u:"U/L",min:0,max:55,g:"hepatico"},
+  {k:"fa",l:"Fosfatasa Alcalina",u:"U/L",min:44,max:147,g:"hepatico"},
+  {k:"bilirrubinaTotal",l:"Bilirrubina Total",u:"mg/dL",min:0.1,max:1.2,g:"hepatico"},
+  {k:"bilirrubinaDirecta",l:"Bilirrubina Directa",u:"mg/dL",min:0,max:0.3,g:"hepatico"},
+  {k:"bilirrubinaIndirecta",l:"Bilirrubina Indirecta",u:"mg/dL",min:0.1,max:1.0,g:"hepatico"},
+  {k:"proteinasTotales",l:"Proteínas Totales",u:"g/dL",min:6,max:8.3,g:"hepatico"},
+  {k:"albumina",l:"Albúmina",u:"g/dL",min:3.5,max:5.0,g:"hepatico"},
+  // ── TIROIDEO ──
+  {k:"tsh",l:"TSH",u:"mUI/L",min:0.4,max:4.0,g:"tiroideo"},
+  {k:"t4",l:"T4 Libre",u:"ng/dL",min:0.8,max:1.8,g:"tiroideo"},
+  {k:"t3",l:"T3 Libre",u:"pg/mL",min:2.3,max:4.2,g:"tiroideo"},
+  // ── RENAL ──
+  {k:"creatinina",l:"Creatinina",u:"mg/dL",min:0.6,max:1.2,g:"general"},
+  {k:"bun",l:"BUN",u:"mg/dL",min:7,max:20,g:"general"},
+  {k:"acidoUrico",l:"Ácido Úrico",u:"mg/dL",min:3.5,max:7.2,g:"general"},
+  // ── VITAMINAS ──
+  {k:"vitD",l:"Vitamina D",u:"ng/mL",min:30,max:100,g:"general"},
+  {k:"b12",l:"Vitamina B12",u:"pg/mL",min:200,max:900,g:"general"},
+  {k:"ferritina",l:"Ferritina",u:"ng/mL",min:30,max:400,g:"general"},
+  // ── GINECOLÓGICO (solo mujeres) ──
+  {k:"fsh",l:"FSH",u:"mUI/mL",min:3.5,max:12.5,g:"gineco",sexo:"F"},
+  {k:"lh",l:"LH",u:"mUI/mL",min:2.4,max:12.6,g:"gineco",sexo:"F"},
+  {k:"estradiol",l:"Estradiol",u:"pg/mL",min:30,max:400,g:"gineco",sexo:"F"},
+  {k:"progesterona",l:"Progesterona",u:"ng/mL",min:0.2,max:25,g:"gineco",sexo:"F"},
+  {k:"prolactina",l:"Prolactina",u:"ng/mL",min:4.8,max:23.3,g:"gineco",sexo:"F"},
+  {k:"testosterona",l:"Testosterona Total",u:"ng/dL",min:15,max:70,g:"gineco",sexo:"F"},
 ];
+
+// Evalúa estado de un valor: "normal", "alto", "bajo", o null si no hay valor
+const evaluarLab = (campo, valor) => {
+  if (valor == null || valor === "" || isNaN(parseFloat(valor))) return null;
+  const v = parseFloat(valor);
+  if (v < campo.min) return "bajo";
+  if (v > campo.max) return "alto";
+  return "normal";
+};
+
+// Color según estado
+const colorLab = (estado) => {
+  if (estado === "normal") return C.verde;
+  if (estado === "alto") return C.rojo;
+  if (estado === "bajo") return C.naranja;
+  return C.suave;
+};
+
+// Icono según estado
+const iconoLab = (estado) => {
+  if (estado === "normal") return "✓";
+  if (estado === "alto") return "↑";
+  if (estado === "bajo") return "↓";
+  return "—";
+};
 const PLANTILLAS = {
   sintomas:{id:"sintomas",nombre:"Síntomas GLP-1",icon:"🩺",color:C.verde,tipo:"lista",
     items:SINTOMAS_DEF.map(s=>({...s,ok:true})),
@@ -781,7 +846,157 @@ const parseTanita = (text) => {
   return r;
 };
 
-// ── Tanita Uploader ──────────────────────────────────────────
+// ── Tesseract.js OCR para imágenes (gratis, local) ──────────
+let _tesseract = null;
+const loadTesseract = () => {
+  if (_tesseract) return _tesseract;
+  _tesseract = new Promise((resolve, reject) => {
+    if (window.Tesseract) { resolve(window.Tesseract); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js";
+    s.onload = () => resolve(window.Tesseract);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return _tesseract;
+};
+
+const imageToText = async (file) => {
+  const Tesseract = await loadTesseract();
+  const url = URL.createObjectURL(file);
+  try {
+    const result = await Tesseract.recognize(url, "spa+eng", {
+      // logger: m => console.log(m)
+    });
+    return result.data.text;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
+// Convierte HEIC a JPEG (Safari iOS soporta nativamente, pero por si acaso)
+const fileToProcessable = async (file) => {
+  const tipo = (file.type||"").toLowerCase();
+  const nombre = (file.name||"").toLowerCase();
+  if (tipo.includes("pdf") || nombre.endsWith(".pdf")) return {tipo:"pdf", file};
+  if (tipo.includes("image") || /\.(jpg|jpeg|png|heic|heif|webp|bmp)$/.test(nombre)) {
+    return {tipo:"image", file};
+  }
+  // Default: intentar como imagen
+  return {tipo:"image", file};
+};
+
+// Extrae texto de PDF o imagen
+const archivoATexto = async (file) => {
+  const {tipo, file: f} = await fileToProcessable(file);
+  if (tipo === "pdf") return await pdfToText(f);
+  return await imageToText(f);
+};
+
+// ── Parser de Laboratorios (gratis, regex local) ─────────────
+const parseLabs = async (texto) => {
+  if (!texto || texto.length < 20) return null;
+  // Normalizar: minúsculas, quitar acentos
+  const norm = texto.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+
+  const r = {};
+  // Inicializar todos los campos en null
+  CAMPOS_LABS.forEach(c => r[c.k] = null);
+  r.fecha = null; r.laboratorio = null; r.paciente = null; r.notasAdicionales = null;
+
+  // Buscar número después de un patrón (acepta decimales con , o .)
+  const buscar = (patrones) => {
+    for (const p of patrones) {
+      const regex = new RegExp(p + "[^0-9]{0,40}?(\\d+[.,]?\\d*)", "i");
+      const m = norm.match(regex);
+      if (m) {
+        const v = parseFloat(m[1].replace(",", "."));
+        if (!isNaN(v) && v > 0) return v;
+      }
+    }
+    return null;
+  };
+
+  const valid = (v, min, max) => v != null && v >= min && v <= max ? v : null;
+
+  // ── METABOLISMO ──
+  r.glucosa      = valid(buscar(["glucosa", "glicemia", "glucose"]), 30, 600);
+  r.hba1c        = valid(buscar(["hba1c", "hemoglobina glicosilada", "hemoglobina glicada", "a1c"]), 3, 20);
+  r.insulina     = valid(buscar(["insulina"]), 0.1, 500);
+  r.homa         = valid(buscar(["homa-ir", "homa ir", "homa"]), 0.1, 50);
+
+  // ── LÍPIDOS ──
+  r.colesterol   = valid(buscar(["colesterol total", "cholesterol total", "col total", "colesterol"]), 50, 600);
+  r.trigliceridos= valid(buscar(["trigliceridos", "triglicéridos", "trygliceridos", "tg"]), 20, 2000);
+  r.hdl          = valid(buscar(["hdl colesterol", "colesterol hdl", "c-hdl", "hdl"]), 10, 200);
+  r.ldl          = valid(buscar(["ldl colesterol", "colesterol ldl", "c-ldl", "ldl"]), 20, 400);
+
+  // ── HEPÁTICO ──
+  r.alt                  = valid(buscar(["alt", "tgp", "alanino", "alanina aminotransferasa"]), 1, 2000);
+  r.ast                  = valid(buscar(["ast", "tgo", "aspartato", "aspartato aminotransferasa"]), 1, 2000);
+  r.ggt                  = valid(buscar(["ggt", "gamma glutamil", "gamma-glutamil", "gamma gt"]), 1, 1000);
+  r.fa                   = valid(buscar(["fosfatasa alcalina", "alkaline phosphatase", "fa "]), 10, 1000);
+  r.bilirrubinaTotal     = valid(buscar(["bilirrubina total", "bilirrubinas totales", "bil total"]), 0.05, 30);
+  r.bilirrubinaDirecta   = valid(buscar(["bilirrubina directa", "bil directa", "bilirrubina conjugada"]), 0.01, 20);
+  r.bilirrubinaIndirecta = valid(buscar(["bilirrubina indirecta", "bil indirecta", "bilirrubina no conjugada"]), 0.05, 20);
+  r.proteinasTotales     = valid(buscar(["proteinas totales", "proteínas totales", "prot totales"]), 2, 15);
+  r.albumina             = valid(buscar(["albumina", "albúmina"]), 1, 8);
+
+  // ── TIROIDEO ──
+  r.tsh          = valid(buscar(["tsh ultrasensible", "tsh", "tirotropina"]), 0.01, 100);
+  r.t4           = valid(buscar(["t4 libre", "t4l", "tiroxina libre", "free t4", "ft4"]), 0.1, 10);
+  r.t3           = valid(buscar(["t3 libre", "t3l", "triiodotironina libre", "free t3", "ft3"]), 0.5, 15);
+
+  // ── RENAL ──
+  r.creatinina   = valid(buscar(["creatinina", "creatinine"]), 0.1, 20);
+  r.bun          = valid(buscar(["bun", "nitrogeno ureico", "urea"]), 1, 200);
+  r.acidoUrico   = valid(buscar(["acido urico", "ácido úrico", "uric acid"]), 0.5, 20);
+
+  // ── VITAMINAS ──
+  r.vitD         = valid(buscar(["vitamina d", "25-hidroxi", "25 oh d", "25oh", "vit d"]), 1, 200);
+  r.b12          = valid(buscar(["vitamina b12", "cobalamina", "b-12", "vit b12"]), 50, 3000);
+  r.ferritina    = valid(buscar(["ferritina", "ferritin"]), 1, 5000);
+
+  // ── GINECOLÓGICO ──
+  r.fsh          = valid(buscar(["fsh", "hormona foliculo estimulante", "folitropina"]), 0.1, 200);
+  r.lh           = valid(buscar(["lh", "hormona luteinizante", "lutropina"]), 0.1, 200);
+  r.estradiol    = valid(buscar(["estradiol", "e2"]), 5, 2000);
+  r.progesterona = valid(buscar(["progesterona"]), 0.1, 100);
+  r.prolactina   = valid(buscar(["prolactina", "prl"]), 0.5, 500);
+  r.testosterona = valid(buscar(["testosterona total", "testosterona"]), 5, 2000);
+
+  // Fecha: buscar patrones tipo DD/MM/YYYY o YYYY-MM-DD
+  const fechaPats = [
+    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/,
+    /(\d{4})-(\d{1,2})-(\d{1,2})/,
+  ];
+  for (const fp of fechaPats) {
+    const m = texto.match(fp);
+    if (m) {
+      let y, mo, d;
+      if (m[0].length===10 && m[0].includes("-") && m[1].length===4) {
+        y = m[1]; mo = m[2].padStart(2,"0"); d = m[3].padStart(2,"0");
+      } else {
+        d = m[1].padStart(2,"0"); mo = m[2].padStart(2,"0");
+        y = m[3].length===2 ? "20"+m[3] : m[3];
+      }
+      r.fecha = `${y}-${mo}-${d}`;
+      break;
+    }
+  }
+
+  // Laboratorio: buscar nombre común
+  const labs = ["chopo","quest","biomedica","mediavanz","lab cer","carpermor","azteca","salud digna","clínica ruiz","clinica ruiz","san jose","san josé","laboratorios","lab "];
+  for (const l of labs) {
+    if (norm.includes(l)) { r.laboratorio = l.charAt(0).toUpperCase()+l.slice(1); break; }
+  }
+
+  return r;
+};
+
+
 const TanitaUp = ({nombre, onApply}) => {
   const [st, setSt] = useState("idle");
   const [data, setData] = useState(null);
@@ -924,22 +1139,66 @@ const LabsUp = ({nombre, onApply}) => {
   const [st, setSt] = useState("idle");
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
+  const [archivosCount, setArchivosCount] = useState(0);
+  const [archivosProcesados, setArchivosProcesados] = useState(0);
   const ref = useRef();
 
-  const run = async (file) => {
-    if (!file) return;
+  const procesarArchivo = async (file) => {
+    const texto = await archivoATexto(file);
+    if (!texto || texto.trim().length<20) throw new Error("Archivo sin texto extraíble (¿es muy borroso?)");
+    const r = await parseLabs(texto);
+    if (!r) throw new Error("No se pudieron interpretar los resultados");
+    return r;
+  };
+
+  const combinarResultados = (resultados) => {
+    if (resultados.length === 0) return null;
+    if (resultados.length === 1) return resultados[0];
+    // Combinar: si hay valor en cualquier archivo, usarlo; el más reciente gana en conflictos
+    const combinado = {};
+    for (const r of resultados) {
+      for (const [k, v] of Object.entries(r)) {
+        if (v != null && v !== "") {
+          // Si ya existe, el más nuevo (último en la lista) sobreescribe SOLO si el actual es null
+          if (combinado[k] == null || combinado[k] === "") combinado[k] = v;
+        }
+      }
+    }
+    // Combinar notas
+    const notas = resultados.map(r=>r.notasAdicionales).filter(Boolean);
+    if (notas.length) combinado.notasAdicionales = notas.join(" | ");
+    // Si hay múltiples fechas, usar la más reciente
+    const fechas = resultados.map(r=>r.fecha).filter(Boolean).sort();
+    if (fechas.length) combinado.fecha = fechas[fechas.length-1];
+    // Combinar laboratorios
+    const labs = [...new Set(resultados.map(r=>r.laboratorio).filter(Boolean))];
+    if (labs.length) combinado.laboratorio = labs.join(", ");
+    return combinado;
+  };
+
+  const run = async (files) => {
+    if (!files || files.length===0) return;
+    const arr = Array.from(files);
+    setArchivosCount(arr.length);
+    setArchivosProcesados(0);
     setSt("loading"); setErr(""); setData(null);
     try {
-      const texto = await pdfToText(file);
-      if (!texto||texto.trim().length<50) {
-        setSt("error"); setErr("No se pudo extraer texto del PDF. Verifique que no sea un PDF escaneado sin OCR."); return;
+      const resultados = [];
+      for (let i=0; i<arr.length; i++) {
+        try {
+          const r = await procesarArchivo(arr[i]);
+          resultados.push(r);
+        } catch(e) {
+          console.warn(`Error en archivo ${arr[i].name}:`, e);
+        }
+        setArchivosProcesados(i+1);
       }
-      setSt("loading"); // mantener estado loading durante la IA
-      const r = await parseLabs(texto);
-      if (!r) { setSt("error"); setErr("No se pudieron interpretar los resultados."); return; }
-      // Verificar que al menos un campo tiene valor
+      if (resultados.length === 0) {
+        setSt("error"); setErr("No se pudo extraer información de ningún archivo."); return;
+      }
+      const r = combinarResultados(resultados);
       const tieneValores = Object.entries(r).some(([k,v])=>v!==null&&k!=="notasAdicionales"&&k!=="laboratorio"&&k!=="paciente"&&k!=="fecha");
-      if (!tieneValores) { setSt("error"); setErr("No se encontraron valores de laboratorio en el PDF."); return; }
+      if (!tieneValores) { setSt("error"); setErr("No se encontraron valores de laboratorio."); return; }
       setData(r); setSt("ok");
     } catch(e) {
       setSt("error");
@@ -953,7 +1212,7 @@ const LabsUp = ({nombre, onApply}) => {
 
   const apply = () => {
     if (data) onApply(data);
-    setSt("idle"); setData(null);
+    setSt("idle"); setData(null); setArchivosCount(0); setArchivosProcesados(0);
     if (ref.current) ref.current.value="";
   };
 
@@ -963,8 +1222,8 @@ const LabsUp = ({nombre, onApply}) => {
   return (
     <div style={{marginBottom:12,padding:14,borderRadius:10,
       border:"2px dashed "+border,background:bg,transition:"all 0.2s"}}>
-      <input ref={ref} type="file" accept=".pdf" style={{display:"none"}}
-        onChange={e=>run(e.target.files&&e.target.files[0])}/>
+      <input ref={ref} type="file" accept=".pdf,image/*,.heic,.heif" multiple style={{display:"none"}}
+        onChange={e=>run(e.target.files)}/>
       {st==="idle" && (
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:24,marginBottom:6}}>🧪</div>
@@ -972,17 +1231,22 @@ const LabsUp = ({nombre, onApply}) => {
             Importar resultados de laboratorio
           </div>
           <div style={{fontSize:10,color:C.suave,marginBottom:10}}>
-            La IA lee cualquier formato de lab y extrae los valores automáticamente
+            Puedes subir <b>PDFs o fotos</b> · varios archivos a la vez · OCR automático en imágenes
           </div>
-          <Btn onClick={()=>ref.current&&ref.current.click()} color={C.morado} icon="🤖" size="sm">
-            Subir PDF de labs
+          <Btn onClick={()=>ref.current&&ref.current.click()} color={C.morado} icon="📎" size="sm">
+            Subir PDFs / imágenes de labs
           </Btn>
         </div>
       )}
       {st==="loading" && (
         <div style={{textAlign:"center",color:C.morado}}>
           <div style={{fontSize:22}}>🔄</div>
-          <div style={{fontSize:11,fontWeight:700,marginTop:6}}>Analizando con IA…</div>
+          <div style={{fontSize:11,fontWeight:700,marginTop:6}}>
+            Analizando{archivosCount>1?` (${archivosProcesados}/${archivosCount})`:""}…
+          </div>
+          <div style={{fontSize:9,color:C.suave,marginTop:3}}>
+            Imágenes pueden tardar 10-30 segundos (OCR local)
+          </div>
         </div>
       )}
       {st==="ok" && data && (
@@ -999,16 +1263,32 @@ const LabsUp = ({nombre, onApply}) => {
             </div>
           </div>
           <div style={{background:"white",borderRadius:8,padding:10,marginBottom:10,
-            display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px 12px"}}>
-            {CAMPOS_LABS.filter(c=>data[c.k]!=null).map(c=>(
-              <div key={c.k} style={{fontSize:10.5,display:"flex",justifyContent:"space-between",
-                padding:"3px 0",borderBottom:"1px solid "+C.gris}}>
-                <span style={{color:C.suave,fontWeight:600}}>{c.l}</span>
-                <span style={{fontWeight:700,color:C.azul}}>
-                  {data[c.k]} <span style={{fontSize:9,color:C.suave}}>{c.u}</span>
-                </span>
-              </div>
-            ))}
+            display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"6px 12px"}}>
+            {CAMPOS_LABS.filter(c=>data[c.k]!=null).map(c=>{
+              const estado = evaluarLab(c, data[c.k]);
+              const color = colorLab(estado);
+              return (
+                <div key={c.k} style={{fontSize:10.5,display:"flex",justifyContent:"space-between",
+                  alignItems:"center",padding:"4px 6px",borderRadius:5,
+                  background:estado==="normal"?"transparent":color+"15",
+                  borderLeft:estado&&estado!=="normal"?"3px solid "+color:"3px solid transparent"}}>
+                  <span style={{color:C.suave,fontWeight:600}}>{c.l}</span>
+                  <span style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span style={{fontWeight:800,color}}>{data[c.k]}</span>
+                    <span style={{fontSize:9,color:C.suave}}>{c.u}</span>
+                    {estado && <span style={{fontSize:11,fontWeight:900,color,marginLeft:2}}>
+                      {iconoLab(estado)}
+                    </span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{fontSize:9,color:C.suave,marginBottom:8,padding:"4px 8px",
+            background:C.gris,borderRadius:5,textAlign:"center"}}>
+            <span style={{color:C.verde,fontWeight:800}}>✓ Normal</span> ·
+            <span style={{color:C.rojo,fontWeight:800,marginLeft:6}}>↑ Elevado</span> ·
+            <span style={{color:C.naranja,fontWeight:800,marginLeft:6}}>↓ Disminuido</span>
           </div>
           {data.notasAdicionales && (
             <div style={{fontSize:10,color:C.naranja,padding:"6px 8px",
@@ -2470,16 +2750,24 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                         )}
                       </div>
                     </div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"6px 12px"}}>
-                      {CAMPOS_LABS.filter(c=>r[c.k]!=null).map(c=>(
-                        <div key={c.k} style={{fontSize:11,padding:"4px 8px",
-                          background:C.gris,borderRadius:6}}>
-                          <div style={{color:C.suave,fontSize:9,fontWeight:700}}>{c.l}</div>
-                          <div style={{fontWeight:800,color:C.azul}}>
-                            {r[c.k]} <span style={{fontSize:9,fontWeight:400,color:C.suave}}>{c.u}</span>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px 8px"}}>
+                      {CAMPOS_LABS.filter(c=>r[c.k]!=null).map(c=>{
+                        const estado = evaluarLab(c, r[c.k]);
+                        const color = colorLab(estado);
+                        return (
+                          <div key={c.k} style={{fontSize:11,padding:"4px 8px",
+                            background:estado==="normal"?C.gris:color+"15",borderRadius:6,
+                            borderLeft:estado&&estado!=="normal"?"3px solid "+color:"3px solid transparent"}}>
+                            <div style={{color:C.suave,fontSize:9,fontWeight:700}}>{c.l}</div>
+                            <div style={{fontWeight:800,color,display:"flex",alignItems:"center",gap:3}}>
+                              {r[c.k]} <span style={{fontSize:9,fontWeight:400,color:C.suave}}>{c.u}</span>
+                              {estado && <span style={{fontSize:11,fontWeight:900,marginLeft:2}}>
+                                {iconoLab(estado)}
+                              </span>}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     {r.notasAdicionales && (
                       <div style={{marginTop:8,fontSize:10,color:C.naranja,
