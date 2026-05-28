@@ -1,4 +1,14 @@
-// Sistema Clínico GFT v10 — Dr. Gerardo Félix Tapia — Build 2026-05-24-11:00 PARSER V8
+// Sistema Clínico GFT v11 — Dr. Gerardo Félix Tapia — Build 2026-05-28 FIXES v1
+// FIXES en esta versión:
+//   #1 Selects (medicamento, sexo, plan) ahora muestran el valor seleccionado
+//   #2 Fechas en formato DD/MM/AAAA (formato México) en todos los inputs de fecha
+//   #5 Crash post-agendar cita resuelto (try/catch + cierre modal primero)
+//   #6 TanitaUp ahora disponible al crear paciente nuevo (paso Exploración)
+//   #7 Parser de labs con sinónimos completos (SGPT/SGOT, hb glucosilada, calcidiol,
+//      índice HOMA, etc.) + labs locales: Valtierra, San Francisco, PxLab, Ramos
+// Pendientes (requieren editar googleCalendar.js):
+//   #3 Persistencia token Google Calendar entre sesiones
+//   #4 Si los horarios no aparecen, revisar día de la semana seleccionado
 import { useState, useEffect, useRef } from "react";
 import { compartirPDF } from "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal } from "./googleCalendar.js";
@@ -93,17 +103,53 @@ const Txt = ({label, value, style={}}) => (
 
 const Inp = ({label, value, onChange, type, tipo, placeholder="", rows, required, style={}, inputStyle={}}) => {
   const t = type || tipo || "text";
+
+  // ── BUG #2 FIX: Fechas en formato DD/MM/YYYY (México) ─────────────
+  // Cuando es fecha, mostramos DD/MM/YYYY pero guardamos internamente YYYY-MM-DD (ISO)
+  const isoToDDMM = (iso) => {
+    if (!iso) return "";
+    if (typeof iso !== "string") return "";
+    // Si ya viene en DD/MM/YYYY lo dejamos
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(iso)) return iso;
+    // ISO: YYYY-MM-DD
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    return "";
+  };
+  const ddmmToIso = (ddmm) => {
+    if (!ddmm) return "";
+    const m = ddmm.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return ""; // incompleto
+    const d = parseInt(m[1],10), mo = parseInt(m[2],10), y = parseInt(m[3],10);
+    if (d<1||d>31||mo<1||mo>12||y<1900||y>2100) return "";
+    return `${m[3]}-${m[2]}-${m[1]}`;
+  };
+  const [dateDisplay, setDateDisplay] = useState(() => isoToDDMM(value));
+  // Sincronizar display cuando cambia el value externo (ej. autocompletado de edad)
+  useEffect(() => {
+    if (t === "date") setDateDisplay(isoToDDMM(value));
+  }, [value, t]);
+  const handleDateChange = (e) => {
+    let v = e.target.value.replace(/[^\d/]/g, "");
+    // Auto-insertar / después de DD y MM
+    if (v.length === 2 && dateDisplay.length === 1) v = v + "/";
+    else if (v.length === 5 && dateDisplay.length === 4) v = v + "/";
+    if (v.length > 10) v = v.slice(0,10);
+    setDateDisplay(v);
+    // Si está completo y es válido, propagar ISO al onChange
+    const iso = ddmmToIso(v);
+    if (iso && typeof onChange === "function") onChange(iso);
+    else if (v === "" && typeof onChange === "function") onChange("");
+  };
+  // ──────────────────────────────────────────────────────────────────
+
   // Detecta si onChange espera un evento (1 parámetro tipo objeto con target) o un valor directo (string)
-  // Para esto inspeccionamos la longitud del nombre del setter: setNombre, setEdad son setters de React (esperan valor)
-  // Los handlers personalizados que esperan eventos suelen ser funciones anónimas
   const handleChange = (e) => {
     if (typeof onChange !== "function") return;
     const fnStr = onChange.toString();
-    // Si la función tiene "e.target" o "evt.target" en su cuerpo, espera evento
     if (fnStr.includes(".target") || fnStr.includes("event") || fnStr.includes("(e)") || fnStr.includes("(evt)")) {
       onChange(e);
     } else {
-      // Setter de useState: pasarle el valor directo
       onChange(e.target.value);
     }
   };
@@ -115,6 +161,11 @@ const Inp = ({label, value, onChange, type, tipo, placeholder="", rows, required
       <textarea value={typeof value==="object"?"":value||""} onChange={handleChange} placeholder={placeholder} rows={rows}
         style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
           fontSize:13,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box",...inputStyle}}/>
+    ) : t === "date" ? (
+      <input type="text" value={dateDisplay} onChange={handleDateChange}
+        placeholder="DD/MM/AAAA" inputMode="numeric" maxLength={10}
+        style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
+          fontSize:13,boxSizing:"border-box",...inputStyle}}/>
     ) : (
       <input type={t} value={typeof value==="object"?"":value||""} onChange={handleChange} placeholder={placeholder}
         style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
@@ -123,21 +174,31 @@ const Inp = ({label, value, onChange, type, tipo, placeholder="", rows, required
   </div>
 );};
 
-const Sel = ({label, value, onChange, options=[], style={}, required}) => (
-  <div style={{marginBottom:12,...style}}>
-    {label && <label style={{display:"block",fontSize:11,fontWeight:700,color:C.suave,
-      textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}{required&&<span style={{color:C.rojo}}> *</span>}</label>}
-    <select value={value} onChange={onChange}
-      style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
-        fontSize:13,background:"white",boxSizing:"border-box"}}>
-      {options.map((o,i)=>(
-        <option key={i} value={typeof o==="object"?o.value:o}>
-          {typeof o==="object"?o.label:o}
-        </option>
-      ))}
-    </select>
-  </div>
-);
+const Sel = ({label, value, onChange, options, opts, style={}, required}) => {
+  // Aceptar tanto 'options' como 'opts' (alias)
+  const lista = options || opts || [];
+  // Wrapper para que onChange reciba el VALOR (no el evento)
+  const handleChange = (e) => {
+    if (typeof onChange === "function") onChange(e.target.value);
+  };
+  // Asegurar que value nunca sea undefined/null para evitar warning "controlled to uncontrolled"
+  const safeValue = value == null ? "" : value;
+  return (
+    <div style={{marginBottom:12,...style}}>
+      {label && <label style={{display:"block",fontSize:11,fontWeight:700,color:C.suave,
+        textTransform:"uppercase",letterSpacing:0.5,marginBottom:4}}>{label}{required&&<span style={{color:C.rojo}}> *</span>}</label>}
+      <select value={safeValue} onChange={handleChange}
+        style={{width:"100%",borderRadius:8,border:"1.5px solid "+C.grisMedio,padding:"9px 12px",
+          fontSize:13,background:"white",boxSizing:"border-box"}}>
+        {lista.map((o,i)=>(
+          <option key={i} value={typeof o==="object"?o.value:o}>
+            {typeof o==="object"?o.label:o}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+};
 
 const MicBtn = ({onResult, style={}}) => {
   const [listening, setListening] = useState(false);
@@ -922,49 +983,49 @@ const parseLabs = async (texto) => {
   const valid = (v, min, max) => v != null && v >= min && v <= max ? v : null;
 
   // ── METABOLISMO ──
-  r.glucosa      = valid(buscar(["glucosa", "glicemia", "glucose"]), 30, 600);
-  r.hba1c        = valid(buscar(["hba1c", "hemoglobina glicosilada", "hemoglobina glicada", "a1c"]), 3, 20);
-  r.insulina     = valid(buscar(["insulina"]), 0.1, 500);
-  r.homa         = valid(buscar(["homa-ir", "homa ir", "homa"]), 0.1, 50);
+  r.glucosa      = valid(buscar(["glucosa serica", "glucosa en suero", "glucosa basal", "glucosa ayuno", "glucosa", "glicemia", "glucemia", "glucose"]), 30, 600);
+  r.hba1c        = valid(buscar(["hba1c", "hb a1c", "hemoglobina glucosilada", "hemoglobina glicosilada", "hemoglobina glicada", "glicohemoglobina", "a1c"]), 3, 20);
+  r.insulina     = valid(buscar(["insulina basal", "insulina en suero", "insulina", "insulin"]), 0.1, 500);
+  r.homa         = valid(buscar(["homa-ir", "homa ir", "indice homa", "indice de resistencia a la insulina", "indice de resistencia insulinica", "resistencia a la insulina", "homa"]), 0.1, 50);
 
   // ── LÍPIDOS ──
   r.colesterol   = valid(buscar(["colesterol total", "cholesterol total", "col total", "colesterol"]), 50, 600);
-  r.trigliceridos= valid(buscar(["trigliceridos", "triglicéridos", "trygliceridos", "tg"]), 20, 2000);
-  r.hdl          = valid(buscar(["hdl colesterol", "colesterol hdl", "c-hdl", "hdl"]), 10, 200);
-  r.ldl          = valid(buscar(["ldl colesterol", "colesterol ldl", "c-ldl", "ldl"]), 20, 400);
+  r.trigliceridos= valid(buscar(["trigliceridos", "triglicéridos", "trygliceridos", "triglycerides", "tg "]), 20, 2000);
+  r.hdl          = valid(buscar(["hdl colesterol", "colesterol hdl", "colesterol-hdl", "c-hdl", "hdl-c", "lipoproteina de alta densidad", "lipoproteinas de alta densidad", "colesterol de alta densidad", "hdl"]), 10, 200);
+  r.ldl          = valid(buscar(["ldl colesterol", "colesterol ldl", "colesterol-ldl", "c-ldl", "ldl-c", "lipoproteina de baja densidad", "lipoproteinas de baja densidad", "colesterol de baja densidad", "ldl"]), 20, 400);
 
   // ── HEPÁTICO ──
-  r.alt                  = valid(buscar(["alt", "tgp", "alanino", "alanina aminotransferasa"]), 1, 2000);
-  r.ast                  = valid(buscar(["ast", "tgo", "aspartato", "aspartato aminotransferasa"]), 1, 2000);
-  r.ggt                  = valid(buscar(["ggt", "gamma glutamil", "gamma-glutamil", "gamma gt"]), 1, 1000);
-  r.fa                   = valid(buscar(["fosfatasa alcalina", "alkaline phosphatase", "fa "]), 10, 1000);
+  r.alt                  = valid(buscar(["alt ", "tgp", "sgpt", "alanino", "alanina aminotransferasa", "alanina amino transferasa", "transaminasa piruvica", "transaminasa glutamico piruvica"]), 1, 2000);
+  r.ast                  = valid(buscar(["ast ", "tgo", "sgot", "aspartato", "aspartato aminotransferasa", "transaminasa oxalacetica", "transaminasa oxaloacetica", "transaminasa glutamico oxalacetica"]), 1, 2000);
+  r.ggt                  = valid(buscar(["ggt", "gamma glutamil", "gammaglutamil", "gamma-glutamil", "gamma gt", "g.g.t"]), 1, 1000);
+  r.fa                   = valid(buscar(["fosfatasa alcalina", "alkaline phosphatase", "alp ", "fa "]), 10, 1000);
   r.bilirrubinaTotal     = valid(buscar(["bilirrubina total", "bilirrubinas totales", "bil total"]), 0.05, 30);
   r.bilirrubinaDirecta   = valid(buscar(["bilirrubina directa", "bil directa", "bilirrubina conjugada"]), 0.01, 20);
   r.bilirrubinaIndirecta = valid(buscar(["bilirrubina indirecta", "bil indirecta", "bilirrubina no conjugada"]), 0.05, 20);
   r.proteinasTotales     = valid(buscar(["proteinas totales", "proteínas totales", "prot totales"]), 2, 15);
-  r.albumina             = valid(buscar(["albumina", "albúmina"]), 1, 8);
+  r.albumina             = valid(buscar(["albumina", "albúmina", "albumin"]), 1, 8);
 
   // ── TIROIDEO ──
-  r.tsh          = valid(buscar(["tsh ultrasensible", "tsh", "tirotropina"]), 0.01, 100);
+  r.tsh          = valid(buscar(["tsh ultrasensible", "tsh", "tirotropina", "hormona estimulante de tiroides", "hormona estimulante de la tiroides", "thyrotropin"]), 0.01, 100);
   r.t4           = valid(buscar(["t4 libre", "t4l", "tiroxina libre", "free t4", "ft4"]), 0.1, 10);
-  r.t3           = valid(buscar(["t3 libre", "t3l", "triiodotironina libre", "free t3", "ft3"]), 0.5, 15);
+  r.t3           = valid(buscar(["t3 libre", "t3l", "triiodotironina libre", "triyodotironina libre", "free t3", "ft3"]), 0.5, 15);
 
   // ── RENAL ──
-  r.creatinina   = valid(buscar(["creatinina", "creatinine"]), 0.1, 20);
-  r.bun          = valid(buscar(["bun", "nitrogeno ureico", "urea"]), 1, 200);
+  r.creatinina   = valid(buscar(["creatinina serica", "creatinina en suero", "creatinina", "creatinine"]), 0.1, 20);
+  r.bun          = valid(buscar(["bun", "nitrogeno ureico", "nitrógeno ureico", "blood urea nitrogen", "urea"]), 1, 200);
   r.acidoUrico   = valid(buscar(["acido urico", "ácido úrico", "uric acid"]), 0.5, 20);
 
   // ── VITAMINAS ──
-  r.vitD         = valid(buscar(["vitamina d", "25-hidroxi", "25 oh d", "25oh", "vit d"]), 1, 200);
-  r.b12          = valid(buscar(["vitamina b12", "cobalamina", "b-12", "vit b12"]), 50, 3000);
+  r.vitD         = valid(buscar(["25 hidroxi vitamina d", "25-hidroxi", "25 oh d", "25oh", "25(oh)d", "calcidiol", "vitamina d", "vit d"]), 1, 200);
+  r.b12          = valid(buscar(["vitamina b12", "cobalamina", "b-12", "vit b12", "b12"]), 50, 3000);
   r.ferritina    = valid(buscar(["ferritina", "ferritin"]), 1, 5000);
 
   // ── GINECOLÓGICO ──
-  r.fsh          = valid(buscar(["fsh", "hormona foliculo estimulante", "folitropina"]), 0.1, 200);
+  r.fsh          = valid(buscar(["fsh", "hormona foliculo estimulante", "hormona folículo estimulante", "folitropina"]), 0.1, 200);
   r.lh           = valid(buscar(["lh", "hormona luteinizante", "lutropina"]), 0.1, 200);
   r.estradiol    = valid(buscar(["estradiol", "e2"]), 5, 2000);
   r.progesterona = valid(buscar(["progesterona"]), 0.1, 100);
-  r.prolactina   = valid(buscar(["prolactina", "prl"]), 0.5, 500);
+  r.prolactina   = valid(buscar(["prolactina basal", "prolactina", "prl"]), 0.5, 500);
   r.testosterona = valid(buscar(["testosterona total", "testosterona"]), 5, 2000);
 
   // Fecha: buscar patrones tipo DD/MM/YYYY o YYYY-MM-DD
@@ -987,10 +1048,19 @@ const parseLabs = async (texto) => {
     }
   }
 
-  // Laboratorio: buscar nombre común
-  const labs = ["chopo","quest","biomedica","mediavanz","lab cer","carpermor","azteca","salud digna","clínica ruiz","clinica ruiz","san jose","san josé","laboratorios","lab "];
-  for (const l of labs) {
-    if (norm.includes(l)) { r.laboratorio = l.charAt(0).toUpperCase()+l.slice(1); break; }
+  // Laboratorio: buscar nombre común (incluyendo laboratorios locales de Hermosillo)
+  const labs = [
+    ["valtierra","Valtierra"],
+    ["salud digna","Salud Digna"],
+    ["san jose","Lab San José"], ["san josé","Lab San José"],
+    ["san francisco","Lab San Francisco"], ["pxlab","PxLab"],
+    ["ramos","Lab Ramos"],
+    ["chopo","Chopo"], ["quest","Quest"], ["biomedica","Biomédica"],
+    ["mediavanz","Mediavanz"], ["lab cer","Lab CER"], ["carpermor","Carpermor"],
+    ["azteca","Azteca"], ["clínica ruiz","Clínica Ruiz"], ["clinica ruiz","Clínica Ruiz"],
+  ];
+  for (const [needle, label] of labs) {
+    if (norm.includes(needle)) { r.laboratorio = label; break; }
   }
 
   return r;
@@ -1998,6 +2068,35 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
           )}
           {step===2 && (
             <div>
+              {/* ── BUG #6 FIX: TanitaUp ahora disponible en alta de paciente ── */}
+              <Sec title="Datos de báscula Tanita" icon="⚖️">
+                <TanitaUp nombre={f.nombre||"nuevo paciente"} onApply={(d)=>{
+                  const ss = (v) => v!=null?String(v):"";
+                  // Guardar la primera medición Tanita como composición inicial
+                  setF(x=>({
+                    ...x,
+                    composicion: [
+                      ...(x.composicion||[]),
+                      {
+                        fecha: d.fecha || hoy(),
+                        hora: d.hora || ahora(),
+                        peso: ss(d.peso), grasa: ss(d.grasa),
+                        musculo: ss(d.masaMuscular), agua: ss(d.aguaCorporal),
+                        osea: ss(d.masaOsea), visceral: ss(d.grasaVisceral),
+                        bmr: ss(d.bmr), edadMet: ss(d.edadMetabolica), imc: ss(d.imc),
+                        masaGrasa: ss(d.masaGrasa), masaLibreGrasa: ss(d.masaLibreGrasa),
+                        aguaKg: ss(d.aguaCorporalKg), proteina: ss(d.proteina),
+                        musculoTronco: ss(d.musculoTronco),
+                        musculoBD: ss(d.musculoBrazoD), musculoBI: ss(d.musculoBrazoI),
+                        musculoPD: ss(d.musculoPiernaD), musculoPI: ss(d.musculoPiernaI),
+                        grasaTronco: ss(d.grasaTronco),
+                        grasaBD: ss(d.grasaBrazoD), grasaBI: ss(d.grasaBrazoI),
+                        grasaPD: ss(d.grasaPiernaD), grasaPI: ss(d.grasaPiernaI),
+                      }
+                    ]
+                  }));
+                }}/>
+              </Sec>
               <Sec title="Signos vitales" icon="📊">
                 <Row>
                   <Inp label="TA (mmHg)" value={f.ci.ta} onChange={v=>s("ci.ta",v)}/>
@@ -2902,21 +3001,33 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
               ...p,
               consultas: [...(p.consultas||[]), citaNueva]
             };
-            onUpdate(pacActualizado);
+            try { onUpdate(pacActualizado); } catch(e) { console.error("Error onUpdate:", e); }
             setShowAgenda(false);
 
-            // Confirmación WhatsApp
+            // Confirmación WhatsApp (protegido)
             if (p.telefono) {
-              const fechaMx = new Date(fecha+"T00:00:00").toLocaleDateString("es-MX",{
-                weekday:"long",day:"numeric",month:"long",year:"numeric"
-              });
-              const msg = `Hola ${p.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
-              setTimeout(()=>enviarWA(p.telefono, msg), 300);
+              try {
+                const fechaMx = new Date(fecha+"T00:00:00").toLocaleDateString("es-MX",{
+                  weekday:"long",day:"numeric",month:"long",year:"numeric"
+                });
+                const msg = `Hola ${p.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
+                setTimeout(()=>{
+                  try { enviarWA(p.telefono, msg); }
+                  catch(e) { console.warn("WA falló:", e); }
+                }, 300);
+              } catch(e) { console.warn("Error preparando WA:", e); }
             }
-            // Guardar info de última cita agendada para mostrar botón de Google Calendar
-            // Crear en Google Calendar automáticamente si está conectado
-            crearEventoGCal(p.nombre, p.telefono, fecha, hora, tipoCita, duracion);
-            onCitaAgendada && onCitaAgendada({nombre: p.nombre, telefono: p.telefono, fecha, hora, tipoCita, duracion});
+            // Crear en Google Calendar automáticamente si está conectado (PROTEGIDO contra crashes)
+            try {
+              if (typeof crearEventoGCal === "function") {
+                const resultado = crearEventoGCal(p.nombre, p.telefono, fecha, hora, tipoCita, duracion);
+                if (resultado && typeof resultado.then === "function") {
+                  resultado.catch(e => console.warn("GCal falló (no crítico):", e));
+                }
+              }
+            } catch(e) { console.warn("Error GCal (no crítico):", e); }
+            try { onCitaAgendada && onCitaAgendada({nombre: p.nombre, telefono: p.telefono, fecha, hora, tipoCita, duracion}); }
+            catch(e) { console.warn("onCitaAgendada falló:", e); }
           }}
         />
       )}
@@ -4151,40 +4262,74 @@ export default function App() {
             paciente={agendarPara}
             onClose={()=>setAgendarPara(false)}
           onAgendar={async (pac, fecha, hora, tipoCita, duracion) => {
-            const citaNueva = {
-              id: crypto.randomUUID(),
-              fecha: fecha,
-              hora: hora,
-              proxCita: fecha,
-              proxHora: hora,
-              tipoCita: tipoCita,
-              duracion: duracion,
-              esSoloCita: true,
-              nota: "Cita agendada"
-            };
-            const pacFinal = {
-              ...pac,
-              consultas: [...(pac.consultas||[]), citaNueva]
-            };
-
+            // ── BUG #5 FIX: Cerrar modal PRIMERO, luego operaciones de red con try/catch ──
+            // Cualquier fallo en Google Calendar o WhatsApp NO debe crashear la app.
             try {
-              await savePaciente(pacFinal);
-              await cargarPacientes();
-            } catch(e) { console.error("Error agendando:", e); }
+              const citaNueva = {
+                id: crypto.randomUUID(),
+                fecha: fecha,
+                hora: hora,
+                proxCita: fecha,
+                proxHora: hora,
+                tipoCita: tipoCita,
+                duracion: duracion,
+                esSoloCita: true,
+                nota: "Cita agendada"
+              };
+              const pacFinal = {
+                ...pac,
+                consultas: [...(pac.consultas||[]), citaNueva]
+              };
 
-            setAgendarPara(false);
+              // 1. Cerrar modal inmediatamente (UI feedback)
+              setAgendarPara(false);
 
-            // Enviar confirmación WhatsApp si hay teléfono
-            if (pacFinal.telefono) {
-              const fechaMx = new Date(fecha+"T00:00:00").toLocaleDateString("es-MX",{
-                weekday:"long",day:"numeric",month:"long",year:"numeric"
-              });
-              const msg = `Hola ${pacFinal.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
-              setTimeout(()=>enviarWA(pacFinal.telefono, msg), 300);
+              // 2. Guardar en Supabase
+              try {
+                await savePaciente(pacFinal);
+                await cargarPacientes();
+              } catch(e) {
+                console.error("Error guardando paciente en Supabase:", e);
+                alert("⚠️ No se pudo guardar en la base de datos. Revisa tu conexión.");
+                return;
+              }
+
+              // 3. Guardar última cita para referencia
+              try {
+                setUltimaCita({nombre: pacFinal.nombre, telefono: pacFinal.telefono, fecha, hora, tipoCita, duracion});
+              } catch(e) { console.warn("setUltimaCita falló:", e); }
+
+              // 4. Enviar WhatsApp si hay teléfono (NO bloquear si falla)
+              if (pacFinal.telefono) {
+                try {
+                  const fechaMx = new Date(fecha+"T00:00:00").toLocaleDateString("es-MX",{
+                    weekday:"long",day:"numeric",month:"long",year:"numeric"
+                  });
+                  const msg = `Hola ${pacFinal.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
+                  setTimeout(()=>{
+                    try { enviarWA(pacFinal.telefono, msg); }
+                    catch(e) { console.warn("WhatsApp falló:", e); }
+                  }, 300);
+                } catch(e) { console.warn("Error preparando WhatsApp:", e); }
+              }
+
+              // 5. Crear en Google Calendar si está conectado (NO bloquear si falla)
+              try {
+                if (typeof crearEventoGCal === "function") {
+                  const resultado = crearEventoGCal(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion);
+                  // Si retorna Promise, capturar rechazos sin crashear
+                  if (resultado && typeof resultado.then === "function") {
+                    resultado.catch(e => console.warn("Google Calendar falló (no crítico):", e));
+                  }
+                }
+              } catch(e) { console.warn("Error con Google Calendar (no crítico):", e); }
+
+            } catch(errGlobal) {
+              // Catch global como último recurso para que NUNCA crashee la app
+              console.error("Error general agendando cita:", errGlobal);
+              alert("⚠️ Hubo un problema al agendar. La cita pudo no haberse guardado. Revisa y vuelve a intentar.");
+              setAgendarPara(false);
             }
-            // Crear en Google Calendar automáticamente si está conectado
-            crearEventoGCal(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion);
-            setUltimaCita({nombre: pacFinal.nombre, telefono: pacFinal.telefono, fecha, hora, tipoCita, duracion});
           }}
         />
       )}
