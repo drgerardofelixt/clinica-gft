@@ -3803,19 +3803,38 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
     })
     .sort((a,b)=> (a.fecha+a.hora).localeCompare(b.fecha+b.hora));
 
+  // Busca paciente registrado cuyo nombre coincide con el título de un evento GCal
+  const buscarPacienteGcal = (nombreEvento) => {
+    if (!nombreEvento || !pacientes.length) return null;
+    const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z\s]/g,"").trim();
+    const evNorm = norm(nombreEvento);
+    let mejor = null, score = 0;
+    pacientes.forEach(p => {
+      if (!p?.nombre) return;
+      const pNorm = norm(p.nombre);
+      const palabras = pNorm.split(/\s+/).filter(w=>w.length>=3);
+      const coinciden = palabras.filter(w=>evNorm.includes(w)).length;
+      const s = evNorm.includes(pNorm) ? 10 : coinciden >= 2 ? coinciden : 0;
+      if (s > score) { score = s; mejor = p; }
+    });
+    return mejor;
+  };
+
   // Mapa de citas por día: incluye app + gcal con toda la info necesaria
   const citasDia = {};
   todasCitas.forEach(c=>{
     if (!citasDia[c.fecha]) citasDia[c.fecha] = [];
     citasDia[c.fecha].push({tipo:"app", nombre:c.pac?.nombre||"", hora:c.hora,
-      tipoCita:c.tipoCita, pac:c.pac, consultaId:c.consultaId});
+      tipoCita:c.tipoCita, pac:c.pac, consultaId:c.consultaId, fecha:c.fecha});
   });
   (gcalEventos||[]).forEach(ev=>{
     const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
     const h = ev.start?.dateTime ? ev.start.dateTime.split("T")[1]?.slice(0,5) : "";
     if (f) {
       if (!citasDia[f]) citasDia[f] = [];
-      citasDia[f].push({tipo:"gcal", nombre:ev.summary||"Evento", hora:h||"", tipoCita:"gcal"});
+      const nombre = ev.summary||"Evento";
+      const pacMatch = buscarPacienteGcal(nombre);
+      citasDia[f].push({tipo:"gcal", nombre, hora:h||"", tipoCita:"gcal", pac:pacMatch||null, fecha:f});
     }
   });
 
@@ -4070,7 +4089,7 @@ Saludos!`;
                         padding:"2px 9px",fontSize:10,fontWeight:600}}>{tipoLabel}</span>
                     </div>
                   </div>
-                  {c.pac && (
+                  {c.pac && c.tipo==="app" && (
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       <Btn onClick={()=>{onVer(c.pac); setDiaSel(null);}} color={C.azul} size="sm">
                         Ver expediente
@@ -4080,6 +4099,17 @@ Saludos!`;
                       </Btn>
                       <Btn onClick={()=>cancelarCita(c)} color={C.rojo} outline size="sm">
                         Cancelar
+                      </Btn>
+                    </div>
+                  )}
+                  {c.pac && c.tipo==="gcal" && (
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <Btn onClick={()=>{onVer(c.pac); setDiaSel(null);}} color={C.azul} size="sm">
+                        Ver expediente
+                      </Btn>
+                      <Btn onClick={()=>{setDiaSel(null); setTimeout(()=>onAgendar&&onAgendar(c.pac),100);}}
+                        color={C.verde} outline size="sm">
+                        Agendar en app
                       </Btn>
                     </div>
                   )}
@@ -4122,7 +4152,7 @@ Saludos!`;
                     )}
                   </div>
                 </div>
-                {!esGcal && (
+                {(!esGcal || c.pac) && (
                   <Btn onClick={()=>enviarRecordatorio(c)} color={C.verde} size="sm" icon="📱"
                     disabled={!c.pac?.telefono}>
                     Recordatorio
