@@ -3819,16 +3819,15 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
     }
   });
 
-  // Citas de HOY
-  const hoyStr = hoy.toISOString().split("T")[0];
-  const citasHoy = todasCitas.filter(c=>c.fecha===hoyStr)
-    .sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
+  // Citas de HOY — fecha local para evitar desfase UTC
+  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,"0")}-${String(hoy.getDate()).padStart(2,"0")}`;
+  // citasHoy incluye app + gcal (usa citasDia, no solo todasCitas)
+  const citasHoy = (citasDia[hoyStr]||[]).slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
-  // Citas MAÑANA (recordatorio)
+  // Citas MAÑANA — ídem, incluye app + gcal
   const manana = new Date(hoy); manana.setDate(manana.getDate()+1);
-  const mananaStr = manana.toISOString().split("T")[0];
-  const citasManana = todasCitas.filter(c=>c.fecha===mananaStr)
-    .sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
+  const mananaStr = `${manana.getFullYear()}-${String(manana.getMonth()+1).padStart(2,"0")}-${String(manana.getDate()).padStart(2,"0")}`;
+  const citasManana = (citasDia[mananaStr]||[]).slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
   const enviarRecordatorio = (c) => {
     if (!c || !c.pac) return;
@@ -3926,18 +3925,19 @@ Saludos!`;
             <span style={{fontSize:20}}>📌</span> Citas de HOY
           </div>
           {citasHoy.map((c,i)=>(
-            <div key={i} onClick={()=>onVer(c.pac)}
+            <div key={i} onClick={()=>c.pac && onVer(c.pac)}
               style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",
-                borderRadius:10,background:"white",cursor:"pointer",marginBottom:6,
-                border:"1px solid "+C.verde+"30"}}>
+                borderRadius:10,background:"white",cursor:c.pac?"pointer":"default",marginBottom:6,
+                border:"1px solid "+(c.tipo==="gcal"?"#4285F430":C.verde+"30")}}>
               <div style={{minWidth:60,textAlign:"center"}}>
-                <div style={{fontSize:18,fontWeight:900,color:C.verde}}>{c.hora||"—"}</div>
+                <div style={{fontSize:18,fontWeight:900,color:c.tipo==="gcal"?"#4285F4":C.verde}}>{c.hora||"—"}</div>
                 <div style={{fontSize:8,color:C.suave}}>hora</div>
               </div>
               <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:13}}>{c.pac?.nombre}</div>
+                <div style={{fontWeight:700,fontSize:13}}>{c.nombre}</div>
                 <div style={{fontSize:10,color:C.suave}}>
-                  {c.pac?.edad?c.pac?.edad+" años":""}{c.pac?.telefono?" · 📱 "+c.pac?.telefono:""}
+                  {c.tipo==="gcal"?"Google Calendar":
+                    (c.pac?.edad?c.pac?.edad+" años":""+(c.pac?.telefono?" · 📱 "+c.pac?.telefono:""))}
                 </div>
               </div>
             </div>
@@ -4070,7 +4070,7 @@ Saludos!`;
                         padding:"2px 9px",fontSize:10,fontWeight:600}}>{tipoLabel}</span>
                     </div>
                   </div>
-                  {c.tipo==="app" && (
+                  {c.pac && (
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       <Btn onClick={()=>{onVer(c.pac); setDiaSel(null);}} color={C.azul} size="sm">
                         Ver expediente
@@ -4101,9 +4101,10 @@ Saludos!`;
             {new Date(manana).toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}
             {" "}· {citasManana.length} cita(s)
           </div>
-          {citasManana.slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||"")).map((c,i)=>{
-            const chipColor = c.tipoCita==="primera"?C.azul:C.verde;
-            const tipoLabel = c.tipoCita==="primera"?"Primera vez":"Seguimiento";
+          {citasManana.map((c,i)=>{
+            const esGcal = c.tipo==="gcal";
+            const chipColor = esGcal?"#4285F4": c.tipoCita==="primera"?C.azul:C.verde;
+            const tipoLabel = esGcal?"Google Calendar": c.tipoCita==="primera"?"Primera vez":"Seguimiento";
             return (
               <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",
                 borderRadius:10,background:C.gris,marginBottom:8,border:"1px solid "+C.grisMedio}}>
@@ -4112,7 +4113,7 @@ Saludos!`;
                   <div style={{fontSize:9,color:C.suave}}>hrs</div>
                 </div>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:13,color:C.texto}}>{c.pac?.nombre}</div>
+                  <div style={{fontWeight:700,fontSize:13,color:C.texto}}>{c.nombre}</div>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginTop:5,flexWrap:"wrap"}}>
                     <span style={{background:chipColor+"18",color:chipColor,borderRadius:10,
                       padding:"2px 9px",fontSize:10,fontWeight:600}}>{tipoLabel}</span>
@@ -4121,10 +4122,12 @@ Saludos!`;
                     )}
                   </div>
                 </div>
-                <Btn onClick={()=>enviarRecordatorio(c)} color={C.verde} size="sm" icon="📱"
-                  disabled={!c.pac?.telefono}>
-                  Recordatorio
-                </Btn>
+                {!esGcal && (
+                  <Btn onClick={()=>enviarRecordatorio(c)} color={C.verde} size="sm" icon="📱"
+                    disabled={!c.pac?.telefono}>
+                    Recordatorio
+                  </Btn>
+                )}
               </div>
             );
           })}
