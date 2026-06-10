@@ -764,7 +764,7 @@ const parseTanitaPositional = (text) => {
     if (m) { r.fecha = `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; r.hora = m[4]; break; }
   }
 
-  console.log("[Tanita] texto completo recibido:\n", JSON.stringify(text));
+  window._tanitaRawText = text;
 
   const kgSeq  = [];  // valores kg en orden de aparición
   const pctSeq = [];  // valores % en orden de aparición
@@ -796,9 +796,7 @@ const parseTanitaPositional = (text) => {
     }
   }
 
-  console.log("[Tanita] kgSeq:", kgSeq);
-  console.log("[Tanita] pctSeq:", pctSeq);
-  console.log("[Tanita] decSeq:", decSeq, "| bmr:", r.bmr, "| visceral:", r.grasaVisceral);
+  window._tanitaArrays = { kgSeq, pctSeq, decSeq, bmr: r.bmr, visceral: r.grasaVisceral };
 
   // Asignación posicional de kg (orden exacto del PDF RD-545):
   // [0][1] = peso×2 · [2][3] = músculo×2 · [4] = tronco
