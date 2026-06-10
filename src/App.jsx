@@ -711,199 +711,57 @@ const pdfToText = async (file) => {
 
 // ── Tanita parser ────────────────────────────────────────────
 const parseTanita = (text) => {
-  // Parser v9 — basado en orden REAL del extractor de PDF de Tanita RD-545
-  // Orden real:
-  // 1-4: masaGrasa, masaOsea, proteina, ...
-  // 5: peso (151.7 kg) - este es el PRIMER valor grande que se repite 2x
-  // Luego sigue todo lo demás
-  const lines = text.split("\n").map(l=>l.trim()).filter(l=>l.length>0);
+  const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
   const r = {};
-
-  // ── Fecha ──
-  for (const l of lines) {
-    const m = l.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2})/);
-    if (m) { r.fecha=`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; r.hora=m[4]; break; }
-  }
-
-  // ── Recolectar valores con su índice de línea ──
-  const kgs = [];
-  const pcts = [];
-  for (let i=0; i<lines.length; i++) {
-    const l = lines[i];
-    if (/\d+\s*-\s*\d+/.test(l)) continue; // saltar rangos
-    for (const m of l.matchAll(/(\d+\.?\d*)\s*kg/g)) kgs.push({v:parseFloat(m[1]),i});
-    for (const m of l.matchAll(/(\d+\.?\d*)\s*%/g)) pcts.push({v:parseFloat(m[1]),i});
-  }
-
-  // ── PESO: el primer valor kg que aparece DUPLICADO en el archivo ──
-  // En el orden real: 65.84(masaGrasa), 4.20(osea), 15.76(prot), 151.7(PESO)
-  // El peso se repite 2 veces seguidas o cercanas en la lista
-  const conteoKg = {};
-  for (const x of kgs) {
-    const k = x.v.toFixed(2);
-    conteoKg[k] = (conteoKg[k]||0) + 1;
-  }
-  
-  // El peso es el primer valor que aparece ≥2 veces Y es grande (>40)
-  // El músculo total también aparece 2+ veces
-  const repetidos = [];
-  for (const x of kgs) {
-    if (conteoKg[x.v.toFixed(2)] >= 2 && !repetidos.find(r=>Math.abs(r-x.v)<0.05)) {
-      repetidos.push(x.v);
-    }
-  }
-  
-  // De los repetidos: el más grande es el peso, el segundo es músculo, el tercero masa libre grasa, etc.
-  // Ordenamos de mayor a menor
-  const repOrdenado = [...repetidos].sort((a,b)=>b-a);
-  
-  // El PESO es el mayor de los repetidos
-  if (repOrdenado.length >= 1) r.peso = repOrdenado[0];
-  // MASA LIBRE DE GRASA es típicamente el 2do mayor (85.86 en este caso)
-  // MASA MUSCULAR es el 3ro (81.75)
-  // Pero hay que confirmar con rangos: músculo < masa libre de grasa < peso
-  if (repOrdenado.length >= 3) {
-    // peso > masaLibreGrasa > masaMuscular
-    r.masaLibreGrasa = repOrdenado[1];
-    r.masaMuscular = repOrdenado[2];
-  } else if (repOrdenado.length === 2) {
-    r.masaMuscular = repOrdenado[1];
-  }
-  
-  // MASA GRASA: aparece 2 veces también (65.84 en este caso)
-  // Pero ya puede estar en repOrdenado. Si no está como peso/MM/MLG, es masaGrasa
-  // Buscar en repOrdenado un valor que NO sea peso/MM/MLG y que tenga sentido
-  for (const v of repOrdenado) {
-    if (v === r.peso || v === r.masaMuscular || v === r.masaLibreGrasa) continue;
-    // masaGrasa típicamente está entre 5-150
-    if (v >= 5 && v <= 200) { r.masaGrasa = v; break; }
-  }
-  // Si no se encontró masa grasa en repetidos, buscar en singles
-  if (r.masaGrasa == null) {
-    for (const x of kgs) {
-      if (x.v === r.peso || x.v === r.masaMuscular || x.v === r.masaLibreGrasa) continue;
-      // Tomar el primer kg que aparece (suele ser masa grasa al inicio)
-      if (x.v >= 5 && x.v <= 200) { r.masaGrasa = x.v; break; }
-    }
-  }
-
-  // ── MASA ÓSEA: kg en rango 1-8, primer match en orden ──
-  for (const x of kgs) {
-    if (x.v >= 1 && x.v <= 8) { r.masaOsea = x.v; break; }
-  }
-
-  // ── PROTEÍNA: kg en rango 8-30 que no sea otro valor conocido ──
-  const usadosKg = new Set([r.peso, r.masaMuscular, r.masaLibreGrasa, r.masaGrasa, r.masaOsea].filter(v=>v!=null));
-  for (const x of kgs) {
-    if (usadosKg.has(x.v)) continue;
-    if (x.v >= 8 && x.v <= 30) { r.proteina = x.v; break; }
-  }
-  if (r.proteina) usadosKg.add(r.proteina);
-
-  // ── GRASA TOTAL %: primer % en rango 5-70 (la grasa total) ──
-  for (const x of pcts) {
-    if (x.v >= 5 && x.v <= 70) { r.grasa = x.v; break; }
-  }
-
-  // ── AGUA CORPORAL %: hay un % en formato "43.50%" o "40.40%" (con decimales y rango 30-75) ──
-  // Aparece DIFERENTE a grasa
-  for (const x of pcts) {
-    if (Math.abs(x.v - (r.grasa||0)) < 0.05) continue;
-    if (x.v >= 30 && x.v <= 75) { r.aguaCorporal = x.v; break; }
-  }
-
-  // ── SEGMENTOS MUSCULARES (kg) ──
-  // En el orden real del PDF aparecen DESPUÉS del visceral:
-  // 40 kg (tronco), 5.6 kg, 5.5 kg (brazos I,D), 15.7 kg, 15 kg (piernas I,D)
-  // Estos son los kg que NO han sido asignados aún
-  const todosUsados = new Set([r.peso, r.masaMuscular, r.masaLibreGrasa, r.masaGrasa, r.masaOsea, r.proteina].filter(v=>v!=null));
-  
-  // Filtrar kgs no usados, en orden
-  const restantesKg = [];
-  for (const x of kgs) {
-    if (todosUsados.has(x.v)) continue;
-    // Evitar duplicados
-    if (restantesKg.find(y=>Math.abs(y.v-x.v)<0.001 && y.i===x.i)) continue;
-    restantesKg.push(x);
-  }
-  
-  // Buscar Tronco M: kg en rango 15-60 (no usado)
-  let troncoIdx = -1;
-  for (let i=0; i<restantesKg.length; i++) {
-    if (restantesKg[i].v >= 15 && restantesKg[i].v <= 60) {
-      r.musculoTronco = restantesKg[i].v;
-      troncoIdx = i;
-      break;
-    }
-  }
-  
-  // Después del tronco vienen: Brazo I, Brazo D (rangos 0.5-8) y Pierna I, Pierna D (rangos 4-25)
-  // El orden real es: Tronco, BrazoI, BrazoD, PiernaI, PiernaD
-  // O puede ser: Tronco, BrazoI, PiernaI, BrazoD, PiernaD
-  // En el ejemplo: 40, 5.6, 5.5, 15.7, 15 = Tronco, BrazoI, BrazoD, PiernaI, PiernaD
-  if (troncoIdx >= 0) {
-    const sigs = restantesKg.slice(troncoIdx+1).filter(x=>x.v>=0.5 && x.v<=25);
-    // Patrón: 2 valores brazos pequeños (<=8) seguidos de 2 valores piernas grandes (>=4)
-    if (sigs.length >= 4) {
-      r.musculoBrazoI  = sigs[0].v;
-      r.musculoBrazoD  = sigs[1].v;
-      r.musculoPiernaI = sigs[2].v;
-      r.musculoPiernaD = sigs[3].v;
-    }
-  }
-
-  // ── SEGMENTOS DE GRASA (%) ──
-  // En el orden real: 50, 37.7, 37.1, 33.1, 36.1 = Tronco, BrazoI, BrazoD, PiernaI, PiernaD
-  // Los segmentos vienen después de la grasa total y del agua corporal
-  const usadosPct = new Set([r.grasa, r.aguaCorporal].filter(v=>v!=null));
-  const restantesPct = pcts.filter(x => !usadosPct.has(x.v));
-  
-  if (restantesPct.length >= 5) {
-    r.grasaTronco  = restantesPct[0].v;
-    r.grasaBrazoI  = restantesPct[1].v;
-    r.grasaBrazoD  = restantesPct[2].v;
-    r.grasaPiernaI = restantesPct[3].v;
-    r.grasaPiernaD = restantesPct[4].v;
-  }
-
-  // ── IMC: decimal sin unidad en 15-60 ──
-  for (const l of lines) {
-    const m = l.match(/^(\d{2,3}\.\d{1,2})$/);
-    if (m) {
-      const v = parseFloat(m[1]);
-      if (v >= 15 && v <= 60) { r.imc = v; break; }
-    }
-  }
-
-  // ── EDAD METABÓLICA: decimal después del IMC en 20-99 ──
-  let foundIMC = false;
-  for (const l of lines) {
-    const m = l.match(/^(\d{2,3}\.\d{1,2})$/);
-    if (!m) continue;
-    const v = parseFloat(m[1]);
-    if (!foundIMC && r.imc && Math.abs(v-r.imc)<0.05) { foundIMC=true; continue; }
-    if (foundIMC && v >= 20 && v <= 99) { r.edadMetabolica = v; break; }
-  }
-
-  // ── BMR ──
-  for (const l of lines) {
-    const m = l.match(/(\d{3,5})\s*kcal/);
-    if (m) { r.bmr = parseInt(m[1]); break; }
-  }
-
-  // ── GRASA VISCERAL: número solo en su línea después de BMR ──
-  let foundBMR = false;
-  for (const l of lines) {
-    if (l.match(/\d+\s*kcal/)) { foundBMR=true; continue; }
-    if (foundBMR) {
-      const m = l.match(/^(\d+\.?\d*)$/);
-      if (m) {
-        const v = parseFloat(m[1]);
-        if (v >= 1 && v <= 59) { r.grasaVisceral = v; break; }
+  const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+  const primerNum = s => { const m = s.match(/(\d+\.?\d*)/); return m ? parseFloat(m[1]) : null; };
+  const buscarEtiqueta = (etiquetas, minV, maxV) => {
+    for (let i = 0; i < lines.length; i++) {
+      const n = norm(lines[i]);
+      for (const et of etiquetas) {
+        if (n.includes(et)) {
+          const despues = n.slice(n.indexOf(et) + et.length);
+          let v = primerNum(despues);
+          if (v == null && i + 1 < lines.length) v = primerNum(norm(lines[i + 1]));
+          if (v != null && v >= minV && v <= maxV) return v;
+        }
       }
     }
+    return null;
+  };
+  for (const l of lines) {
+    const m = l.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2})/);
+    if (m) { r.fecha = `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; r.hora = m[4]; break; }
   }
-
+  r.peso           = buscarEtiqueta(["weight","peso"], 20, 300);
+  r.grasa          = buscarEtiqueta(["fat %","body fat %","% grasa","fat percentage"], 2, 75);
+  r.masaGrasa      = buscarEtiqueta(["fat mass","masa grasa","fat(kg)"], 1, 200);
+  r.masaLibreGrasa = buscarEtiqueta(["fat free mass","ffm","masa libre de grasa","lean mass"], 10, 200);
+  r.masaMuscular   = buscarEtiqueta(["muscle mass","skeletal muscle","masa muscular","muscle(kg)"], 5, 150);
+  r.masaOsea       = buscarEtiqueta(["bone mass","bone mineral","masa osea","bone(kg)"], 0.5, 8);
+  r.proteina       = buscarEtiqueta(["protein","proteina","protein(kg)"], 1, 40);
+  r.aguaCorporal   = buscarEtiqueta(["total body water %","tbw %","body water %","agua corporal %","water %"], 30, 80);
+  r.aguaKg         = buscarEtiqueta(["total body water(kg)","tbw(kg)","agua corporal kg","agua(kg)"], 5, 150);
+  r.imc            = buscarEtiqueta(["bmi","imc","body mass index"], 10, 65);
+  r.edadMetabolica = buscarEtiqueta(["metabolic age","edad metabolica"], 10, 99);
+  r.grasaVisceral  = buscarEtiqueta(["visceral fat rating","visceral fat level","visceral fat","grasa visceral"], 1, 59);
+  r.bmr = buscarEtiqueta(["bmr","basal metabolic rate","metabolismo basal"], 500, 6000);
+  if (r.bmr == null) {
+    for (const l of lines) {
+      const m = l.match(/(\d{3,5})\s*kcal/i);
+      if (m) { r.bmr = parseInt(m[1]); break; }
+    }
+  }
+  r.musculoTronco  = buscarEtiqueta(["trunk muscle","tronco muscle","trunk(kg)","torso muscle"], 5, 80);
+  r.musculoBrazoD  = buscarEtiqueta(["right arm muscle","r.arm muscle","right arm(kg)"], 0.5, 12);
+  r.musculoBrazoI  = buscarEtiqueta(["left arm muscle","l.arm muscle","left arm(kg)"], 0.5, 12);
+  r.musculoPiernaD = buscarEtiqueta(["right leg muscle","r.leg muscle","right leg(kg)"], 3, 30);
+  r.musculoPiernaI = buscarEtiqueta(["left leg muscle","l.leg muscle","left leg(kg)"], 3, 30);
+  r.grasaTronco    = buscarEtiqueta(["trunk fat %","trunk fat","tronco fat"], 5, 70);
+  r.grasaBrazoD    = buscarEtiqueta(["right arm fat","r.arm fat"], 5, 70);
+  r.grasaBrazoI    = buscarEtiqueta(["left arm fat","l.arm fat"], 5, 70);
+  r.grasaPiernaD   = buscarEtiqueta(["right leg fat","r.leg fat"], 5, 70);
+  r.grasaPiernaI   = buscarEtiqueta(["left leg fat","l.leg fat"], 5, 70);
   return r;
 };
 
@@ -957,112 +815,107 @@ const archivoATexto = async (file) => {
 // ── Parser de Laboratorios (gratis, regex local) ─────────────
 const parseLabs = async (texto) => {
   if (!texto || texto.length < 20) return null;
-  // Normalizar: minúsculas, quitar acentos
   const norm = texto.toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ");
-
+    .replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const r = {};
-  // Inicializar todos los campos en null
   CAMPOS_LABS.forEach(c => r[c.k] = null);
   r.fecha = null; r.laboratorio = null; r.paciente = null; r.notasAdicionales = null;
-
-  // Buscar número después de un patrón (acepta decimales con , o .)
-  const buscar = (patrones) => {
+  const buscar = (patrones, minV, maxV) => {
     for (const p of patrones) {
-      const regex = new RegExp(p + "[^0-9]{0,40}?(\\d+[.,]?\\d*)", "i");
+      const escaped = p.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+      const regex = new RegExp(escaped + "[^\\d]{0,80}?(\\d+[.,]\\d+|\\d+)", "i");
       const m = norm.match(regex);
       if (m) {
         const v = parseFloat(m[1].replace(",", "."));
-        if (!isNaN(v) && v > 0) return v;
+        if (!isNaN(v) && v >= minV && v <= maxV) return v;
       }
     }
     return null;
   };
-
-  const valid = (v, min, max) => v != null && v >= min && v <= max ? v : null;
-
-  // ── METABOLISMO ──
-  r.glucosa      = valid(buscar(["glucosa serica", "glucosa en suero", "glucosa basal", "glucosa ayuno", "glucosa", "glicemia", "glucemia", "glucose"]), 30, 600);
-  r.hba1c        = valid(buscar(["hba1c", "hb a1c", "hemoglobina glucosilada", "hemoglobina glicosilada", "hemoglobina glicada", "glicohemoglobina", "a1c"]), 3, 20);
-  r.insulina     = valid(buscar(["insulina basal", "insulina en suero", "insulina", "insulin"]), 0.1, 500);
-  r.homa         = valid(buscar(["homa-ir", "homa ir", "indice homa", "indice de resistencia a la insulina", "indice de resistencia insulinica", "resistencia a la insulina", "homa"]), 0.1, 50);
-
-  // ── LÍPIDOS ──
-  r.colesterol   = valid(buscar(["colesterol total", "cholesterol total", "col total", "colesterol"]), 50, 600);
-  r.trigliceridos= valid(buscar(["trigliceridos", "triglicéridos", "trygliceridos", "triglycerides", "tg "]), 20, 2000);
-  r.hdl          = valid(buscar(["hdl colesterol", "colesterol hdl", "colesterol-hdl", "c-hdl", "hdl-c", "lipoproteina de alta densidad", "lipoproteinas de alta densidad", "colesterol de alta densidad", "hdl"]), 10, 200);
-  r.ldl          = valid(buscar(["ldl colesterol", "colesterol ldl", "colesterol-ldl", "c-ldl", "ldl-c", "lipoproteina de baja densidad", "lipoproteinas de baja densidad", "colesterol de baja densidad", "ldl"]), 20, 400);
-
-  // ── HEPÁTICO ──
-  r.alt                  = valid(buscar(["alt ", "tgp", "sgpt", "alanino", "alanina aminotransferasa", "alanina amino transferasa", "transaminasa piruvica", "transaminasa glutamico piruvica"]), 1, 2000);
-  r.ast                  = valid(buscar(["ast ", "tgo", "sgot", "aspartato", "aspartato aminotransferasa", "transaminasa oxalacetica", "transaminasa oxaloacetica", "transaminasa glutamico oxalacetica"]), 1, 2000);
-  r.ggt                  = valid(buscar(["ggt", "gamma glutamil", "gammaglutamil", "gamma-glutamil", "gamma gt", "g.g.t"]), 1, 1000);
-  r.fa                   = valid(buscar(["fosfatasa alcalina", "alkaline phosphatase", "alp ", "fa "]), 10, 1000);
-  r.bilirrubinaTotal     = valid(buscar(["bilirrubina total", "bilirrubinas totales", "bil total"]), 0.05, 30);
-  r.bilirrubinaDirecta   = valid(buscar(["bilirrubina directa", "bil directa", "bilirrubina conjugada"]), 0.01, 20);
-  r.bilirrubinaIndirecta = valid(buscar(["bilirrubina indirecta", "bil indirecta", "bilirrubina no conjugada"]), 0.05, 20);
-  r.proteinasTotales     = valid(buscar(["proteinas totales", "proteínas totales", "prot totales"]), 2, 15);
-  r.albumina             = valid(buscar(["albumina", "albúmina", "albumin"]), 1, 8);
-
-  // ── TIROIDEO ──
-  r.tsh          = valid(buscar(["tsh ultrasensible", "tsh", "tirotropina", "hormona estimulante de tiroides", "hormona estimulante de la tiroides", "thyrotropin"]), 0.01, 100);
-  r.t4           = valid(buscar(["t4 libre", "t4l", "tiroxina libre", "free t4", "ft4"]), 0.1, 10);
-  r.t3           = valid(buscar(["t3 libre", "t3l", "triiodotironina libre", "triyodotironina libre", "free t3", "ft3"]), 0.5, 15);
-
-  // ── RENAL ──
-  r.creatinina   = valid(buscar(["creatinina serica", "creatinina en suero", "creatinina", "creatinine"]), 0.1, 20);
-  r.bun          = valid(buscar(["bun", "nitrogeno ureico", "nitrógeno ureico", "blood urea nitrogen", "urea"]), 1, 200);
-  r.acidoUrico   = valid(buscar(["acido urico", "ácido úrico", "uric acid"]), 0.5, 20);
-
-  // ── VITAMINAS ──
-  r.vitD         = valid(buscar(["25 hidroxi vitamina d", "25-hidroxi", "25 oh d", "25oh", "25(oh)d", "calcidiol", "vitamina d", "vit d"]), 1, 200);
-  r.b12          = valid(buscar(["vitamina b12", "cobalamina", "b-12", "vit b12", "b12"]), 50, 3000);
-  r.ferritina    = valid(buscar(["ferritina", "ferritin"]), 1, 5000);
-
-  // ── GINECOLÓGICO ──
-  r.fsh          = valid(buscar(["fsh", "hormona foliculo estimulante", "hormona folículo estimulante", "folitropina"]), 0.1, 200);
-  r.lh           = valid(buscar(["lh", "hormona luteinizante", "lutropina"]), 0.1, 200);
-  r.estradiol    = valid(buscar(["estradiol", "e2"]), 5, 2000);
-  r.progesterona = valid(buscar(["progesterona"]), 0.1, 100);
-  r.prolactina   = valid(buscar(["prolactina basal", "prolactina", "prl"]), 0.5, 500);
-  r.testosterona = valid(buscar(["testosterona total", "testosterona"]), 5, 2000);
-
-  // Fecha: buscar patrones tipo DD/MM/YYYY o YYYY-MM-DD
-  const fechaPats = [
-    /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/,
-    /(\d{4})-(\d{1,2})-(\d{1,2})/,
+  r.glucosa      = buscar(["glucosa serica","glucosa en suero","glucosa basal","glucosa ayuno","glucosa","glicemia","glucemia","glucose"], 30, 600);
+  r.insulina     = buscar(["insulina basal","insulina en suero","insulina","insulin"], 0.1, 500);
+  r.homa         = buscar(["homa-ir","homa ir","indice homa","resistencia a la insulina","resistencia insulinica","homa"], 0.1, 50);
+  r.hba1c        = buscar(["hemoglobina glucosilada","hemoglobina glicosilada","hemoglobina glicada","glicohemoglobina","hba1c","hb a1c","a1c"], 3, 20);
+  r.colesterol   = buscar(["colesterol total","cholesterol total","col. total","colesterol"], 50, 600);
+  r.trigliceridos= buscar(["trigliceridos","triglycerides"], 20, 2000);
+  r.hdl          = buscar(["hdl colesterol","colesterol hdl","colesterol-hdl","c-hdl","hdl-c","lipoproteina de alta densidad","colesterol de alta densidad","hdl"], 10, 200);
+  r.ldl          = buscar(["ldl colesterol","colesterol ldl","colesterol-ldl","c-ldl","ldl-c","lipoproteina de baja densidad","colesterol de baja densidad","ldl"], 20, 400);
+  r.vldl         = buscar(["vldl colesterol","colesterol vldl","c-vldl","vldl-c","lipoproteina de muy baja densidad","vldl"], 5, 200);
+  r.alt          = buscar(["alanina aminotransferasa","alanino aminotransferasa","alanina amino transferasa","transaminasa piruvica","transaminasa glutamico piruvica","tgp","sgpt","alt"], 1, 2000);
+  r.ast          = buscar(["aspartato aminotransferasa","aspartato amino transferasa","transaminasa oxalacetica","transaminasa oxaloacetica","transaminasa glutamico oxalacetica","tgo","sgot","ast"], 1, 2000);
+  r.ggt          = buscar(["gamma glutamil transferasa","gamma glutamil transpeptidasa","gammaglutamil","gamma-glutamil","gamma glutamil","gamma gt","g.g.t","ggt"], 1, 1000);
+  r.fa           = buscar(["fosfatasa alcalina","alkaline phosphatase","fosfatasa alc"], 10, 1000);
+  r.ldh          = buscar(["deshidrogenasa lactica","lactato deshidrogenasa","lactic dehydrogenase","ldh"], 50, 3000);
+  r.bilirrubinaTotal     = buscar(["bilirrubina total","bilirrubinas totales","bilirubin total","bil. total","bil total"], 0.05, 30);
+  r.bilirrubinaDirecta   = buscar(["bilirrubina directa","bilirrubina conjugada","bilirubin direct","bil. directa","bil directa"], 0.01, 20);
+  r.bilirrubinaIndirecta = buscar(["bilirrubina indirecta","bilirrubina no conjugada","bilirubin indirect","bil. indirecta","bil indirecta"], 0.05, 20);
+  r.proteinasTotales     = buscar(["proteinas totales","prot. totales","prot totales","total protein"], 2, 15);
+  r.albumina             = buscar(["albumina serica","albumina en suero","albumina","albumin"], 1, 8);
+  r.globulinas           = buscar(["globulinas","globulin"], 0.5, 10);
+  r.tsh = buscar(["tirotropina","hormona estimulante de tiroides","hormona estimulante de la tiroides","thyrotropin","tsh ultrasensible","tsh"], 0.01, 100);
+  r.t4  = buscar(["tiroxina libre","t4 libre","free t4","ft4","t4l"], 0.1, 10);
+  r.t4t = buscar(["tiroxina total","t4 total","total t4"], 1, 30);
+  r.t3  = buscar(["triiodotironina libre","triyodotironina libre","t3 libre","free t3","ft3","t3l"], 0.5, 15);
+  r.t3t = buscar(["triiodotironina total","triyodotironina total","t3 total","total t3"], 0.5, 10);
+  r.hemoglobina = buscar(["hemoglobina","haemoglobin","hgb","hb"], 3, 25);
+  r.hematocrito = buscar(["hematocrito","hematocrit","hto","hct"], 10, 65);
+  r.eritrocitos = buscar(["eritrocitos","globulos rojos","red blood cells","rbc"], 1, 10);
+  r.leucocitos  = buscar(["leucocitos","globulos blancos","white blood cells","wbc"], 0.5, 100);
+  r.plaquetas   = buscar(["plaquetas","thrombocytes","platelets","plt"], 10, 1500);
+  r.neutrofilos = buscar(["neutrofilos","neutrophils"], 10, 95);
+  r.linfocitos  = buscar(["linfocitos","lymphocytes"], 5, 80);
+  r.monocitos   = buscar(["monocitos","monocytes"], 0, 25);
+  r.eosinofilos = buscar(["eosinofilos","eosinophils"], 0, 25);
+  r.basofilos   = buscar(["basofilos","basophils"], 0, 5);
+  r.mcv         = buscar(["volumen corpuscular medio","mean corpuscular volume","vcm","mcv"], 50, 130);
+  r.mch         = buscar(["hemoglobina corpuscular media","mean corpuscular hemoglobin","hcm","mch"], 15, 50);
+  r.mchc        = buscar(["concentracion de hemoglobina corpuscular","mchc","chcm"], 20, 45);
+  r.rdw         = buscar(["amplitud de distribucion eritrocitaria","red cell distribution","rdw","adv"], 8, 25);
+  r.creatinina  = buscar(["creatinina serica","creatinina en suero","creatinina","creatinine"], 0.1, 20);
+  r.bun         = buscar(["nitrogeno ureico","blood urea nitrogen","bun"], 1, 200);
+  r.urea        = buscar(["urea serica","urea en suero","urea"], 5, 300);
+  r.acidoUrico  = buscar(["acido urico","uric acid"], 0.5, 20);
+  r.sodio       = buscar(["sodio serico","sodio en suero","sodio","sodium"], 100, 180);
+  r.potasio     = buscar(["potasio serico","potasio en suero","potasio","potassium"], 2, 8);
+  r.cloro       = buscar(["cloro serico","cloruro","cloro","chloride"], 80, 130);
+  r.calcio      = buscar(["calcio serico","calcio total","calcio","calcium"], 4, 15);
+  r.fosforo     = buscar(["fosforo serico","fosforo inorganico","fosforo","phosphorus"], 1, 10);
+  r.vitD        = buscar(["25 hidroxi vitamina d","25-hidroxivitamina d","25 oh vitamina d","25(oh)d","calcidiol","vitamina d 25","vitamina d"], 1, 200);
+  r.b12         = buscar(["vitamina b12","cobalamina","cianocobalamina","vit b12","b-12"], 50, 3000);
+  r.ferritina   = buscar(["ferritina serica","ferritina","ferritin"], 1, 5000);
+  r.hierro      = buscar(["hierro serico","hierro en suero","hierro","serum iron"], 10, 300);
+  r.fsh          = buscar(["hormona foliculoestimulante","hormona foliculo estimulante","folitropina","fsh"], 0.1, 200);
+  r.lh           = buscar(["hormona luteinizante","lutropina","lh"], 0.1, 200);
+  r.estradiol    = buscar(["estradiol","17 beta estradiol","e2"], 1, 5000);
+  r.progesterona = buscar(["progesterona","progesterone"], 0.1, 100);
+  r.prolactina   = buscar(["prolactina basal","prolactina","prolactin","prl"], 0.5, 500);
+  r.testosterona = buscar(["testosterona total","testosterona libre","testosterona","testosterone"], 1, 5000);
+  r.pcr          = buscar(["proteina c reactiva ultrasensible","proteina c reactiva","pcr ultrasensible","pcr us","c reactive protein","pcr"], 0.01, 500);
+  const fechaPatterns = [
+    { re: /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/, fn: m => `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
+    { re: /(\d{4})-(\d{1,2})-(\d{1,2})/, fn: m => `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` },
+    { re: /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:del?\s+)?(\d{4})/i, fn: m => {
+      const meses = {enero:"01",febrero:"02",marzo:"03",abril:"04",mayo:"05",junio:"06",julio:"07",agosto:"08",septiembre:"09",octubre:"10",noviembre:"11",diciembre:"12"};
+      return `${m[3]}-${meses[m[2].toLowerCase()]}-${m[1].padStart(2,"0")}`;
+    }},
   ];
-  for (const fp of fechaPats) {
-    const m = texto.match(fp);
-    if (m) {
-      let y, mo, d;
-      if (m[0].length===10 && m[0].includes("-") && m[1].length===4) {
-        y = m[1]; mo = m[2].padStart(2,"0"); d = m[3].padStart(2,"0");
-      } else {
-        d = m[1].padStart(2,"0"); mo = m[2].padStart(2,"0");
-        y = m[3].length===2 ? "20"+m[3] : m[3];
-      }
-      r.fecha = `${y}-${mo}-${d}`;
-      break;
-    }
+  for (const { re, fn } of fechaPatterns) {
+    const m = texto.match(re);
+    if (m) { r.fecha = fn(m); break; }
   }
-
-  // Laboratorio: buscar nombre común (incluyendo laboratorios locales de Hermosillo)
+  const normFull = norm.replace(/\n/g, " ");
   const labs = [
-    ["valtierra","Valtierra"],
-    ["salud digna","Salud Digna"],
-    ["san jose","Lab San José"], ["san josé","Lab San José"],
-    ["san francisco","Lab San Francisco"], ["pxlab","PxLab"],
-    ["ramos","Lab Ramos"],
-    ["chopo","Chopo"], ["quest","Quest"], ["biomedica","Biomédica"],
-    ["mediavanz","Mediavanz"], ["lab cer","Lab CER"], ["carpermor","Carpermor"],
-    ["azteca","Azteca"], ["clínica ruiz","Clínica Ruiz"], ["clinica ruiz","Clínica Ruiz"],
+    ["valtierra","Valtierra"],["salud digna","Salud Digna"],
+    ["san jose","Lab San José"],["san francisco","Lab San Francisco"],
+    ["pxlab","PxLab"],["ramos","Lab Ramos"],["chopo","Chopo"],
+    ["quest","Quest"],["biomedica","Biomedica"],["mediavanz","Mediavanz"],
+    ["lab cer","Lab CER"],["carpermor","Carpermor"],["azteca","Azteca"],
+    ["clinica ruiz","Clinica Ruiz"],["diagnostica","Diagnostica"],
   ];
   for (const [needle, label] of labs) {
-    if (norm.includes(needle)) { r.laboratorio = label; break; }
+    if (normFull.includes(needle)) { r.laboratorio = label; break; }
   }
-
   return r;
 };
 
