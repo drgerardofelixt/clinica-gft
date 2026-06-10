@@ -89,7 +89,7 @@ export const authorizeGoogleCalendar = () => {
     window.dispatchEvent(new Event("gcal_authed"));
     return;
   }
-  tokenClient.requestAccessToken({ prompt: "consent" });
+  tokenClient.requestAccessToken({ prompt: "" });
 };
 
 export const isGoogleAuthorized = () => {
@@ -141,7 +141,7 @@ export const crearEventoGCal = async (nombre, telefono, fecha, hora, tipoCita, d
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(TOKEN_EXP_KEY);
       accessToken = null;
-      authorizeGoogleCalendar();
+      window.dispatchEvent(new Event("gcal_revoked"));
     }
     return null;
   }
@@ -171,6 +171,7 @@ export const leerEventosGCal = async () => {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(TOKEN_EXP_KEY);
       accessToken = null;
+      window.dispatchEvent(new Event("gcal_revoked"));
     }
     return [];
   }
