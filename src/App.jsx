@@ -3764,8 +3764,9 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
   );
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect}) => {
-  const [mesOffset, setMesOffset] = useState(0); // 0=mes actual, -1=anterior, +1=siguiente
+const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita}) => {
+  const [mesOffset, setMesOffset] = useState(0);
+  const [diaSel, setDiaSel] = useState(null);
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
   // Sanitizar pacientes: asegurar que sea array y filtrar inválidos
@@ -3790,9 +3791,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const todasCitas = pacientes
     .flatMap(p=>(p.consultas||[]).filter(c=>c.proxCita && p && p.nombre).map(c=>({
       pac:p, fecha:c.proxCita, hora:c.proxHora||"",
-      tipoCita:c.tipoCita||"seguimiento", duracion:c.duracion||30
+      tipoCita:c.tipoCita||"seguimiento", duracion:c.duracion||30,
+      consultaId:c.id
     })))
-    .filter(c=>c.pac && c.pac?.nombre); // Filtrar citas sin paciente válido
+    .filter(c=>c.pac && c.pac?.nombre);
 
   const citasMes = todasCitas
     .filter(c=>{
@@ -3800,6 +3802,22 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
       return f >= mesRef && f <= finMes;
     })
     .sort((a,b)=> (a.fecha+a.hora).localeCompare(b.fecha+b.hora));
+
+  // Mapa de citas por día: incluye app + gcal con toda la info necesaria
+  const citasDia = {};
+  todasCitas.forEach(c=>{
+    if (!citasDia[c.fecha]) citasDia[c.fecha] = [];
+    citasDia[c.fecha].push({tipo:"app", nombre:c.pac?.nombre||"", hora:c.hora,
+      tipoCita:c.tipoCita, pac:c.pac, consultaId:c.consultaId});
+  });
+  (gcalEventos||[]).forEach(ev=>{
+    const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+    const h = ev.start?.dateTime ? ev.start.dateTime.split("T")[1]?.slice(0,5) : "";
+    if (f) {
+      if (!citasDia[f]) citasDia[f] = [];
+      citasDia[f].push({tipo:"gcal", nombre:ev.summary||"Evento", hora:h||"", tipoCita:"gcal"});
+    }
+  });
 
   // Citas de HOY
   const hoyStr = hoy.toISOString().split("T")[0];
@@ -3821,6 +3839,23 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
 Saludos!`;
     enviarWA(c.pac?.telefono||"sin telefono", msg);
+  };
+
+  const cancelarCita = (cita) => {
+    if (!cita.pac || !cita.consultaId) return;
+    if (!confirm(`¿Cancelar cita de ${cita.pac?.nombre} el ${cita.fecha}?`)) return;
+    const pacActualizado = {...cita.pac, consultas:(cita.pac.consultas||[]).filter(c=>c.id!==cita.consultaId)};
+    onCancelarCita && onCancelarCita(pacActualizado);
+    setDiaSel(null);
+  };
+
+  const moverCita = (cita) => {
+    if (!cita.pac || !cita.consultaId) return;
+    if (!confirm(`¿Mover cita de ${cita.pac?.nombre}? La cita actual se cancelará y podrás elegir nueva fecha.`)) return;
+    const pacActualizado = {...cita.pac, consultas:(cita.pac.consultas||[]).filter(c=>c.id!==cita.consultaId)};
+    onCancelarCita && onCancelarCita(pacActualizado);
+    setDiaSel(null);
+    setTimeout(()=> onAgendar && onAgendar(cita.pac), 300);
   };
 
   const recientes = [...pacientes].sort((a,b)=>{
@@ -3910,37 +3945,11 @@ Saludos!`;
         </Card>
       )}
 
-      {citasManana.length>0 && (
-        <Card style={{marginBottom:16,background:C.azulPale,border:"1px solid "+C.azulClaro+"40"}}>
-          <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:18}}>📲</span> Recordatorios — Citas de mañana
-          </div>
-          <div style={{fontSize:10,color:C.suave,marginBottom:10}}>
-            Envía un mensaje de WhatsApp para recordar y confirmar la cita
-          </div>
-          {citasManana.map((c,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
-              borderRadius:10,background:"white",marginBottom:6,
-              border:"1px solid "+C.azulClaro+"30"}}>
-              <div style={{minWidth:50,textAlign:"center"}}>
-                <div style={{fontSize:14,fontWeight:800,color:C.azul}}>{c.hora||"—"}</div>
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:700,fontSize:12}}>{c.pac?.nombre}</div>
-                <div style={{fontSize:10,color:C.suave}}>{c.pac?.telefono||"Sin teléfono"}</div>
-              </div>
-              <Btn onClick={()=>enviarRecordatorio(c)} color={C.verde} size="sm" icon="📱"
-                disabled={!c.pac?.telefono}>Recordar</Btn>
-              <Btn onClick={()=>agregarAGoogleCalendar(c.pac?.nombre, c.pac?.telefono, c.fecha, c.hora||"09:00", c.tipoCita, c.duracion||30)}
-                color={C.azul} size="sm" icon="📅" outline>Google</Btn>
-            </div>
-          ))}
-        </Card>
-      )}
 
+      {/* ── CALENDARIO MENSUAL ─────────────────────────────── */}
       <Card style={{marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-          <div style={{fontWeight:800,color:C.azul,fontSize:13}}>📅 Agenda</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:700,color:C.azul,fontSize:13}}>📅 Agenda</div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <Btn onClick={()=>setMesOffset(mesOffset-1)} outline color={C.suave} size="sm">◀</Btn>
             <div style={{fontWeight:700,fontSize:12,minWidth:130,textAlign:"center",
@@ -3956,162 +3965,171 @@ Saludos!`;
           </div>
         )}
 
-        {/* Calendario mensual visual */}
-        {(() => {
+        {/* Leyenda de colores */}
+        <div style={{display:"flex",gap:14,marginBottom:12,flexWrap:"wrap"}}>
+          {[
+            {color:C.azul, label:"Primera vez"},
+            {color:C.verde, label:"Seguimiento"},
+            {color:"#4285F4", label:"Google Calendar"},
+          ].map(l=>(
+            <div key={l.label} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:C.suave}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:l.color,flexShrink:0}}/>
+              {l.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Cabecera días de la semana */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+          {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d,i)=>(
+            <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:700,
+              color:i===0||i===6?C.rojo:C.suave,padding:"4px 0"}}>{d}</div>
+          ))}
+        </div>
+
+        {/* Cuadrícula de días */}
+        {(()=>{
           const mesR = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
           const primerD = mesR.getDay();
           const diasM = new Date(mesR.getFullYear(), mesR.getMonth()+1, 0).getDate();
           const hoyStr2 = hoy.toISOString().split("T")[0];
-
-          // Combinar citas de la app + Google Calendar
-          const citasDia = {};
-          pacientes.forEach(p=>{
-            (p.consultas||[]).forEach(c=>{
-              if (c.proxCita) {
-                if (!citasDia[c.proxCita]) citasDia[c.proxCita] = [];
-                citasDia[c.proxCita].push({nombre:p.nombre, hora:c.proxHora||"", tipo:"app"});
-              }
-            });
-          });
-          (gcalEventos||[]).forEach(ev=>{
-            const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
-            const h = ev.start?.dateTime ? ev.start.dateTime.split("T")[1]?.slice(0,5) : "";
-            if (f) {
-              if (!citasDia[f]) citasDia[f] = [];
-              citasDia[f].push({nombre:ev.summary||"Evento", hora:h||"", tipo:"gcal"});
-            }
-          });
-
           return (
-            <>
-              {/* Cabecera días */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-                {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d,i)=>(
-                  <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:800,
-                    color:i===0||i===6?C.rojo:C.suave,padding:"4px 0"}}>{d}</div>
-                ))}
-              </div>
-              {/* Días del mes */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:12}}>
-                {Array.from({length:primerD}).map((_,i)=><div key={"e"+i}/>)}
-                {Array.from({length:diasM}).map((_,i)=>{
-                  const dia = i+1;
-                  const fechaDia = `${mesR.getFullYear()}-${String(mesR.getMonth()+1).padStart(2,"0")}-${String(dia).padStart(2,"0")}`;
-                  const esHoy = fechaDia===hoyStr2;
-                  const citas = citasDia[fechaDia]||[];
-                  const nCitas = citas.length;
-                  const tieneGcal = citas.some(c=>c.tipo==="gcal");
-                  const tieneApp = citas.some(c=>c.tipo==="app");
-                  return (
-                    <div key={dia} style={{
-                      minHeight:44,borderRadius:6,padding:"3px 2px",
-                      background:esHoy?C.azul:nCitas>0?C.azulPale:"white",
-                      border:"1px solid "+(esHoy?C.azul:nCitas>0?C.azulClaro+"40":C.grisMedio),
-                      cursor:"default",position:"relative"
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:12}}>
+              {Array.from({length:primerD}).map((_,i)=><div key={"e"+i}/>)}
+              {Array.from({length:diasM}).map((_,i)=>{
+                const dia = i+1;
+                const mesR2 = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
+                const fechaDia = `${mesR2.getFullYear()}-${String(mesR2.getMonth()+1).padStart(2,"0")}-${String(dia).padStart(2,"0")}`;
+                const esHoy = fechaDia===hoyStr2;
+                const esSel = fechaDia===diaSel;
+                const citas = citasDia[fechaDia]||[];
+                const nCitas = citas.length;
+                return (
+                  <div key={dia}
+                    onClick={()=>nCitas>0 ? setDiaSel(esSel ? null : fechaDia) : null}
+                    style={{
+                      minHeight:52,borderRadius:6,padding:"3px 3px",
+                      background: esSel?"#DBEAFE": esHoy?C.azul: nCitas>0?C.azulPale:"white",
+                      border:"1.5px solid "+(esSel?C.azulClaro: esHoy?C.azul: nCitas>0?C.azulClaro+"70":C.grisMedio),
+                      cursor: nCitas>0?"pointer":"default",
+                      transition:"all 0.12s"
                     }}>
-                      <div style={{textAlign:"center",fontSize:11,fontWeight:esHoy?900:600,
-                        color:esHoy?"white":nCitas>0?C.azul:C.texto}}>{dia}</div>
-                      {nCitas>0 && (
-                        <div style={{marginTop:1}}>
-                          {citas.slice(0,2).map((c,ci)=>(
+                    <div style={{textAlign:"center",fontSize:11,fontWeight:esHoy?800:600,
+                      color:esHoy?"white": esSel?C.azulClaro: nCitas>0?C.azul:C.texto}}>{dia}</div>
+                    {nCitas>0 && (
+                      <div style={{marginTop:2,display:"flex",flexDirection:"column",gap:1}}>
+                        {citas.slice(0,2).map((c,ci)=>{
+                          const chipColor = c.tipo==="gcal"?"#4285F4": c.tipoCita==="primera"?C.azul:C.verde;
+                          return (
                             <div key={ci} style={{
-                              fontSize:8,lineHeight:1.2,padding:"1px 3px",borderRadius:3,marginBottom:1,
-                              background:c.tipo==="gcal"?"#4285F420":C.verde+"30",
-                              color:c.tipo==="gcal"?"#4285F4":C.verde,
+                              fontSize:7,lineHeight:1.3,padding:"1px 3px",borderRadius:2,
+                              background:chipColor+"28",color:chipColor,
                               fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"
                             }}>
                               {c.hora?c.hora+" ":""}{c.nombre}
                             </div>
-                          ))}
-                          {nCitas>2 && <div style={{fontSize:8,color:C.suave,textAlign:"center"}}>+{nCitas-2} más</div>}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Lista de citas del mes */}
-              {citasMes.length===0 && (gcalEventos||[]).filter(ev=>{
-                const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
-                const fDate = new Date(f+"T00:00:00");
-                return fDate >= mesRef && fDate <= finMes;
-              }).length===0 ? (
-                <div style={{textAlign:"center",padding:"16px 0",color:C.suave,fontSize:12}}>
-                  Sin citas programadas en {mesStr}
-                </div>
-              ) : (
-                <>
-                  {/* Citas de la app */}
-                  {citasMes.map((c,i)=>{
-                    const esHoy = c.fecha===hoyStr;
-                    const esManana = c.fecha===mananaStr;
-                    const dias = Math.floor((new Date(c.fecha+"T00:00:00").getTime()-hoy.getTime())/86400000);
-                    return (
-                      <div key={i} onClick={()=>c.pac && onVer(c.pac)}
-                        style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",borderRadius:8,
-                          background:esHoy?C.verdePale:esManana?C.amarilloPale:C.gris,
-                          cursor:"pointer",marginBottom:4,
-                          border:"1px solid "+(esHoy?C.verde:esManana?C.amarillo:C.grisMedio)}}>
-                        <div style={{textAlign:"center",minWidth:40}}>
-                          <div style={{fontSize:12,fontWeight:900,color:esHoy?C.verde:esManana?C.amarillo:C.azul}}>
-                            {new Date(c.fecha+"T00:00:00").getDate()}
-                          </div>
-                          {c.hora && <div style={{fontSize:9,color:C.suave,fontWeight:700}}>{c.hora}</div>}
-                        </div>
-                        <div style={{flex:1}}>
-                          <div style={{fontWeight:700,fontSize:11}}>{c.pac?.nombre}</div>
-                          <div style={{fontSize:9,color:C.suave}}>
-                            {esHoy?"Hoy":esManana?"Mañana":dias>0?`En ${dias} días`:`Hace ${-dias} días`}
-                          </div>
-                        </div>
-                        <Tag color={C.azul} style={{fontSize:9}}>App</Tag>
+                          );
+                        })}
+                        {nCitas>2 && <div style={{fontSize:7,color:C.suave,textAlign:"center",fontWeight:700}}>+{nCitas-2}</div>}
                       </div>
-                    );
-                  })}
-                  {/* Eventos de Google Calendar */}
-                  {(gcalEventos||[]).filter(ev=>{
-                    const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
-                    const fDate = new Date(f+"T00:00:00");
-                    return fDate >= mesRef && fDate <= finMes;
-                  }).sort((a,b)=>{
-                    const fa = a.start?.dateTime||a.start?.date||"";
-                    const fb = b.start?.dateTime||b.start?.date||"";
-                    return fa.localeCompare(fb);
-                  }).map((ev,i)=>{
-                    const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
-                    const h = ev.start?.dateTime ? ev.start.dateTime.split("T")[1]?.slice(0,5) : "";
-                    const esHoy = f===hoyStr;
-                    const esManana = f===mananaStr;
-                    const dias = Math.floor((new Date(f+"T00:00:00").getTime()-hoy.getTime())/86400000);
-                    return (
-                      <div key={"g"+i}
-                        style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",borderRadius:8,
-                          background:esHoy?"#E8F4FD":esManana?"#EEF7FF":"#F8FBFF",
-                          marginBottom:4,
-                          border:"1px solid "+(esHoy?"#4285F4":"#4285F420")}}>
-                        <div style={{textAlign:"center",minWidth:40}}>
-                          <div style={{fontSize:12,fontWeight:900,color:"#4285F4"}}>
-                            {new Date(f+"T00:00:00").getDate()}
-                          </div>
-                          {h && <div style={{fontSize:9,color:C.suave,fontWeight:700}}>{h}</div>}
-                        </div>
-                        <div style={{flex:1}}>
-                          <div style={{fontWeight:700,fontSize:11}}>{ev.summary||"Evento"}</div>
-                          <div style={{fontSize:9,color:C.suave}}>
-                            {esHoy?"Hoy":esManana?"Mañana":dias>0?`En ${dias} días`:`Hace ${-dias} días`}
-                          </div>
-                        </div>
-                        <Tag color="#4285F4" style={{fontSize:9}}>Google</Tag>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-            </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           );
         })()}
+
+        {/* Panel de detalle del día seleccionado */}
+        {diaSel && (
+          <div style={{background:C.azulPale,borderRadius:10,padding:14,
+            border:"1.5px solid "+C.azulClaro+"50",marginBottom:4}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontWeight:700,color:C.azul,fontSize:12}}>
+                {new Date(diaSel+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}
+                {" "}· {(citasDia[diaSel]||[]).length} cita(s)
+              </div>
+              <button onClick={()=>setDiaSel(null)}
+                style={{background:"none",border:"none",cursor:"pointer",color:C.suave,fontSize:18,lineHeight:1}}>✕</button>
+            </div>
+            {(citasDia[diaSel]||[]).slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||"")).map((c,i)=>{
+              const chipColor = c.tipo==="gcal"?"#4285F4": c.tipoCita==="primera"?C.azul:C.verde;
+              const tipoLabel = c.tipo==="gcal"?"Google Calendar": c.tipoCita==="primera"?"Primera vez":"Seguimiento";
+              return (
+                <div key={i} style={{background:"white",borderRadius:10,padding:"10px 14px",
+                  marginBottom:8,border:"1px solid "+chipColor+"30",
+                  display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{minWidth:44,textAlign:"center"}}>
+                    <div style={{fontSize:16,fontWeight:800,color:chipColor}}>{c.hora||"—"}</div>
+                    <div style={{fontSize:8,color:C.suave}}>hrs</div>
+                  </div>
+                  <div style={{flex:1,minWidth:110}}>
+                    <div style={{fontWeight:700,fontSize:13,color:C.texto}}>{c.nombre}</div>
+                    <div style={{marginTop:4}}>
+                      <span style={{background:chipColor+"18",color:chipColor,borderRadius:10,
+                        padding:"2px 9px",fontSize:10,fontWeight:600}}>{tipoLabel}</span>
+                    </div>
+                  </div>
+                  {c.tipo==="app" && (
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <Btn onClick={()=>{onVer(c.pac); setDiaSel(null);}} color={C.azul} size="sm">
+                        Ver expediente
+                      </Btn>
+                      <Btn onClick={()=>moverCita(c)} color={C.naranja} outline size="sm">
+                        Mover
+                      </Btn>
+                      <Btn onClick={()=>cancelarCita(c)} color={C.rojo} outline size="sm">
+                        Cancelar
+                      </Btn>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
+
+      {/* ── CITAS DE MAÑANA ────────────────────────────────── */}
+      {citasManana.length>0 && (
+        <Card style={{marginBottom:16,border:"1.5px solid "+C.azulClaro+"50"}}>
+          <div style={{fontWeight:700,color:C.azul,fontSize:13,marginBottom:2,
+            display:"flex",alignItems:"center",gap:8}}>
+            <span>📲</span> Citas de mañana
+          </div>
+          <div style={{fontSize:11,color:C.suave,marginBottom:12}}>
+            {new Date(manana).toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}
+            {" "}· {citasManana.length} cita(s)
+          </div>
+          {citasManana.slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||"")).map((c,i)=>{
+            const chipColor = c.tipoCita==="primera"?C.azul:C.verde;
+            const tipoLabel = c.tipoCita==="primera"?"Primera vez":"Seguimiento";
+            return (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",
+                borderRadius:10,background:C.gris,marginBottom:8,border:"1px solid "+C.grisMedio}}>
+                <div style={{minWidth:50,textAlign:"center"}}>
+                  <div style={{fontSize:19,fontWeight:800,color:chipColor}}>{c.hora||"—"}</div>
+                  <div style={{fontSize:9,color:C.suave}}>hrs</div>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13,color:C.texto}}>{c.pac?.nombre}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:5,flexWrap:"wrap"}}>
+                    <span style={{background:chipColor+"18",color:chipColor,borderRadius:10,
+                      padding:"2px 9px",fontSize:10,fontWeight:600}}>{tipoLabel}</span>
+                    {c.pac?.telefono && (
+                      <span style={{fontSize:10,color:C.suave}}>📱 {c.pac.telefono}</span>
+                    )}
+                  </div>
+                </div>
+                <Btn onClick={()=>enviarRecordatorio(c)} color={C.verde} size="sm" icon="📱"
+                  disabled={!c.pac?.telefono}>
+                  Recordatorio
+                </Btn>
+              </div>
+            );
+          })}
+        </Card>
+      )}
 
       {labsHoy.length>0 && (
         <Card style={{marginBottom:16,background:C.rojoPale,border:"1px solid "+C.rojo+"30"}}>
@@ -4299,6 +4317,12 @@ export default function App() {
       setActivo(p);
     } catch(e) { console.error("Error actualizando paciente:", e); }
   };
+  const cancelarCitaDashboard = async (p) => {
+    try {
+      await savePaciente(p);
+      await cargarPacientes();
+    } catch(e) { console.error("Error cancelando cita:", e); }
+  };
   const saveFirma = async (b64) => {
     setFirmaB64(b64);
     try {
@@ -4408,7 +4432,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)} onNuevoPaciente={()=>setMNuevo(true)} onIrPacientes={()=>setVista("lista")} gcalAuthed={gcalAuthed} gcalEventos={gcalEventos} onGcalConnect={()=>authorizeGoogleCalendar()} onGcalDisconnect={()=>revokeGoogleAccess()}/>
+          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)} onNuevoPaciente={()=>setMNuevo(true)} onIrPacientes={()=>setVista("lista")} gcalAuthed={gcalAuthed} gcalEventos={gcalEventos} onGcalConnect={()=>authorizeGoogleCalendar()} onGcalDisconnect={()=>revokeGoogleAccess()} onCancelarCita={cancelarCitaDashboard}/>
         )
       )}
       {vista==="lista" && (
