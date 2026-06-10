@@ -380,6 +380,21 @@ const GLPS = [
   "Mounjaro (Tirzepatida) 10mg","Mounjaro (Tirzepatida) 12.5mg","Mounjaro (Tirzepatida) 15mg",
 ];
 
+const buildGCalTitulo = (pac, tipoCita) => {
+  const num = (pac.consultas||[]).length;
+  const ordinal = n => n===1?"1ra":n===2?"2da":n===3?"3ra":n===4?"4ta":n===5?"5ta":n+"a";
+  if (tipoCita === "primera") return `${pac.nombre} - ${ordinal(num)} consulta`;
+  const recetasGlp1 = (pac.recetas||[]).filter(r=>r.tipo==="glp1");
+  const ultima = recetasGlp1[recetasGlp1.length-1];
+  if (!ultima?.med) return `${pac.nombre} - ${ordinal(num)} consulta`;
+  const medL = ultima.med.toLowerCase();
+  const abrev = (medL.includes("tirzepatida")||medL.includes("mounjaro")) ? "MOUN"
+    : (medL.includes("semaglutida")||medL.includes("wegovy")||medL.includes("ozempic")) ? "WEG"
+    : medL.includes("liraglutida") ? "LIRA" : "";
+  const dosis = ultima.med.split(" ").at(-1)||"";
+  return `${pac.nombre} - ${ordinal(num)} ${abrev ? abrev+" "+dosis : ultima.med}`.trim();
+};
+
 // ── CATÁLOGO CIE-10 (Códigos más usados en clínica de obesidad y medicina general) ──
 const CIE10 = [
   // Obesidad y trastornos nutricionales
@@ -3279,7 +3294,9 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             // Crear en Google Calendar automáticamente si está conectado (PROTEGIDO contra crashes)
             try {
               if (typeof crearEventoGCal === "function") {
-                const resultado = crearEventoGCal(p.nombre, p.telefono, fecha, hora, tipoCita, duracion);
+                const titulo = buildGCalTitulo(pacActualizado, tipoCita);
+                const colorId = tipoCita === "primera" ? "9" : "2";
+                const resultado = crearEventoGCal(p.nombre, p.telefono, fecha, hora, tipoCita, duracion, titulo, colorId);
                 if (resultado && typeof resultado.then === "function") {
                   resultado.catch(e => console.warn("GCal falló (no crítico):", e));
                 }
@@ -3448,7 +3465,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
   );
 };
 
-const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
+const ModalAgenda = ({pacientes, paciente, onClose, onAgendar, gcalEventos}) => {
   // Si llega 'paciente' es para agendarle a ese específico, si no permite elegir
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const [fechaSel, setFechaSel] = useState(hoy.toISOString().split("T")[0]);
@@ -3504,11 +3521,25 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
     })
   );
 
+  // Eventos de Google Calendar en la misma fecha también bloquean horarios
+  const gcalOcupadas = (gcalEventos||[]).flatMap(ev => {
+    const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+    if (f !== fechaSel || !ev.start?.dateTime) return [];
+    const h = ev.start.dateTime.split("T")[1]?.slice(0,5)||"";
+    if (!h) return [];
+    const durMs = ev.end?.dateTime ? new Date(ev.end.dateTime)-new Date(ev.start.dateTime) : 30*60000;
+    const dur = Math.max(15, Math.round(durMs/60000));
+    const ini = hhmmToMin(h);
+    return [{ ini, fin: ini+dur, pac: ev.summary||"GCal", hora: h }];
+  });
+
+  const todasOcupadas = [...ocupadas, ...gcalOcupadas];
+
   // Una hora está ocupada si la cita propuesta (hora → hora+duracionMin) se solapa con alguna ocupada
   const estaOcupada = (h) => {
     const ini = hhmmToMin(h);
     const fin = ini + duracionMin;
-    return ocupadas.some(o => ini < o.fin && fin > o.ini);
+    return todasOcupadas.some(o => ini < o.fin && fin > o.ini);
   };
   const horasOcupadas = new Set(horarios.filter(estaOcupada));
 
@@ -4576,6 +4607,7 @@ export default function App() {
           <ModalAgenda
             pacientes={pacientes}
             paciente={agendarPara}
+            gcalEventos={gcalEventos}
             onClose={()=>setAgendarPara(false)}
           onAgendar={async (pac, fecha, hora, tipoCita, duracion) => {
             // ── BUG #5 FIX: Cerrar modal PRIMERO, luego operaciones de red con try/catch ──
@@ -4632,7 +4664,9 @@ export default function App() {
               // 5. Crear en Google Calendar si está conectado (NO bloquear si falla)
               try {
                 if (typeof crearEventoGCal === "function") {
-                  const resultado = crearEventoGCal(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion);
+                  const titulo = buildGCalTitulo(pacFinal, tipoCita);
+                  const colorId = tipoCita === "primera" ? "9" : "2";
+                  const resultado = crearEventoGCal(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion, titulo, colorId);
                   // Si retorna Promise, capturar rechazos sin crashear
                   if (resultado && typeof resultado.then === "function") {
                     resultado.catch(e => console.warn("Google Calendar falló (no crítico):", e));

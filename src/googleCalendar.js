@@ -106,7 +106,7 @@ export const revokeGoogleAccess = () => {
   window.dispatchEvent(new Event("gcal_revoked"));
 };
 
-export const crearEventoGCal = async (nombre, telefono, fecha, hora, tipoCita, duracionMin) => {
+export const crearEventoGCal = async (nombre, telefono, fecha, hora, tipoCita, duracionMin, titulo, colorId) => {
   if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return null; }
   const token = loadSavedToken();
   window.gapi.client.setToken({ access_token: token });
@@ -123,7 +123,8 @@ export const crearEventoGCal = async (nombre, telefono, fecha, hora, tipoCita, d
     const resp = await window.gapi.client.calendar.events.insert({
       calendarId: "primary",
       resource: {
-        summary: `${nombre} — ${tipo}`,
+        summary: titulo || `${nombre} — ${tipo}`,
+        ...(colorId ? { colorId: String(colorId) } : {}),
         description: `Cita: ${tipo} (${duracionMin} min)${telefono?"\nTeléfono: "+telefono:""}`,
         location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
         start: { dateTime: iniISO, timeZone: "America/Hermosillo" },
