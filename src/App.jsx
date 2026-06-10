@@ -380,6 +380,25 @@ const GLPS = [
   "Mounjaro (Tirzepatida) 10mg","Mounjaro (Tirzepatida) 12.5mg","Mounjaro (Tirzepatida) 15mg",
 ];
 
+const extraerNombreGCal = (titulo) => {
+  if (!titulo?.trim()) return null;
+  // Tomar solo la parte antes del separador (-, —, –)
+  let s = titulo.split(/\s*[-—–]\s*/)[0].trim();
+  // Quitar palabras clave de estado/tipo
+  s = s.replace(/\b(probable|domicilio|cita|seguimiento|primera\s+vez?|primera|vez|farm|glp-?1?)\b/gi, "");
+  // Quitar abreviaciones de medicamentos
+  s = s.replace(/\b(moun|weg|lira|ozem|sema|tirz)\b/gi, "");
+  // Quitar patrones de dosis: "2.5mg", "0.5 mg", "10mg"
+  s = s.replace(/\b\d+[\d.]*\s*m[gl]\b/gi, "");
+  // Quitar ordinales: "1ra", "2da", "3ra", "4ta"
+  s = s.replace(/\b\d+[a-záéíóú]+\b/gi, "");
+  // Colapsar espacios y limpiar puntuación sobrante
+  s = s.replace(/[^a-záéíóúüñA-ZÁÉÍÓÚÜÑ\s.]/g, " ").replace(/\s{2,}/g, " ").trim();
+  // Requiere mínimo 2 palabras de 2+ caracteres para ser nombre válido
+  const palabras = s.split(/\s+/).filter(w => w.length >= 2);
+  return palabras.length >= 2 ? s : null;
+};
+
 const buildGCalTitulo = (pac, tipoCita) => {
   const num = (pac.consultas||[]).length;
   const ordinal = n => n===1?"1ra":n===2?"2da":n===3?"3ra":n===4?"4ta":n===5?"5ta":n+"a";
@@ -3795,9 +3814,127 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar, gcalEventos}) => 
   );
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita}) => {
+const ModalImportGCal = ({gcalEventos, pacientes, onClose, onImportar}) => {
+  const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+
+  const candidatos = React.useMemo(() => {
+    const existentes = new Set(pacientes.map(p => norm(p.nombre)));
+    const porClave = {};
+    (gcalEventos||[]).forEach(ev => {
+      const nombre = extraerNombreGCal(ev.summary);
+      if (!nombre) return;
+      const clave = norm(nombre);
+      if (existentes.has(clave)) return;
+      if (!porClave[clave]) porClave[clave] = { nombre, eventos: [] };
+      porClave[clave].eventos.push(ev);
+    });
+    return Object.values(porClave).map(c => {
+      const evReciente = [...c.eventos].sort((a,b) =>
+        (b.start?.dateTime||b.start?.date||"").localeCompare(a.start?.dateTime||a.start?.date||"")
+      )[0];
+      const proxCita = (evReciente.start?.dateTime||evReciente.start?.date||"").split("T")[0];
+      const proxHora = evReciente.start?.dateTime ? evReciente.start.dateTime.split("T")[1]?.slice(0,5)||"" : "";
+      return { nombre: c.nombre, proxCita, proxHora, totalEventos: c.eventos.length };
+    }).sort((a,b) => a.nombre.localeCompare(b.nombre));
+  }, [gcalEventos, pacientes]);
+
+  const [sel, setSel] = React.useState(() => new Set(candidatos.map(c => c.nombre)));
+  const [importando, setImportando] = React.useState(false);
+  const [editando, setEditando] = React.useState({});
+
+  React.useEffect(() => { setSel(new Set(candidatos.map(c => c.nombre))); }, [candidatos]);
+
+  const toggle = (nombre) => setSel(prev => {
+    const next = new Set(prev);
+    next.has(nombre) ? next.delete(nombre) : next.add(nombre);
+    return next;
+  });
+
+  const handleImportar = async () => {
+    const lista = candidatos
+      .filter(c => sel.has(c.nombre))
+      .map(c => ({ ...c, nombre: editando[c.nombre] ?? c.nombre }));
+    if (!lista.length) { alert("Selecciona al menos un paciente"); return; }
+    setImportando(true);
+    try { await onImportar(lista); onClose(); }
+    catch(e) { alert("Error importando: " + e.message); }
+    finally { setImportando(false); }
+  };
+
+  const seleccionados = candidatos.filter(c => sel.has(c.nombre)).length;
+
+  return (
+    <Modal title="📥 Importar pacientes de Google Calendar" onClose={onClose} color={C.azul}>
+      <div style={{padding:14}}>
+        {candidatos.length === 0 ? (
+          <div style={{textAlign:"center",padding:32,color:C.suave}}>
+            <div style={{fontSize:32,marginBottom:8}}>✅</div>
+            <div style={{fontWeight:700}}>No hay pacientes nuevos para importar</div>
+            <div style={{fontSize:12,marginTop:4}}>Todos los nombres encontrados en GCal ya existen en la app.</div>
+          </div>
+        ) : (
+          <>
+            <div style={{background:C.azulPale,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:C.azul}}>
+              Se encontraron <b>{candidatos.length}</b> nombres nuevos en Google Calendar.
+              Revisa, edita si es necesario, y selecciona los que quieras importar.
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <button onClick={()=>setSel(new Set(candidatos.map(c=>c.nombre)))}
+                style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+C.azulClaro,
+                  background:C.azulPale,color:C.azulClaro,cursor:"pointer",fontWeight:700}}>
+                Seleccionar todos
+              </button>
+              <button onClick={()=>setSel(new Set())}
+                style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"1px solid "+C.grisMedio,
+                  background:"white",color:C.suave,cursor:"pointer",fontWeight:700}}>
+                Deseleccionar todos
+              </button>
+            </div>
+            <div style={{maxHeight:380,overflowY:"auto",display:"flex",flexDirection:"column",gap:8}}>
+              {candidatos.map(c => {
+                const checked = sel.has(c.nombre);
+                const nombreEdit = editando[c.nombre] ?? c.nombre;
+                return (
+                  <div key={c.nombre} onClick={()=>toggle(c.nombre)}
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+                      borderRadius:10,border:"1.5px solid "+(checked?C.azulClaro:C.grisMedio),
+                      background:checked?C.azulPale:"white",cursor:"pointer",transition:"all .15s"}}>
+                    <input type="checkbox" checked={checked} onChange={()=>toggle(c.nombre)}
+                      onClick={e=>e.stopPropagation()} style={{width:16,height:16,flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <input
+                        value={nombreEdit}
+                        onChange={e=>{ e.stopPropagation(); setEditando(prev=>({...prev,[c.nombre]:e.target.value})); }}
+                        onClick={e=>e.stopPropagation()}
+                        style={{width:"100%",border:"none",background:"transparent",
+                          fontWeight:700,fontSize:13,color:C.texto,outline:"none"}}
+                      />
+                      <div style={{fontSize:11,color:C.suave,marginTop:2}}>
+                        {c.totalEventos} evento{c.totalEventos!==1?"s":""} en GCal
+                        {c.proxCita && ` · próxima cita: ${c.proxCita}${c.proxHora?" "+c.proxHora:""}`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{marginTop:16,display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn onClick={onClose} outline color={C.suave} size="sm">Cancelar</Btn>
+              <Btn onClick={handleImportar} color={C.azul} size="sm" disabled={importando||seleccionados===0}>
+                {importando ? "Importando..." : `Importar ${seleccionados} paciente${seleccionados!==1?"s":""}`}
+              </Btn>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+};
+
+const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, onIrPacientes, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal}) => {
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
+  const [showImport, setShowImport] = useState(false);
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
   // Sanitizar pacientes: asegurar que sea array y filtrar inválidos
@@ -3961,7 +4098,10 @@ Saludos!`;
             </div>
           </div>
           {gcalAuthed ? (
-            <Btn onClick={onGcalDisconnect} outline color={C.rojo} size="sm">Desconectar</Btn>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <Btn onClick={()=>setShowImport(true)} color={C.azul} size="sm">📥 Importar pacientes</Btn>
+              <Btn onClick={onGcalDisconnect} outline color={C.rojo} size="sm">Desconectar</Btn>
+            </div>
           ) : (
             <Btn onClick={onGcalConnect} color={C.azul} size="sm">🔗 Conectar Google Calendar</Btn>
           )}
@@ -4240,6 +4380,15 @@ Saludos!`;
           );
         })}
       </Card>
+
+      {showImport && (
+        <ModalImportGCal
+          gcalEventos={gcalEventos}
+          pacientes={pacientes}
+          onClose={()=>setShowImport(false)}
+          onImportar={onImportarGCal}
+        />
+      )}
     </div>
   );
 };
@@ -4387,6 +4536,45 @@ export default function App() {
       await cargarPacientes();
     } catch(e) { console.error("Error cancelando cita:", e); }
   };
+
+  const importarPacientesGCal = async (candidatos) => {
+    let importados = 0;
+    for (const c of candidatos) {
+      const pac = {
+        id: crypto.randomUUID(),
+        nombre: c.nombre,
+        telefono: "", edad: "", sexo: "", fechaNacimiento: "",
+        talla: "", email: "", domicilio: "", estadoCivil: "",
+        escolaridad: "", ocupacion: "", curp: "",
+        contactoEmergencia: "", telEmergencia: "", parentescoEmergencia: "",
+        fechaInicio: hoy(), horaRegistro: ahora(), pesoObjetivo: "",
+        motivoConsulta: "Inicia manejo farmacológico para sobrepeso y obesidad con agonista GLP-1.",
+        pronostico: "Favorable con adecuada adherencia al tratamiento.",
+        hf:{dm2:"NEGADO",hta:"NEGADA",obesidad:"NEGADA",cardiopatia:"NEGADA",cancer:"NEGADO",otros:""},
+        ant:{cronicas:"NEGADAS",alergias:"NEGADAS",cirugias:"NEGADAS",medicamentos:"NINGUNO",tabaco:"NEGADO",alcohol:"NEGADO"},
+        meta:{hta:"NO",dm2:"NO",dislipidemias:"NO"},
+        gine:{menarca:"",fum:"",gestas:"",metodo:""},
+        ci:{ta:"",fc:"",otrosH:"",grado:"",comorbilidades:"",glp1:"",dosis:""},
+        consultas: c.proxCita ? [{
+          id: crypto.randomUUID(),
+          proxCita: c.proxCita,
+          proxHora: c.proxHora||"",
+          fecha: c.proxCita,
+          hora: c.proxHora||"",
+          tipoCita: "primera",
+          duracion: 60,
+          esSoloCita: true,
+          nota: "Importado desde Google Calendar",
+        }] : [],
+        laboratorios: [], recetas: [], composicion: [], resultadosLabs: [],
+        esShellRapido: true,
+      };
+      try { await savePaciente(pac); importados++; }
+      catch(e) { console.error("Error importando paciente:", c.nombre, e); }
+    }
+    await cargarPacientes();
+    alert(`✅ ${importados} paciente${importados!==1?"s":""} importado${importados!==1?"s":""} correctamente.`);
+  };
   const saveFirma = async (b64) => {
     setFirmaB64(b64);
     try {
@@ -4496,7 +4684,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)} onNuevoPaciente={()=>setMNuevo(true)} onIrPacientes={()=>setVista("lista")} gcalAuthed={gcalAuthed} gcalEventos={gcalEventos} onGcalConnect={()=>authorizeGoogleCalendar()} onGcalDisconnect={()=>revokeGoogleAccess()} onCancelarCita={cancelarCitaDashboard}/>
+          <Dashboard pacientes={pacientes} onVer={p=>setActivo(p)} onOrdenRapida={()=>setShowOrdenRapida(true)} onAgendar={p=>setAgendarPara(p)} onNuevoPaciente={()=>setMNuevo(true)} onIrPacientes={()=>setVista("lista")} gcalAuthed={gcalAuthed} gcalEventos={gcalEventos} onGcalConnect={()=>authorizeGoogleCalendar()} onGcalDisconnect={()=>revokeGoogleAccess()} onCancelarCita={cancelarCitaDashboard} onImportarGCal={importarPacientesGCal}/>
         )
       )}
       {vista==="lista" && (
