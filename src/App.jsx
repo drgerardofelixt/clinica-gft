@@ -9,7 +9,7 @@
 // Pendientes (requieren editar googleCalendar.js):
 //   #3 Persistencia token Google Calendar entre sesiones
 //   #4 Si los horarios no aparecen, revisar día de la semana seleccionado
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { compartirPDF } from "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
@@ -3817,7 +3817,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar, gcalEventos}) => 
 const ModalImportGCal = ({gcalEventos, pacientes, onClose, onImportar}) => {
   const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
 
-  const candidatos = React.useMemo(() => {
+  const candidatos = useMemo(() => {
     const existentes = new Set(pacientes.map(p => norm(p.nombre)));
     const porClave = {};
     (gcalEventos||[]).forEach(ev => {
@@ -3838,11 +3838,11 @@ const ModalImportGCal = ({gcalEventos, pacientes, onClose, onImportar}) => {
     }).sort((a,b) => a.nombre.localeCompare(b.nombre));
   }, [gcalEventos, pacientes]);
 
-  const [sel, setSel] = React.useState(() => new Set(candidatos.map(c => c.nombre)));
-  const [importando, setImportando] = React.useState(false);
-  const [editando, setEditando] = React.useState({});
+  const [sel, setSel] = useState(() => new Set(candidatos.map(c => c.nombre)));
+  const [importando, setImportando] = useState(false);
+  const [editando, setEditando] = useState({});
 
-  React.useEffect(() => { setSel(new Set(candidatos.map(c => c.nombre))); }, [candidatos]);
+  useEffect(() => { setSel(new Set(candidatos.map(c => c.nombre))); }, [candidatos]);
 
   const toggle = (nombre) => setSel(prev => {
     const next = new Set(prev);
