@@ -750,6 +750,86 @@ const pdfToText = async (file) => {
   return out;
 };
 
+// ── Tanita parser posicional (fallback sin etiquetas, Tanita RD-545) ──────────
+const parseTanitaPositional = (text) => {
+  const r = {};
+  for (const l of text.split("\n").map(s => s.trim())) {
+    const m = l.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}:\d{2})/);
+    if (m) { r.fecha = `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`; r.hora = m[4]; break; }
+  }
+  // Todos los valores kg en orden de aparición
+  const kgAll = [...text.matchAll(/(\d+\.?\d*)\s*kg/gi)].map(m => parseFloat(m[1]));
+  const kgCnt = new Map();
+  for (const v of kgAll) { const k = Math.round(v*100); kgCnt.set(k, (kgCnt.get(k)||0)+1); }
+  const isDup = v => (kgCnt.get(Math.round(v*100))||0) > 1;
+  // Únicos en orden de primera aparición
+  const kgSeen = new Set(), kgUniq = [];
+  for (const v of kgAll) { const k = Math.round(v*100); if (!kgSeen.has(k)) { kgSeen.add(k); kgUniq.push(v); } }
+  const dupKg = kgUniq.filter(v => isDup(v));
+  // peso: primer kg duplicado >= 40
+  r.peso          = dupKg.find(v => v >= 40) ?? null;
+  // musculo: segundo kg grande duplicado (>= 20)
+  r.masaMuscular  = dupKg.filter(v => v >= 20)[1] ?? null;
+  // masaGrasa: kg duplicado más pequeño en rango 5-100
+  const dupR      = dupKg.filter(v => v >= 5 && v <= 100);
+  r.masaGrasa     = dupR.length ? Math.min(...dupR) : null;
+  // masaOsea: primer kg en rango 1-8
+  r.masaOsea      = kgAll.find(v => v >= 1 && v <= 8) ?? null;
+  // Valores únicos no duplicados en orden
+  const ndKg           = kgUniq.filter(v => !isDup(v));
+  // masaLibreGrasa: primer no-dup >= 50
+  r.masaLibreGrasa     = ndKg.find(v => v >= 50 && v <= 120) ?? null;
+  // aguaKg: siguiente no-dup >= 35 después de masaLibreGrasa
+  const ffmI           = r.masaLibreGrasa != null ? ndKg.indexOf(r.masaLibreGrasa) : -1;
+  r.aguaKg             = ndKg.slice(ffmI+1).find(v => v >= 35 && v <= 90) ?? null;
+  // proteina: primer no-dup en 5-25
+  r.proteina           = ndKg.find(v => v >= 5 && v < 25) ?? null;
+  // Segmental: kg únicos restantes → tronco, brazos, piernas
+  const usedK = new Set([r.peso,r.masaMuscular,r.masaGrasa,r.masaOsea,r.masaLibreGrasa,r.aguaKg,r.proteina]
+    .filter(v=>v!=null).map(v=>Math.round(v*100)));
+  const rem = kgUniq.filter(v => !usedK.has(Math.round(v*100)));
+  r.musculoTronco  = rem.find(v => v >= 20 && v < 55) ?? null;
+  const tK         = r.musculoTronco != null ? Math.round(r.musculoTronco*100) : -1;
+  const armKg      = rem.filter(v => v >= 1 && v < 12 && Math.round(v*100) !== tK);
+  const armSet     = new Set(armKg.map(v => Math.round(v*100)));
+  const legKg      = rem.filter(v => v >= 8 && v < 30 && Math.round(v*100) !== tK && !armSet.has(Math.round(v*100)));
+  r.musculoBrazoD  = armKg[0] ?? null;  // derecho aparece primero en PDF Tanita
+  r.musculoBrazoI  = armKg[1] ?? null;
+  r.musculoPiernaD = legKg[0] ?? null;
+  r.musculoPiernaI = legKg[1] ?? null;
+  // Valores porcentaje
+  const pctAll    = [...text.matchAll(/(\d+\.?\d*)\s*%/gi)].map(m => parseFloat(m[1]));
+  r.grasa         = pctAll.find(v => v >= 2 && v <= 75) ?? null;
+  r.aguaCorporal  = pctAll.find(v => v >= 30 && v <= 80 && Math.round(v*100) !== Math.round((r.grasa??-1)*100)) ?? null;
+  // BMR: número antes de kcal
+  const bmrM      = text.match(/(\d{3,5})\s*kcal/i);
+  r.bmr           = bmrM ? parseInt(bmrM[1]) : null;
+  // Visceral: primer entero 1-59 después del BMR
+  r.grasaVisceral = null;
+  if (bmrM) {
+    const vm = text.slice(text.indexOf(bmrM[0])+bmrM[0].length).match(/\b(\d{1,2})\b/);
+    if (vm) { const v = parseInt(vm[1]); if (v >= 1 && v <= 59) r.grasaVisceral = v; }
+  }
+  // IMC: decimal sin unidad en rango 15-60
+  r.imc = null;
+  for (const im of text.matchAll(/\b(\d{2}\.\d{1,2})\b/g)) {
+    const v = parseFloat(im[1]);
+    if (v >= 15 && v <= 60 && !/\s*(?:kg|%|kcal)/i.test(text.slice(im.index+im[0].length, im.index+im[0].length+5))) {
+      r.imc = v; break;
+    }
+  }
+  // Edad metabólica: primer entero 10-99 antes de kcal, sin unidad
+  r.edadMetabolica = null;
+  const kcalIdx = bmrM ? text.indexOf(bmrM[0]) : text.length;
+  for (const am of text.slice(0, kcalIdx).matchAll(/(?<!\d)(\d{2,3})(?!\d|\.)/g)) {
+    const v = parseInt(am[1]);
+    if (v >= 10 && v <= 99 && !/(?:kg|%|kcal)/i.test(text.slice(am.index+am[0].length, am.index+am[0].length+5))) {
+      r.edadMetabolica = v; break;
+    }
+  }
+  return r;
+};
+
 // ── Tanita parser ────────────────────────────────────────────
 const parseTanita = (text) => {
   const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
@@ -803,6 +883,10 @@ const parseTanita = (text) => {
   r.grasaBrazoI    = buscarEtiqueta(["left arm fat","l.arm fat"], 5, 70);
   r.grasaPiernaD   = buscarEtiqueta(["right leg fat","r.leg fat"], 5, 70);
   r.grasaPiernaI   = buscarEtiqueta(["left leg fat","l.leg fat"], 5, 70);
+  // Fallback posicional cuando el parser por etiquetas no encontró nada
+  const _nf = [r.peso, r.grasa, r.masaGrasa, r.masaLibreGrasa, r.masaMuscular,
+    r.masaOsea, r.proteina, r.aguaCorporal, r.aguaKg, r.imc, r.edadMetabolica, r.grasaVisceral, r.bmr];
+  if (_nf.every(v => v == null)) return parseTanitaPositional(text);
   return r;
 };
 
