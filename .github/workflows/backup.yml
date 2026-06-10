@@ -1,0 +1,146 @@
+name: Backup diario Supabase
+
+on:
+  schedule:
+    # 3:00 AM Hermosillo (UTC-7 en invierno / UTC-7 todo el año, sin DST)
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      motivo:
+        description: 'Motivo del backup manual'
+        required: false
+        default: 'Manual'
+
+jobs:
+  backup:
+    name: Exportar tablas → Supabase Storage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Ejecutar backup
+        env:
+          SUPABASE_URL: https://xvbyfzluebbbjnrwvhti.supabase.co
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          node << 'SCRIPT'
+          const url  = process.env.SUPABASE_URL;
+          const key  = process.env.SUPABASE_SERVICE_KEY;
+          if (!url || !key) { console.error('Faltan variables de entorno'); process.exit(1); }
+
+          const ahora  = new Date();
+          const fecha  = ahora.toISOString().slice(0, 10);           // YYYY-MM-DD
+          const ts     = ahora.toISOString().replace(/[:.]/g, '-').slice(0, 19); // YYYY-MM-DDTHH-MM-SS
+          const BUCKET = 'backups';
+          const ARCHIVO = `backup-${ts}.json`;
+          const DIAS_RETENER = 30;
+
+          const headers = {
+            apikey: key,
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          };
+
+          // ── Fetch de tabla con paginación ─────────────────────
+          async function fetchTabla(tabla) {
+            let todos = [];
+            let offset = 0;
+            const PAGE = 1000;
+            while (true) {
+              const res = await fetch(
+                `${url}/rest/v1/${tabla}?select=*&limit=${PAGE}&offset=${offset}`,
+                { headers }
+              );
+              if (!res.ok) throw new Error(`GET ${tabla} [${offset}]: ${res.status} ${await res.text()}`);
+              const filas = await res.json();
+              todos = todos.concat(filas);
+              if (filas.length < PAGE) break;
+              offset += PAGE;
+            }
+            return todos;
+          }
+
+          // ── Crear bucket si no existe ─────────────────────────
+          async function asegurarBucket() {
+            const check = await fetch(`${url}/storage/v1/bucket/${BUCKET}`, { headers });
+            if (check.ok) return;
+            const create = await fetch(`${url}/storage/v1/bucket`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ id: BUCKET, name: BUCKET, public: false }),
+            });
+            if (!create.ok) throw new Error(`Crear bucket: ${create.status} ${await create.text()}`);
+            console.log(`Bucket '${BUCKET}' creado.`);
+          }
+
+          // ── Subir JSON a Storage ──────────────────────────────
+          async function subirBackup(datos) {
+            const body = JSON.stringify(datos, null, 2);
+            const res = await fetch(`${url}/storage/v1/object/${BUCKET}/${ARCHIVO}`, {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json', 'x-upsert': 'true' },
+              body,
+            });
+            if (!res.ok) throw new Error(`Subir ${ARCHIVO}: ${res.status} ${await res.text()}`);
+          }
+
+          // ── Borrar backups más antiguos que DIAS_RETENER ──────
+          async function limpiarAntiguos() {
+            const res = await fetch(`${url}/storage/v1/object/list/${BUCKET}`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ prefix: 'backup-', limit: 500, offset: 0, sortBy: { column: 'created_at', order: 'asc' } }),
+            });
+            if (!res.ok) return;
+            const items = await res.json();
+            const limite = new Date(ahora);
+            limite.setDate(limite.getDate() - DIAS_RETENER);
+
+            const aEliminar = (items || [])
+              .filter(i => i.name && new Date(i.created_at) < limite)
+              .map(i => i.name);
+
+            if (aEliminar.length === 0) return;
+
+            const del = await fetch(`${url}/storage/v1/object/${BUCKET}`, {
+              method: 'DELETE',
+              headers,
+              body: JSON.stringify({ prefixes: aEliminar }),
+            });
+            if (del.ok) console.log(`Eliminados ${aEliminar.length} backups antiguos (>${DIAS_RETENER} días).`);
+          }
+
+          // ── Main ──────────────────────────────────────────────
+          async function main() {
+            console.log(`\n=== Backup Clínica GFT · ${ahora.toISOString()} ===`);
+
+            await asegurarBucket();
+
+            const [pacientes, configuracion] = await Promise.all([
+              fetchTabla('pacientes'),
+              fetchTabla('configuracion'),
+            ]);
+
+            const backup = {
+              version: 1,
+              generado: ahora.toISOString(),
+              proyecto: 'clinica-gft',
+              supabase_url: url,
+              tablas: {
+                pacientes:     { total: pacientes.length,     datos: pacientes },
+                configuracion: { total: configuracion.length, datos: configuracion },
+              },
+            };
+
+            await subirBackup(backup);
+
+            const sizeKB = (JSON.stringify(backup).length / 1024).toFixed(1);
+            console.log(`✓ ${ARCHIVO} guardado en Storage '${BUCKET}'`);
+            console.log(`  pacientes: ${pacientes.length} · configuracion: ${configuracion.length} · tamaño: ${sizeKB} KB`);
+
+            await limpiarAntiguos();
+            console.log('=== Backup completado ===\n');
+          }
+
+          main().catch(e => { console.error('ERROR:', e.message); process.exit(1); });
+          SCRIPT
