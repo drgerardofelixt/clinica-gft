@@ -3660,7 +3660,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
             const tieneCitas = citasPorDia[fechaDia] || 0;
             const esPasado = new Date(fechaDia+"T00:00:00") < hoy;
             return (
-              <div key={dia} onClick={()=>!esPasado && setFechaSel(fechaDia)}
+              <div key={dia} onClick={()=>!esPasado && (setFechaSel(fechaDia), setHoraSel(""))}
                 style={{
                   textAlign:"center",padding:"6px 0",borderRadius:6,fontSize:11,
                   background: esSel?C.azul: esHoy?C.verdePale: tieneCitas?C.naranjaPale:"white",
@@ -3699,7 +3699,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
           {horarios.map(h=>{
             const ocupada = horasOcupadas.has(h);
             const sel = h === horaSel;
-            const pacOcupado = ocupadas.find(o=>o.hora===h);
+            const pacOcupado = ocupadas.find(o=>{ const ini=hhmmToMin(h),fin=ini+duracionMin; return ini<o.fin&&fin>o.ini; });
             return (
               <button key={h} onClick={()=>setHoraSel(h)}
                 title={ocupada?"Ya hay cita: "+(pacOcupado?.pac||"otro paciente")+" — puedes encimar":""}
@@ -3722,7 +3722,7 @@ const ModalAgenda = ({pacientes, paciente, onClose, onAgendar}) => {
         {horaSel && horasOcupadas.has(horaSel) && (
           <div style={{padding:"8px 12px",background:"#FFF4E5",border:"1px solid "+C.naranja,
             borderRadius:8,fontSize:11,color:C.naranja,fontWeight:700,marginBottom:10}}>
-            ⚠️ Este horario ya tiene cita con <b>{ocupadas.find(o=>o.hora===horaSel)?.pac}</b>. Se encimará si confirmas.
+            ⚠️ Este horario ya tiene cita con <b>{ocupadas.find(o=>{ const ini=hhmmToMin(horaSel),fin=ini+duracionMin; return ini<o.fin&&fin>o.ini; })?.pac}</b>. Se encimará si confirmas.
           </div>
         )}
         {ocupadas.length>0 && (
