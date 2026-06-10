@@ -836,6 +836,7 @@ const parseTanitaPositional = (text) => {
 
 // ── Tanita parser ────────────────────────────────────────────
 const parseTanita = (text) => {
+  window._tanitaRawText = text;
   const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
   const r = {};
   const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
