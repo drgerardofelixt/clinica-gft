@@ -844,7 +844,7 @@ const parseLabs = async (texto) => {
   r.vldl         = buscar(["lipoproteina de muy baja densidad (vldl)","colesterol vldl","vldl colesterol","c-vldl","vldl-c","lipoproteina de muy baja densidad","vldl"], 5, 200);
   r.alt          = buscar(["alanina aminotransferasa","alanino aminotransferasa","alanina amino transferasa","transaminasa piruvica","transaminasa glutamico piruvica","tgp","sgpt","alt"], 1, 2000);
   r.ast          = buscar(["aspartato aminotransferasa","aspartato amino transferasa","transaminasa oxalacetica","transaminasa oxaloacetica","transaminasa glutamico oxalacetica","tgo","sgot","ast"], 1, 2000);
-  r.ggt          = buscar(["gamma glutamil transferasa","gama glutamil transferasa","gamma glutamil transpeptidasa","gammaglutamil","gamma-glutamil","gamma glutamil","gamma gt","g.g.t.","g.g.t","ggt"], 1, 1000);
+  r.ggt          = buscar(["gamma glutamil transferasa","gama glutamil transferasa","gamma glutamil transpeptidasa","gama glutamil transpeptidasa","gama glutamil traspeptidasa","gamma glutamil traspeptidasa","gammaglutamil","gamma-glutamil","gamma glutamil","gamma gt","g.g.t.","g.g.t","ggt"], 1, 1000);
   r.fa           = buscar(["fosfatasa alcalina","alkaline phosphatase","fosfatasa alc"], 10, 1000);
   r.ldh          = buscar(["deshidrogenasa lactica","lactato deshidrogenasa","lactic dehydrogenase","ldh"], 50, 3000);
   r.bilirrubinaTotal     = buscar(["bilirrubina total","bilirrubinas totales","bilirubin total","bil. total","bil total"], 0.05, 30);
@@ -858,7 +858,20 @@ const parseLabs = async (texto) => {
   r.t4t = buscar(["tiroxina total (t4t)","t4 tiroxina total","tiroxina total","t4 total","total t4"], 1, 30);
   r.t3  = buscar(["triiodotironina libre","triyodotironina libre","t3 libre","free t3","ft3","t3l"], 0.5, 15);
   r.t3t = buscar(["triyodotironina total (t3t)","t3 total triyodotironina","triiodotironina total","triyodotironina total","t3 total","total t3"], 0.5, 200);
-  r.hemoglobina = buscar(["hemoglobina hgb","hemoglobina hct","hemoglobina ","haemoglobin","hgb"], 3, 25);
+  // Hemoglobina: buscar específicamente excluyendo "corpuscular" y "glucosilada"
+  r.hemoglobina = (() => {
+    const lines = norm.split("\n");
+    for (const l of lines) {
+      if ((l.includes("hemoglobina hgb") || l.includes("hemoglobina hct") || 
+           (l.includes("hemoglobina") && !l.includes("corpuscular") && !l.includes("corp.") && 
+            !l.includes("glucosilada") && !l.includes("glicosilada") && !l.includes("glicada") && 
+            !l.includes("glicohemoglobina"))) || l.includes("haemoglobin")) {
+        const m = l.match(/(\d+\.?\d*)/);
+        if (m) { const v = parseFloat(m[1]); if (v >= 3 && v <= 25) return v; }
+      }
+    }
+    return null;
+  })();
   r.hematocrito = buscar(["hematocrito","hematocrit","hto","hct"], 10, 65);
   r.eritrocitos = buscar(["eritrocitos","globulos rojos","red blood cells","rbc"], 1, 10);
   r.leucocitos  = buscar(["leucocitos","globulos blancos","white blood cells","wbc"], 0.5, 100);
