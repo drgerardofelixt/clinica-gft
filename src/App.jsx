@@ -777,24 +777,47 @@ const parseTanita = async (texto) => {
       max_tokens: 500,
       messages: [{
         role: "user",
-        content: `Eres un parser de resultados de báscula de composición corporal Tanita.
-Del siguiente texto, extrae los valores numéricos.
-Devuelve ÚNICAMENTE JSON válido sin texto adicional, sin markdown, sin explicaciones:
+        content: `You are a parser for Tanita RD-545 body composition scale PDF reports in English.
+
+CRITICAL RULES:
+1. Any value of -1 means "no data" — treat it as null, never use it.
+2. IGNORE all segmental values (Trunk, Left Arm, Right Arm, Left Leg, Right Leg). Only extract whole-body totals.
+3. For BMR: use the kcal value only, ignore kJ.
+4. For Total Body Water: use the percentage value (%), not the kg value.
+5. For Muscle Mass: use the "Muscle Mass" field, NOT "Fat Free Mass".
+6. For Visceral Fat: use "Visceral Fat Rating" (an integer like 15), not any segmental or -1 value.
+7. For Fat %: extract the number only, without the % symbol.
+8. Date format: input is M/D/YYYY (e.g. "11/6/2026"), output as DD/MM/YYYY (e.g. "11/06/2026").
+
+FIELD MAPPING (label in PDF → JSON key):
+- "Weight" → peso (kg, e.g. 106.6)
+- "Fat %" → grasaCorporal (number only, e.g. 33.10)
+- "Fat Mass" → grasaCorporalKg (kg, e.g. 35.28)
+- "Muscle Mass" → masaMuscular (kg, e.g. 67.75)
+- "Total Body Water" → aguaCorporal (the % value, e.g. 47.90)
+- "Bone Mass" → masaOsea (kg, e.g. 3.50)
+- "Visceral Fat Rating" → grasaVisceral (integer, e.g. 15)
+- "BMI" → imc (e.g. 35.20)
+- "BMR" in kcal → metabolismoBasal (integer, e.g. 2156)
+- "Metabolic Age" → edadMetabolica (integer, e.g. 79)
+- date field → fecha (DD/MM/YYYY)
+
+Return ONLY valid JSON, no markdown, no explanations:
 {
-  "fecha": "DD/MM/YYYY o null",
-  "peso": numero o null,
-  "imc": numero o null,
-  "grasaCorporal": numero o null,
-  "grasaCorporalKg": numero o null,
-  "masaMuscular": numero o null,
-  "aguaCorporal": numero o null,
-  "masaOsea": numero o null,
-  "grasaVisceral": numero o null,
-  "edadMetabolica": numero o null,
-  "metabolismoBasal": numero o null
+  "fecha": "DD/MM/YYYY or null",
+  "peso": number or null,
+  "imc": number or null,
+  "grasaCorporal": number or null,
+  "grasaCorporalKg": number or null,
+  "masaMuscular": number or null,
+  "aguaCorporal": number or null,
+  "masaOsea": number or null,
+  "grasaVisceral": number or null,
+  "edadMetabolica": number or null,
+  "metabolismoBasal": number or null
 }
 
-TEXTO:
+TEXT:
 ${texto}`,
       }],
     }),
