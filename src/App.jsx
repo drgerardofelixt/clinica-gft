@@ -921,13 +921,13 @@ const PRUEBAS = [
   // ── METABOLISMO ────────────────────────────────────────────
   { clave:"glucosa",            nombres:["glucosa"],                                                                      rango:[1,600],    excluir:["promedio estimado","en orina"] },
   { clave:"hba1c",              nombres:["glicohemoglobina","hemoglobina glicosilada","hemoglobina glucosilada","hba1c","a1c"], rango:[3,20] },
-  { clave:"insulina",           nombres:["insulina basal","insulina"],                                                    rango:[0.5,300] },
+  { clave:"insulina",           nombres:["insulina basal","insulina"],                                                    rango:[0.5,300],  excluir:["homa","resistencia"] },
   { clave:"homa",               nombres:["indice homa","homa-ir","homa ir","resistencia a la insulina","indice de resistencia insulinica"], rango:[0.5,50], tomar:"ultimo" },
   // ── LÍPIDOS ────────────────────────────────────────────────
   { clave:"colesterol",         nombres:["colesterol total","colesterol"],                                                rango:[50,600] },
   { clave:"trigliceridos",      nombres:["trigliceridos","trigliceridos"],                                               rango:[20,3000] },
   { clave:"hdl",                nombres:["colesterol hdl","colesterol de alta densidad","hdl","lipoproteina de alta densidad"], rango:[10,200] },
-  { clave:"ldl",                nombres:["colesterol ldl","colesterol de baja densidad","ldl","lipoproteina de baja densidad"], rango:[10,400] },
+  { clave:"ldl",                nombres:["colesterol ldl","colesterol de baja densidad","ldl","lipoproteina de baja densidad"], rango:[10,300],   excluir:["muy baja densidad","vldl","no hdl","colesterol no"] },
   { clave:"vldl",               nombres:["colesterol de muy baja densidad","vldl","lipoproteina de muy baja densidad"],  rango:[1,200] },
   // ── HEPÁTICO ───────────────────────────────────────────────
   { clave:"alt",                nombres:["transaminasa glutamico piruvica","transaminasa piruvica","tgp","sgpt","alt"],   rango:[1,1000] },
@@ -1004,6 +1004,7 @@ const parseLabs = async (texto) => {
 
   // Extrae candidatos numéricos de una línea descartando rangos, exponentes y paginación
   const extraerCandidatos = (line, minV, maxV) => {
+    line = line.replace(/\b\d{1,2}\s+de\s+\d{1,2}\b/gi, ' ');
     const numRe = /(\d+[.,]\d+|\d+)/g;
     let m;
     const out = [];
@@ -1017,7 +1018,6 @@ const parseLabs = async (texto) => {
       if (/\d\s*-\s*$/.test(before))   continue; // lado derecho de rango "X - Y"
       if (/^\s+a\s+\d/.test(after))    continue; // lado izquierdo de rango "X a Y"
       if (/\d\s+a\s+$/.test(before))   continue; // lado derecho de rango "X a Y"
-      if (/^\s+de\s+\d{1,2}\b/.test(after) && /\b\d{1,2}$/.test(before.trimEnd())) continue; // paginación "N de M"
       if (/^\^/.test(after))             continue; // base de exponente "10^"
       if (/\^$/.test(before.trimEnd()))  continue; // exponente "^3"
       if (v < minV || v > maxV)           continue;
@@ -1059,12 +1059,13 @@ const parseLabs = async (texto) => {
   }
 
   // ── Fecha ────────────────────────────────────────────────────
-  // Preferir líneas con palabras clave de fecha de toma/recepción
-  const fechaKeywords = ["toma de muestra","fecha recepcion","fecha de admision","fecha de registro","fecha:","recepcion"];
+  const fechaKeywords = [
+    "toma de muestra","fecha recepcion","fecha de admision","fecha de registro","fecha:","recepcion",
+  ];
   const fpats = [
+    { re:/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, fn:m=>`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` },
     { re:/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/, fn:m=>`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
     { re:/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})/,  fn:m=>`20${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
-    { re:/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, fn:m=>`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` },
   ];
   const fechas = [];
   for (const line of lines) {
@@ -1075,6 +1076,7 @@ const parseLabs = async (texto) => {
     }
   }
   if (fechas.length > 0) r.fecha = fechas[0];
+  console.log('fecha encontrada:', r.fecha);
 
   // ── Laboratorio ──────────────────────────────────────────────
   const normFull = norm.replace(/\n/g, " ");
