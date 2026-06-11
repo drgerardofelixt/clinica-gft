@@ -755,9 +755,7 @@ const pdfToText = async (file) => {
       .map(([,arr]) => {
         // Ordenar por X dentro de la línea
         const sorted = arr.sort((a,b) => a.x-b.x);
-        // Cada elemento en su propia línea si está bien separado en X
-        // Para Tanita: cada celda de tabla es un item separado
-        return sorted.map(i=>i.s).join("\n");
+        return sorted.map(i=>i.s).join(" ");
       })
       .filter(l => l.length>0);
     out += lines.join("\n") + "\n";
