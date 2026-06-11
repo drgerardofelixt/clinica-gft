@@ -859,8 +859,12 @@ const archivoATexto = async (file) => {
 
 // ── Parser de Laboratorios (Claude API) ─────────────────────
 const parseLabs = async (texto) => {
+  console.log('texto extraído:', texto.slice(0, 500));
   const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  console.log('API key presente:', !!apiKey);
+  let response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -956,12 +960,21 @@ TEXTO DEL PDF:
 ${texto}`,
       }],
     }),
-  });
-  if (!response.ok) throw new Error(`Anthropic API error ${response.status}`);
+    });
+  } catch(e) {
+    console.error('error fetch:', e);
+    throw e;
+  }
+  if (!response.ok) {
+    const errBody = await response.text();
+    console.error('API error status:', response.status, errBody);
+    throw new Error(`Anthropic API error ${response.status}: ${errBody}`);
+  }
   const apiData = await response.json();
+  console.log('respuesta API:', JSON.stringify(apiData));
   const raw = apiData.content[0].text.replace(/^```json\s*/,'').replace(/\s*```$/,'');
   console.log('fecha encontrada:', raw.match(/"fecha"\s*:\s*"([^"]+)"/)?.[1] ?? null);
-  try { return JSON.parse(raw); } catch { return {}; }
+  try { return JSON.parse(raw); } catch(e) { console.error('JSON.parse error:', e, 'raw:', raw); return {}; }
 };
 
 
