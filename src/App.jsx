@@ -2604,6 +2604,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [showL, setShowL] = useState(false);
   const [showLabs, setShowLabs] = useState(false);
   const [showAgenda, setShowAgenda] = useState(false);
+  const [showEditPac, setShowEditPac] = useState(false);
   const [doc, setDoc] = useState(null);
   const [conFirmaLabs, setConFirmaLabs] = useState(false);
 
@@ -2711,7 +2712,16 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             {(p.nombre||"?").charAt(0)}
           </div>
           <div>
-            <h1 style={{margin:0,fontSize:17,color:C.azul,fontWeight:900}}>{p.nombre}</h1>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <h1 style={{margin:0,fontSize:17,color:C.azul,fontWeight:900}}>{p.nombre}</h1>
+              <button onClick={()=>setShowEditPac(true)}
+                style={{background:"none",border:"1.5px solid "+C.grisMedio,borderRadius:8,
+                  padding:"2px 9px",fontSize:11,cursor:"pointer",color:C.suave,
+                  fontWeight:700,lineHeight:"20px",whiteSpace:"nowrap"}}
+                title="Editar datos del paciente">
+                ✏️ Editar
+              </button>
+            </div>
             <div style={{fontSize:11,color:C.suave}}>
               {p.edad} años · {p.sexo} · {p.talla} cm · Exp: {(p.id||"").slice(-6).toUpperCase()}
             </div>
@@ -3407,6 +3417,13 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           {doc.tipo==="labs" && <DocLabs p={p} labs={doc.labs} firmaB64={conFirmaLabs?firmaB64:null}/>}
           {doc.tipo==="progreso" && <DocProgreso p={p}/>}
         </PrintModal>
+      )}
+      {showEditPac && (
+        <ModalPaciente
+          pac={p}
+          onClose={()=>setShowEditPac(false)}
+          onSave={d=>{ onUpdate(d); setShowEditPac(false); }}
+        />
       )}
     </div>
   );
