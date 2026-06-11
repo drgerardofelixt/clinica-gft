@@ -767,6 +767,7 @@ const pdfToText = async (file) => {
 // kg: exec() filtrando rangos (char anterior '-'), deduplica whole-body [0-6]
 // pero toma segmental RAW (sin dedup) para soportar valores iguales entre segmentos.
 const parseTanita = async (texto) => {
+  console.log('TANITA TEXTO COMPLETO:', texto);
   const fechaMatch = texto.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   let fechaPreExtracted = null;
   if (fechaMatch) {
