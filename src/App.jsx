@@ -819,6 +819,7 @@ FIELD MAPPING (label in PDF → JSON key):
 - "BMI" → imc (e.g. 35.20)
 - "BMR" in kcal → metabolismoBasal (integer, e.g. 2156)
 - "Metabolic Age" → edadMetabolica (integer, e.g. 79)
+- "Protein" → proteina (kg in the body composition diagram, e.g. 16.69)
 - date field → fecha (DD/MM/YYYY)
 
 Return ONLY valid JSON, no markdown, no explanations:
@@ -833,7 +834,8 @@ Return ONLY valid JSON, no markdown, no explanations:
   "masaOsea": number or null,
   "grasaVisceral": number or null,
   "edadMetabolica": number or null,
-  "metabolismoBasal": number or null
+  "metabolismoBasal": number or null,
+  "proteina": number or null
 }
 
 TEXT:
