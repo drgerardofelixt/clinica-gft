@@ -751,24 +751,30 @@ const pdfToText = async (file) => {
 };
 
 // ── Tanita parser ────────────────────────────────────────────
-// Estrategia: extraer kg filtrando rangos (char anterior === '-'), deduplicar
-// por primera aparición, y asignar por índice fijo según el orden del PDF RD-545.
+// Extrae kg/% con exec() filtrando rangos (char anterior '-'), deduplica por
+// primera aparición y asigna por índice fijo según el orden real del PDF RD-545.
 const parseTanita = (text) => {
   window._tanitaRawText = text;
   const r = {};
 
+  // Diagnóstico: test directo de match (se puede quitar después)
+  const testMatch = text.match(/(\d+\.?\d*)\s*kg/gi);
+  console.log("TEST kg matches:", testMatch);
+
   // Fecha y hora
-  const dateM = text.match(/(d{1,2})[/.](d{1,2})[/.](d{4})s+(d{1,2}:d{2})/);
+  const dateM = text.match(/(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\s+(\d{1,2}:\d{2})/);
   if (dateM) {
-    r.fecha = `${dateM[3]}-${dateM[2].padStart(2,'0')}-${dateM[1].padStart(2,'0')}`;
+    r.fecha = `${dateM[3]}-${dateM[2].padStart(2,"0")}-${dateM[1].padStart(2,"0")}`;
     r.hora  = dateM[4];
   }
 
-  // Kg: todos en orden, filtrar rangos (char anterior '-') y negativos
+  // Kg: exec() loop, filtra rangos (char anterior '-') y negativos
   const kgAll = [];
-  for (const m of text.matchAll(/(d+.?d*)s*kg/gi)) {
-    if (text[m.index - 1] === '-') continue;
-    kgAll.push(parseFloat(m[1]));
+  const kgRe = /(\d+\.?\d*)\s*kg/gi;
+  let km;
+  while ((km = kgRe.exec(text)) !== null) {
+    if (text[km.index - 1] === "-") continue;
+    kgAll.push(parseFloat(km[1]));
   }
   // Únicos en orden de primera aparición
   const kgSeen = new Set(), kgUniq = [];
@@ -776,7 +782,7 @@ const parseTanita = (text) => {
     const k = Math.round(v * 100);
     if (!kgSeen.has(k)) { kgSeen.add(k); kgUniq.push(v); }
   }
-  // Índice fijo según orden del PDF RD-545:
+  // Índice fijo — orden real del PDF RD-545:
   // [0]=masaGrasa · [1]=masaOsea · [2]=proteina · [3]=peso
   // [4]=masaLibreGrasa · [5]=masaMuscular · [6]=aguaKg
   // [7]=musculoTronco · [8]=musculoBrazoI · [9]=musculoBrazoD
@@ -794,13 +800,15 @@ const parseTanita = (text) => {
   r.musculoPiernaI = kgUniq[10] ?? null;
   r.musculoPiernaD = kgUniq[11] ?? null;
 
-  // %: filtrar rangos, índice fijo:
+  // %: exec() loop, filtra rangos, índice fijo:
   // [0]=grasa · [1]=aguaCorporal · [2]=grasaTronco · [3]=grasaBrazoI
   // [4]=grasaBrazoD · [5]=grasaPiernaI · [6]=grasaPiernaD
   const pctAll = [];
-  for (const m of text.matchAll(/(d+.?d*)s*%/gi)) {
-    if (text[m.index - 1] === '-') continue;
-    pctAll.push(parseFloat(m[1]));
+  const pctRe = /(\d+\.?\d*)\s*%/gi;
+  let pm;
+  while ((pm = pctRe.exec(text)) !== null) {
+    if (text[pm.index - 1] === "-") continue;
+    pctAll.push(parseFloat(pm[1]));
   }
   r.grasa        = pctAll[0] ?? null;
   r.aguaCorporal = pctAll[1] ?? null;
@@ -810,23 +818,25 @@ const parseTanita = (text) => {
   r.grasaPiernaI = pctAll[5] ?? null;
   r.grasaPiernaD = pctAll[6] ?? null;
 
-  // BMR: número antes de 'kcal' (no kJ)
-  const bmrM = text.match(/(d{3,5})s*kcal/i);
+  // BMR: número antes de "kcal" (ignora kJ)
+  const bmrM = text.match(/(\d{3,5})\s*kcal/i);
   r.bmr = bmrM ? parseInt(bmrM[1]) : null;
 
   // Visceral: primer entero 1-59 después de kcal
   r.grasaVisceral = null;
   if (bmrM) {
-    const vm = text.slice(text.indexOf(bmrM[0]) + bmrM[0].length).match(/(d{1,2})/);
+    const vm = text.slice(text.indexOf(bmrM[0]) + bmrM[0].length).match(/\b(\d{1,2})\b/);
     if (vm) { const v = parseInt(vm[1]); if (v >= 1 && v <= 59) r.grasaVisceral = v; }
   }
 
-  // Decimales XX.XX sin unidad — excluye si seguido de '-' (rango) o unidad kg/%/kcal
+  // Decimales XX.XX sin unidad — excluye si seguido de '-' o unidad kg/%/kcal
   const decAll = [];
-  for (const m of text.matchAll(/(d{2}.d{1,2})/g)) {
-    if (text[m.index + m[0].length] === '-') continue;
-    if (/s*(?:kg|%|kcal)/i.test(text.slice(m.index + m[0].length, m.index + m[0].length + 5))) continue;
-    decAll.push(parseFloat(m[1]));
+  const decRe = /\b(\d{2}\.\d{1,2})\b/g;
+  let dm;
+  while ((dm = decRe.exec(text)) !== null) {
+    if (text[dm.index + dm[0].length] === "-") continue;
+    if (/\s*(?:kg|%|kcal)/i.test(text.slice(dm.index + dm[0].length, dm.index + dm[0].length + 5))) continue;
+    decAll.push(parseFloat(dm[1]));
   }
   r.imc            = decAll[0] ?? null;
   r.edadMetabolica = decAll[1] != null ? Math.round(decAll[1]) : null;
@@ -834,6 +844,7 @@ const parseTanita = (text) => {
   window._tanitaArrays = { kgAll, kgUniq, pctAll, decAll, bmr: r.bmr, visceral: r.grasaVisceral };
   return r;
 };
+
 
 // ── Tesseract.js OCR para imágenes (gratis, local) ──────────
 let _tesseract = null;
