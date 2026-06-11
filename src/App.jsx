@@ -2814,16 +2814,16 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
               {/* ── MÉTRICAS DE PROGRESO ── */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:10,marginBottom:18}}>
                 {[
-                  {l:"Peso perdido",v:perdT&&parseFloat(perdT)>0?"↓ "+perdT+" kg":"0 kg",c:C.verde,bg:C.verdePale},
-                  {l:"% Grasa",v:ultima&&ultima.grasa?ultima.grasa+"%":"—",c:C.naranja,bg:C.naranjaPale},
-                  {l:"Músculo",v:ultima&&ultima.musculo?ultima.musculo+" kg":"—",c:C.azul,bg:C.azulPale},
-                  {l:"Agua",v:ultima&&ultima.agua?ultima.agua+"%":"—",c:"#63B3ED",bg:"#EBF8FF"},
-                  {l:"Visceral",v:ultima&&ultima.visceral?ultima.visceral:"—",c:C.rojo,bg:C.rojoPale},
-                  {l:"BMR",v:ultima&&ultima.bmr?ultima.bmr+" kcal":"—",c:C.suave,bg:C.gris},
+                  {l:"Peso perdido",v:perdT&&parseFloat(perdT)>0?"↓ "+perdT+" kg":"0 kg",c:C.verde},
+                  {l:"% Grasa",v:ultima&&ultima.grasa?ultima.grasa+"%":"—",c:C.naranja},
+                  {l:"Músculo",v:ultima&&ultima.musculo?ultima.musculo+" kg":"—",c:C.azul},
+                  {l:"Agua",v:ultima&&ultima.agua?ultima.agua+"%":"—",c:"#63B3ED"},
+                  {l:"Visceral",v:ultima&&ultima.visceral?ultima.visceral:"—",c:C.rojo},
+                  {l:"BMR",v:ultima&&ultima.bmr?ultima.bmr+" kcal":"—",c:"var(--gft-text-2)"},
                 ].map(m=>(
-                  <div key={m.l} style={{background:m.bg,borderRadius:10,padding:"10px 12px",
-                    border:"1px solid "+m.c+"20",textAlign:"center"}}>
-                    <div style={{fontSize:9,color:C.suave,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{m.l}</div>
+                  <div key={m.l} style={{background:"var(--gft-surface2)",borderRadius:10,padding:"10px 12px",
+                    border:"1px solid var(--gft-border)",textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"var(--gft-text-muted)",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{m.l}</div>
                     <div style={{fontSize:18,fontWeight:900,color:m.c}}>{m.v}</div>
                   </div>
                 ))}
@@ -2832,38 +2832,38 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
               {/* ── GRÁFICAS PRINCIPALES ── */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
                 {[
-                  {t:"Peso (kg)",k:"Peso",color:"#1B3F8B"},
-                  {t:"% Grasa Corporal",k:"% Grasa",color:"#ED8936"},
-                  {t:"Masa Muscular (kg)",k:"Músculo",color:"#5BC4A0"},
-                  {t:"Agua Corporal (%)",k:"Agua",color:"#63B3ED"},
+                  {t:"Peso (kg)",k:"Peso",color:"#3B82F6"},
+                  {t:"% Grasa Corporal",k:"% Grasa",color:"#F59E0B"},
+                  {t:"Masa Muscular (kg)",k:"Músculo",color:"#8B5CF6"},
+                  {t:"Agua Corporal (%)",k:"Agua",color:"#22D3EE"},
                 ].map(g=>(
-                  <Card key={g.t} style={{padding:14}}>
-                    <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>{g.t}</div>
+                  <div key={g.t} style={{background:"var(--gft-surface2)",borderRadius:12,padding:14,border:"1px solid var(--gft-border)"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"var(--gft-text-2)",marginBottom:8}}>{g.t}</div>
                     <ResponsiveContainer width="100%" height={140}>
                       <AreaChart data={grafData}>
                         <defs>
                           <linearGradient id={"g"+g.k} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={g.color} stopOpacity={0.25}/>
+                            <stop offset="5%" stopColor={g.color} stopOpacity={0.3}/>
                             <stop offset="95%" stopColor={g.color} stopOpacity={0}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke={C.grisMedio}/>
-                        <XAxis dataKey="fecha" tick={{fontSize:8}}/>
-                        <YAxis tick={{fontSize:8}} domain={["auto","auto"]}/>
-                        <Tooltip contentStyle={{fontSize:10,borderRadius:8}}/>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                        <XAxis dataKey="fecha" tick={{fontSize:8,fill:"var(--gft-text-muted)"}}/>
+                        <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                        <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
                         <Area type="monotone" dataKey={g.k} stroke={g.color}
                           strokeWidth={2.5} fill={"url(#g"+g.k+")"} connectNulls
                           dot={{r:3,fill:g.color}}/>
                       </AreaChart>
                     </ResponsiveContainer>
-                  </Card>
+                  </div>
                 ))}
               </div>
 
               {/* ── SEGMENTOS MUSCULARES ── */}
               {comps.some(c=>c.musculoTronco||c.musculoBD) && (
-                <Card style={{marginBottom:16}}>
-                  <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:14}}>
+                <div style={{background:"var(--gft-surface2)",borderRadius:12,padding:14,border:"1px solid var(--gft-border)",marginBottom:16}}>
+                  <div style={{fontWeight:700,color:"var(--gft-text-2)",fontSize:13,marginBottom:14}}>
                     💪 Músculo por segmento (kg)
                   </div>
 
@@ -2880,10 +2880,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           <stop offset="95%" stopColor="#1B3F8B" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke={C.grisMedio}/>
-                      <XAxis dataKey="fecha" tick={{fontSize:8}}/>
-                      <YAxis tick={{fontSize:8}} domain={["auto","auto"]}/>
-                      <Tooltip contentStyle={{fontSize:10,borderRadius:8}}/>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                      <XAxis dataKey="fecha" tick={{fontSize:8,fill:"var(--gft-text-muted)"}}/>
+                      <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                      <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
                       <Area type="monotone" dataKey="Tronco" stroke="#1B3F8B"
                         strokeWidth={2.5} fill="url(#gMTronco)" connectNulls dot={{r:3,fill:"#1B3F8B"}}/>
                     </AreaChart>
@@ -2899,10 +2899,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           "Brazo D":parseFloat(c.musculoBD)||null,
                           "Brazo I":parseFloat(c.musculoBI)||null,
                         }))}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={C.grisMedio}/>
-                          <XAxis dataKey="fecha" tick={{fontSize:7}}/>
-                          <YAxis tick={{fontSize:8}} domain={["auto","auto"]}/>
-                          <Tooltip contentStyle={{fontSize:10,borderRadius:8}}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="fecha" tick={{fontSize:7,fill:"var(--gft-text-muted)"}}/>
+                          <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                          <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
                           <Legend wrapperStyle={{fontSize:9}}/>
                           <Line type="monotone" dataKey="Brazo D" stroke="#5BC4A0"
                             strokeWidth={2.5} connectNulls dot={{r:3,fill:"#5BC4A0"}} name="Brazo D"/>
@@ -2919,10 +2919,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           "Pierna D":parseFloat(c.musculoPD)||null,
                           "Pierna I":parseFloat(c.musculoPI)||null,
                         }))}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={C.grisMedio}/>
-                          <XAxis dataKey="fecha" tick={{fontSize:7}}/>
-                          <YAxis tick={{fontSize:8}} domain={["auto","auto"]}/>
-                          <Tooltip contentStyle={{fontSize:10,borderRadius:8}}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="fecha" tick={{fontSize:7,fill:"var(--gft-text-muted)"}}/>
+                          <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                          <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
                           <Legend wrapperStyle={{fontSize:9}}/>
                           <Line type="monotone" dataKey="Pierna D" stroke="#ED8936"
                             strokeWidth={2.5} connectNulls dot={{r:3,fill:"#ED8936"}} name="Pierna D"/>
@@ -2952,13 +2952,13 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                       ))}
                     </div>
                   )}
-                </Card>
+                </div>
               )}
 
               {/* ── SEGMENTOS DE GRASA ── */}
               {comps.some(c=>c.grasaTronco||c.grasaBD) && (
-                <Card style={{marginBottom:16}}>
-                  <div style={{fontWeight:800,color:C.naranja,fontSize:13,marginBottom:14}}>
+                <div style={{background:"var(--gft-surface2)",borderRadius:12,padding:14,border:"1px solid var(--gft-border)",marginBottom:16}}>
+                  <div style={{fontWeight:700,color:"var(--gft-warning)",fontSize:13,marginBottom:14}}>
                     🔥 Grasa por segmento (%)
                   </div>
                   {/* Tronco */}
@@ -2974,10 +2974,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           <stop offset="95%" stopColor="#ED8936" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke={C.grisMedio}/>
-                      <XAxis dataKey="fecha" tick={{fontSize:8}}/>
-                      <YAxis tick={{fontSize:8}} domain={["auto","auto"]}/>
-                      <Tooltip contentStyle={{fontSize:10,borderRadius:8}}/>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                      <XAxis dataKey="fecha" tick={{fontSize:8,fill:"var(--gft-text-muted)"}}/>
+                      <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                      <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
                       <Area type="monotone" dataKey="Tronco" stroke="#ED8936"
                         strokeWidth={2.5} fill="url(#gGTronco)" connectNulls dot={{r:3,fill:"#ED8936"}}/>
                     </AreaChart>
@@ -2993,10 +2993,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           "Brazo D":parseFloat(c.grasaBD)||null,
                           "Brazo I":parseFloat(c.grasaBI)||null,
                         }))}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={C.grisMedio}/>
-                          <XAxis dataKey="fecha" tick={{fontSize:7}}/>
-                          <YAxis tick={{fontSize:8}} domain={["auto","auto"]}/>
-                          <Tooltip contentStyle={{fontSize:10,borderRadius:8}}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="fecha" tick={{fontSize:7,fill:"var(--gft-text-muted)"}}/>
+                          <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                          <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
                           <Legend wrapperStyle={{fontSize:9}}/>
                           <Line type="monotone" dataKey="Brazo D" stroke="#E53E3E"
                             strokeWidth={2.5} connectNulls dot={{r:3,fill:"#E53E3E"}} name="Brazo D"/>
@@ -3013,10 +3013,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           "Pierna D":parseFloat(c.grasaPD)||null,
                           "Pierna I":parseFloat(c.grasaPI)||null,
                         }))}>
-                          <CartesianGrid strokeDasharray="3 3" stroke={C.grisMedio}/>
-                          <XAxis dataKey="fecha" tick={{fontSize:7}}/>
-                          <YAxis tick={{fontSize:8}} domain={["auto","auto"]}/>
-                          <Tooltip contentStyle={{fontSize:10,borderRadius:8}}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="fecha" tick={{fontSize:7,fill:"var(--gft-text-muted)"}}/>
+                          <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                          <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
                           <Legend wrapperStyle={{fontSize:9}}/>
                           <Line type="monotone" dataKey="Pierna D" stroke="#553C9A"
                             strokeWidth={2.5} connectNulls dot={{r:3,fill:"#553C9A"}} name="Pierna D"/>
@@ -3045,7 +3045,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                       ))}
                     </div>
                   )}
-                </Card>
+                </div>
               )}
 
               {/* ── TABLA HISTORIAL COMPLETO ── */}
@@ -4246,7 +4246,8 @@ Saludos!`;
               </div>
             ))}
           </div>
-          {/* Cabecera semana */}
+          {/* Cabecera semana + grid en contenedor con scroll horizontal */}
+          <div className="gft-cal-scroll">
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
             {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d,i)=>(
               <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:700,
@@ -4302,6 +4303,7 @@ Saludos!`;
               </div>
             );
           })()}
+          </div>{/* /gft-cal-scroll */}
 
           {/* Detalle día seleccionado */}
           {diaSel && (
@@ -4671,38 +4673,36 @@ export default function App() {
 
   return (
     <div style={{minHeight:"100vh",background:C.gris}}>
-      <div style={{background:C.azul,padding:"0 28px",display:"flex",alignItems:"center",
-        minHeight:68,gap:16,boxShadow:"0 2px 12px rgba(0,0,0,0.15)"}}>
+      <div style={{background:"var(--gft-surface)",borderBottom:"1px solid var(--gft-border)",
+        padding:"0 16px",display:"flex",alignItems:"center",minHeight:56,gap:12,
+        position:"sticky",top:0,zIndex:200,backdropFilter:"blur(12px)"}}>
         <img src={logoNavbar} alt="Dr. Gerardo Félix Tapia"
-          style={{height:54,width:"auto",objectFit:"contain",filter:"brightness(0) invert(1)"}}/>
-        <div style={{width:1,height:40,background:"rgba(255,255,255,0.2)",margin:"0 6px"}}/>
-        <div style={{display:"flex",gap:4}}>
+          style={{height:38,width:"auto",objectFit:"contain",flexShrink:0}}/>
+        <div style={{width:1,height:32,background:"var(--gft-border)",margin:"0 4px",flexShrink:0}}/>
+        <div style={{display:"flex",gap:4,flexShrink:0}}>
           {[["dashboard","🏠 Inicio"],["lista","👥 Pacientes"]].map(([v,l])=>(
             <button key={v} onClick={()=>setVista(v)} style={{
-              padding:"7px 16px",borderRadius:8,border:"none",cursor:"pointer",
-              background:vista===v?"rgba(255,255,255,0.2)":"transparent",
-              color:"white",fontWeight:vista===v?800:400,fontSize:12,
+              padding:"6px 14px",borderRadius:20,border:"none",cursor:"pointer",
+              background:vista===v?"var(--gft-accent-dim)":"transparent",
+              color:vista===v?"var(--gft-accent)":"var(--gft-text-2)",
+              fontWeight:vista===v?700:400,fontSize:13,whiteSpace:"nowrap",
             }}>{l}</button>
           ))}
         </div>
-        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:10}}>
-          <div style={{color:"rgba(255,255,255,0.65)",fontSize:10,textAlign:"right"}}>
-            <div>{new Date().toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}</div>
-            <div style={{color:C.verde,fontWeight:600}}>
-              {pacientes.length} pacientes · {pacientes.reduce((a,p)=>a+(p.consultas||[]).length,0)} consultas
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+          <div className="gft-nav-counter" style={{color:"var(--gft-text-muted)",fontSize:10,textAlign:"right",lineHeight:1.4}}>
+            <div style={{color:"var(--gft-text-2)"}}>{new Date().toLocaleDateString("es-MX",{weekday:"short",day:"numeric",month:"short"})}</div>
+            <div style={{color:"var(--gft-success)",fontWeight:600}}>
+              {pacientes.length}p · {pacientes.reduce((a,p)=>a+(p.consultas||[]).length,0)}c
             </div>
           </div>
-          <Btn onClick={()=>setMNuevo(true)} color={C.verde} icon="+" size="sm">Nuevo paciente</Btn>
+          <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>setMNuevo(true)}>+ Nuevo</button>
           <button onClick={()=>setShowConfig(true)}
-            style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",
-              fontSize:18,cursor:"pointer",borderRadius:8,padding:"6px 10px"}}>⚙️</button>
-          <button onClick={async()=>{
-            if(confirm("¿Cerrar sesión?")){
-              await supabase.auth.signOut();
-            }
-          }}
-            style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",
-              fontSize:14,cursor:"pointer",borderRadius:8,padding:"6px 10px"}} title="Cerrar sesión">🚪</button>
+            style={{background:"var(--gft-surface2)",border:"1px solid var(--gft-border)",color:"var(--gft-text-2)",
+              fontSize:16,cursor:"pointer",borderRadius:8,padding:"6px 9px"}}>⚙️</button>
+          <button onClick={async()=>{if(confirm("¿Cerrar sesión?")){await supabase.auth.signOut();}}}
+            style={{background:"var(--gft-surface2)",border:"1px solid var(--gft-border)",color:"var(--gft-text-2)",
+              fontSize:14,cursor:"pointer",borderRadius:8,padding:"6px 9px"}} title="Cerrar sesión">🚪</button>
         </div>
       </div>
       {vista==="dashboard" && (
