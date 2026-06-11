@@ -767,13 +767,10 @@ const pdfToText = async (file) => {
 // kg: exec() filtrando rangos (char anterior '-'), deduplica whole-body [0-6]
 // pero toma segmental RAW (sin dedup) para soportar valores iguales entre segmentos.
 const parseTanita = async (texto) => {
-  const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const response = await fetch("/api/claude", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
@@ -860,16 +857,13 @@ const archivoATexto = async (file) => {
 // ── Parser de Laboratorios (Claude API) ─────────────────────
 const parseLabs = async (texto) => {
   console.log('texto extraído:', texto.slice(0, 500));
-  const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
-  console.log('API key presente:', !!apiKey);
+  console.log('API key presente:', !!import.meta.env.VITE_ANTHROPIC_KEY);
   let response;
   try {
-    response = await fetch("https://api.anthropic.com/v1/messages", {
+    response = await fetch("/api/claude", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
