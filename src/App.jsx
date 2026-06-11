@@ -914,11 +914,83 @@ const archivoATexto = async (file) => {
   return await imageToText(f);
 };
 
-// ── Parser de Laboratorios (semántico por línea) ────────────
-// Estrategia: por cada prueba busca la línea que contenga el patrón,
-// extrae números descartando los que forman rango "X - Y",
-// y devuelve el más a la derecha dentro de [min,max].
-// Soporta: orden estándar, orden invertido (San José) y formato Chopo.
+// ── Diccionario de pruebas clínicas ─────────────────────────
+// Cada entrada: clave (= key en CAMPOS_LABS), nombres (sinónimos normalizados),
+// rango fisiológico [min,max], y opciones: excluir, tomar, preferir.
+const PRUEBAS = [
+  // ── METABOLISMO ────────────────────────────────────────────
+  { clave:"glucosa",            nombres:["glucosa"],                                                                      rango:[1,600],    excluir:["promedio estimado","en orina"] },
+  { clave:"hba1c",              nombres:["glicohemoglobina","hemoglobina glicosilada","hemoglobina glucosilada","hba1c","a1c"], rango:[3,20] },
+  { clave:"insulina",           nombres:["insulina basal","insulina"],                                                    rango:[0.5,300] },
+  { clave:"homa",               nombres:["indice homa","homa-ir","homa ir","resistencia a la insulina","indice de resistencia insulinica"], rango:[0.5,50], tomar:"ultimo" },
+  // ── LÍPIDOS ────────────────────────────────────────────────
+  { clave:"colesterol",         nombres:["colesterol total","colesterol"],                                                rango:[50,600] },
+  { clave:"trigliceridos",      nombres:["trigliceridos","trigliceridos"],                                               rango:[20,3000] },
+  { clave:"hdl",                nombres:["colesterol hdl","colesterol de alta densidad","hdl","lipoproteina de alta densidad"], rango:[10,200] },
+  { clave:"ldl",                nombres:["colesterol ldl","colesterol de baja densidad","ldl","lipoproteina de baja densidad"], rango:[10,400] },
+  { clave:"vldl",               nombres:["colesterol de muy baja densidad","vldl","lipoproteina de muy baja densidad"],  rango:[1,200] },
+  // ── HEPÁTICO ───────────────────────────────────────────────
+  { clave:"alt",                nombres:["transaminasa glutamico piruvica","transaminasa piruvica","tgp","sgpt","alt"],   rango:[1,1000] },
+  { clave:"ast",                nombres:["transaminasa glutamico oxalacetica","transaminasa oxalacetica","tgo","sgot","ast"], rango:[1,1000] },
+  { clave:"ggt",                nombres:["gamma glutamil","gama glutamil","ggt"],                                        rango:[1,1000] },
+  { clave:"fa",                 nombres:["fosfatasa alcalina"],                                                          rango:[10,1000] },
+  { clave:"ldh",                nombres:["lactato deshidrogenasa","deshidrogenasa lactica","dhl","ldh"],                 rango:[50,2000] },
+  { clave:"bilirrubinaTotal",   nombres:["bilirrubina total"],                                                           rango:[0.1,30] },
+  { clave:"bilirrubinaDirecta", nombres:["bilirrubina directa"],                                                         rango:[0,20] },
+  { clave:"bilirrubinaIndirecta", nombres:["bilirrubina indirecta"],                                                     rango:[0.1,20] },
+  { clave:"proteinasTotales",   nombres:["proteinas sericas","proteinas totales","proteinas totales"],                   rango:[3,12] },
+  { clave:"albumina",           nombres:["albumina","albumina"],                                                         rango:[1,6] },
+  { clave:"globulinas",         nombres:["globulinas","globulina"],                                                      rango:[0.5,6] },
+  // ── RENAL ──────────────────────────────────────────────────
+  { clave:"creatinina",         nombres:["creatinina"],                                                                  rango:[0.3,20] },
+  { clave:"bun",                nombres:["bun","nitrogeno ureico"],                                                      rango:[1,100] },
+  { clave:"urea",               nombres:["urea"],                                                                        rango:[5,200],    excluir:["nitrogeno ureico"] },
+  { clave:"acidoUrico",         nombres:["acido urico"],                                                                 rango:[1,20] },
+  { clave:"sodio",              nombres:["sodio"],                                                                       rango:[100,180] },
+  { clave:"potasio",            nombres:["potasio"],                                                                     rango:[2,8] },
+  { clave:"cloro",              nombres:["cloro"],                                                                       rango:[80,130] },
+  { clave:"calcio",             nombres:["calcio"],                                                                      rango:[5,15] },
+  { clave:"fosforo",            nombres:["fosforo"],                                                                     rango:[0.5,10] },
+  // ── TIROIDEO ───────────────────────────────────────────────
+  { clave:"tsh",                nombres:["tsh","hormona estimulante de tiroides","tirotropina"],                         rango:[0.01,50] },
+  { clave:"t4",                 nombres:["t4 libre","tiroxina libre","ft4"],                                             rango:[0.5,4] },
+  { clave:"t4t",                nombres:["t4 total","tiroxina total","t4 tiroxina total","tiroxina t4"],                 rango:[1,25] },
+  { clave:"t3",                 nombres:["t3 libre","triyodotironina libre","ft3"],                                      rango:[1,10] },
+  { clave:"t3t",                nombres:["t3 total triyodotironina","t3 total","triyodotironina total","triyodotironina t3","triyodotironina"], rango:[50,300] },
+  // ── BIOMETRÍA HEMÁTICA ─────────────────────────────────────
+  { clave:"hemoglobina",        nombres:["hemoglobina hgb","hemoglobina"],                                               rango:[5,25],     excluir:["glicosilada","glucosilada","corpuscular"] },
+  { clave:"hematocrito",        nombres:["hematocrito hct","hematocrito"],                                               rango:[15,70] },
+  { clave:"eritrocitos",        nombres:["eritrocitos rbc","eritrocitos"],                                               rango:[1,8] },
+  { clave:"leucocitos",         nombres:["leucocitos wbc","leucocitos"],                                                 rango:[1,100] },
+  { clave:"plaquetas",          nombres:["plaquetas plt","plaquetas"],                                                   rango:[10,1500] },
+  { clave:"neutrofilos",        nombres:["neutrofilos ne","neutrofilos"],                                                rango:[1,95],     preferir:"%" },
+  { clave:"linfocitos",         nombres:["linfocitos lyn","linfocitos"],                                                 rango:[1,80],     preferir:"%" },
+  { clave:"monocitos",          nombres:["monocitos mo","monocitos"],                                                    rango:[0.1,25],   preferir:"%" },
+  { clave:"eosinofilos",        nombres:["eosinofilos eo","eosinofilos","eosinofilo"],                                   rango:[0,25],     preferir:"%" },
+  { clave:"basofilos",          nombres:["basofilos ba","basofilos","basofilo"],                                         rango:[0,5],      preferir:"%" },
+  { clave:"mcv",                nombres:["mcv","vcm","volumen corpuscular medio"],                                       rango:[50,130] },
+  { clave:"mch",                nombres:["mch","hcm","hemoglobina corpuscular media","hgb corpuscular media"],           rango:[15,45],    excluir:["concentracion","con."] },
+  { clave:"mchc",               nombres:["mchc","chcm","con. hemoglobina corpuscular","con. hgb corpuscular"],           rango:[25,40] },
+  { clave:"rdw",                nombres:["rdw","distribucion eritrocitaria"],                                            rango:[5,25] },
+  // ── GINECOLÓGICO ───────────────────────────────────────────
+  { clave:"fsh",                nombres:["fsh","hormona foliculo estimulante"],                                          rango:[0.5,200] },
+  { clave:"lh",                 nombres:["lh","hormona luteinizante","l.h. serica"],                                     rango:[0.5,200] },
+  { clave:"estradiol",          nombres:["estradiol"],                                                                   rango:[5,5000] },
+  { clave:"progesterona",       nombres:["progesterona"],                                                                rango:[0.05,300] },
+  { clave:"prolactina",         nombres:["prolactina"],                                                                  rango:[1,300] },
+  { clave:"testosterona",       nombres:["testosterona total","testosterona"],                                           rango:[0.1,1200] },
+  // ── VITAMINAS Y OTROS ──────────────────────────────────────
+  { clave:"vitD",               nombres:["25-hidroxicolecalciferol","calcidiol","25 oh vitamina d","25-oh","vitamina d"], rango:[3,200] },
+  { clave:"b12",                nombres:["vitamina b12","cobalamina","b12"],                                             rango:[50,2000] },
+  { clave:"ferritina",          nombres:["ferritina"],                                                                   rango:[1,5000] },
+  { clave:"hierro",             nombres:["hierro serico","hierro"],                                                      rango:[10,300] },
+  { clave:"pcr",                nombres:["pcr ultrasensible","proteina c reactiva","pcr"],                               rango:[0.01,300] },
+];
+
+// ── Parser de Laboratorios ───────────────────────────────────
+// Estrategia: por cada prueba del diccionario PRUEBAS, busca la línea
+// que contenga el nombre, extrae candidatos numéricos descartando rangos
+// y artefactos, y toma el primero/último válido dentro del rango fisiológico.
 const parseLabs = async (texto) => {
   if (!texto || texto.length < 20) return null;
   const norm = texto.toLowerCase()
@@ -928,255 +1000,115 @@ const parseLabs = async (texto) => {
   CAMPOS_LABS.forEach(c => r[c.k] = null);
   r.fecha = null; r.laboratorio = null; r.paciente = null; r.notasAdicionales = null;
 
-  const lines = norm.split("\n");
+  const lines = norm.split("\n").map(l => l.trim()).filter(l => l.length > 0);
 
-  // buscar: semántico por línea
-  // excluirLineas: array de strings — descarta líneas que los contengan
-  const buscar = (patrones, minV, maxV, excluirLineas = []) => {
-    for (const p of patrones) {
+  // Extrae candidatos numéricos de una línea descartando rangos, exponentes y paginación
+  const extraerCandidatos = (line, minV, maxV) => {
+    const numRe = /(\d+[.,]\d+|\d+)/g;
+    let m;
+    const out = [];
+    while ((m = numRe.exec(line)) !== null) {
+      const v = parseFloat(m[1].replace(",", "."));
+      if (isNaN(v)) continue;
+      const pos = m.index, len = m[0].length;
+      const after  = line.slice(pos + len);
+      const before = line.slice(0, pos);
+      if (/^\s*-\s*\d/.test(after))   continue; // lado izquierdo de rango "X - Y"
+      if (/\d\s*-\s*$/.test(before))   continue; // lado derecho de rango "X - Y"
+      if (/^\s+a\s+\d/.test(after))    continue; // lado izquierdo de rango "X a Y"
+      if (/\d\s+a\s+$/.test(before))   continue; // lado derecho de rango "X a Y"
+      if (/^\s+de\s+\d{1,2}\b/.test(after) && /\b\d{1,2}$/.test(before.trimEnd())) continue; // paginación "N de M"
+      if (/^\^/.test(after))             continue; // base de exponente "10^"
+      if (/\^$/.test(before.trimEnd()))  continue; // exponente "^3"
+      if (v < minV || v > maxV)           continue;
+      out.push({ v, pos });
+    }
+    return out;
+  };
+
+  // Busca una prueba usando su diccionario
+  const buscarPrueba = ({ nombres, rango: [minV, maxV], excluir = [], tomar = "primero", preferir }) => {
+    for (const nombre of nombres) {
+      const matches = [];
       for (const line of lines) {
-        if (!line.includes(p)) continue;
-        if (excluirLineas.some(e => line.includes(e))) continue;
-        const patIdx = line.indexOf(p);
-        const afterPat = line.slice(patIdx + p.length);
-        const numRe = /(\d+[.,]\d+|\d+)/g;
-        let m;
-        const candidates = [];
-        while ((m = numRe.exec(afterPat)) !== null) {
-          const v = parseFloat(m[1].replace(",", "."));
-          if (isNaN(v) || v < minV || v > maxV) continue;
-          const absPos = patIdx + p.length + m.index;
-          const after = line.slice(absPos + m[0].length);
-          const before = line.slice(0, absPos);
-          // Descartar si es lado izquierdo de rango: seguido de "- dígito"
-          if (/^\s*-\s*\d/.test(after)) continue;
-          // Descartar si es lado derecho de rango: precedido de "dígito -"
-          if (/\d\s*-\s*$/.test(before)) continue;
-          // Descartar notación exponencial "10^3": saltar base (seguida de ^) y exponente (precedido de ^)
-          if (/^\^/.test(after)) continue;
-          if (/\^\s*$/.test(before)) continue;
-          candidates.push(v);
-        }
-        // Devuelve el más a la derecha (evita capturar parte del nombre)
-        if (candidates.length > 0) return candidates[candidates.length - 1];
+        if (!line.includes(nombre)) continue;
+        if (excluir.some(e => line.includes(e))) continue;
+        const cands = extraerCandidatos(line, minV, maxV);
+        if (cands.length > 0) matches.push({ line, cands });
       }
+      if (matches.length === 0) continue;
+
+      // Si preferir="%", elegir línea que tenga "%" cuando sea posible
+      let chosen = matches[0];
+      if (preferir === "%") {
+        const conPct = matches.find(m => m.line.includes("%"));
+        if (conPct) chosen = conPct;
+      }
+
+      return tomar === "ultimo"
+        ? chosen.cands[chosen.cands.length - 1].v
+        : chosen.cands[0].v;
     }
     return null;
   };
 
-  // ── Metabolismo ──────────────────────────────────────────────
-  r.glucosa = buscar([
-    "glucosa serica","glucosa en suero","glucosa basal","glucosa ayuno",
-    "glucosa","glicemia","glucemia","glucose",
-  ], 30, 600);
-  r.insulina = buscar([
-    "insulina basal","insulina en suero","insulina","insulin",
-  ], 0.1, 500);
-  r.homa = buscar([
-    "indice de resistencia insulinica (homa)",
-    "indice de resistencia insulinica",
-    "resistencia a la insulina",
-    "indice homa","homa-ir","homa ir","resistencia insulinica","homa",
-  ], 0.1, 50);
-  r.hba1c = buscar([
-    "hemoglobina glucosilada a1c",
-    "hemoglobina glucosilada",
-    "hemoglobina glicosilada",
-    "hemoglobina glicada",
-    "glicohemoglobina",
-    "hba1c","hb a1c","a1c",
-  ], 3, 20);
-
-  // ── Lípidos ──────────────────────────────────────────────────
-  r.colesterol = buscar([
-    "colesterol total","cholesterol total","col. total","colesterol",
-  ], 50, 600);
-  r.trigliceridos = buscar([
-    "trigliceridos","triglycerides",
-  ], 20, 2000);
-  r.hdl = buscar([
-    "lipoproteina de alta densidad (hdl)",
-    "hdl-colesterol","colesterol hdl","colesterol-hdl",
-    "c-hdl","hdl-c",
-    "lipoproteina de alta densidad",
-    "colesterol de alta densidad",
-    "hdl colesterol","hdl",
-  ], 10, 200);
-  r.ldl = buscar([
-    "lipoproteina de baja densidad (ldl)",
-    "ldl-colesterol","colesterol ldl","colesterol-ldl",
-    "c-ldl","ldl-c",
-    "lipoproteina de baja densidad",
-    "colesterol de baja densidad",
-    "ldl colesterol","ldl",
-  ], 20, 400);
-
-  // ── Hepático ─────────────────────────────────────────────────
-  r.alt = buscar([
-    "alanina aminotransferasa","alanino aminotransferasa",
-    "alanina amino transferasa",
-    "transaminasa piruvica","transaminasa glutamico piruvica",
-    "tgp","sgpt","alt",
-  ], 1, 2000);
-  r.ast = buscar([
-    "aspartato aminotransferasa","aspartato amino transferasa",
-    "transaminasa oxalacetica","transaminasa oxaloacetica",
-    "transaminasa glutamico oxalacetica",
-    "tgo","sgot","ast",
-  ], 1, 2000);
-  r.ggt = buscar([
-    "gamma glutamil transferasa","gama glutamil transferasa",
-    "gamma glutamil transpeptidasa","gama glutamil transpeptidasa",
-    "gammaglutamil","gamma-glutamil","gamma glutamil","gamma gt",
-    "g.g.t.","g.g.t","ggt",
-  ], 1, 1000);
-  r.fa = buscar([
-    "fosfatasa alcalina","alkaline phosphatase","fosfatasa alc",
-  ], 10, 1000);
-  r.ldh = buscar([
-    "deshidrogenasa lactica","lactato deshidrogenasa",
-    "lactic dehydrogenase","dhl","ldh",
-  ], 50, 3000);
-  r.bilirrubinaTotal = buscar([
-    "bilirrubina total","bilirrubinas totales",
-    "bilirubin total","bil. total","bil total",
-  ], 0.05, 30);
-  r.bilirrubinaDirecta = buscar([
-    "bilirrubina directa","bilirrubina conjugada",
-    "bilirubin direct","bil. directa","bil directa",
-  ], 0.01, 20);
-  r.bilirrubinaIndirecta = buscar([
-    "bilirrubina indirecta","bilirrubina no conjugada",
-    "bilirubin indirect","bil. indirecta","bil indirecta",
-  ], 0.05, 20);
-  r.proteinasTotales = buscar([
-    "proteinas totales","prot. totales","prot totales","total protein",
-  ], 2, 15);
-  r.albumina = buscar([
-    "albumina serica","albumina en suero","albumina","albumin",
-  ], 1, 8);
-
-  // ── Tiroideo ─────────────────────────────────────────────────
-  r.tsh = buscar([
-    "tirotropina",
-    "hormona estimulante de tiroides",
-    "hormona estimulante de la tiroides",
-    "thyrotropin","tsh ultrasensible","tsh",
-  ], 0.01, 100);
-  r.t4 = buscar([
-    "tiroxina libre (t4l)","tiroxina libre","t4 libre","free t4","ft4",
-  ], 0.1, 10);
-  r.t3 = buscar([
-    "triiodotironina libre","triyodotironina libre",
-    "t3 libre","free t3","ft3","t3l",
-  ], 0.5, 15);
-
-  // ── Biometría hemática ────────────────────────────────────────
-  // Hemoglobina excluye líneas con "corpuscular" y variantes de "glucosilada"
-  r.hemoglobina = buscar([
-    "hemoglobina hgb","haemoglobin","hemoglobina",
-  ], 3, 25, ["corpuscular","corp.","glucosilada","glicosilada","glicada","glicohemoglobina"]);
-  r.hematocrito = buscar([
-    "hematocrito","hematocrit","hto","hct",
-  ], 10, 65);
-  r.eritrocitos = buscar([
-    "eritrocitos","globulos rojos","red blood cells","rbc",
-  ], 1, 10);
-  r.leucocitos = buscar([
-    "leucocitos","globulos blancos","white blood cells","wbc",
-  ], 0.5, 100);
-  r.plaquetas = buscar([
-    "plaquetas","thrombocytes","platelets","plt",
-  ], 10, 1500);
-  r.neutrofilos = buscar(["neutrofilos","neutrophils"], 10, 95);
-  r.linfocitos  = buscar(["linfocitos","lymphocytes"], 5, 80);
-  r.monocitos   = buscar(["monocitos","monocytes"], 0, 25);
-  r.eosinofilos = buscar(["eosinofilos","eosinophils"], 0, 25);
-  r.basofilos   = buscar(["basofilos","basophils"], 0, 5);
-  r.mcv  = buscar([
-    "volumen corpuscular medio mcv","volumen corpuscular medio",
-    "mean corpuscular volume","v.g.m.","vcm","mcv",
-  ], 50, 130);
-  r.mch  = buscar([
-    "hgb corpuscular media mch","hemoglobina corpuscular media",
-    "mean corpuscular hemoglobin","h.c.m.","hcm","mch",
-  ], 15, 50);
-  r.mchc = buscar([
-    "con. hgb corpuscular media mchc",
-    "concentracion de hemoglobina corpuscular",
-    "c.m.h.c.","mchc","chcm",
-  ], 20, 45);
-  r.rdw  = buscar([
-    "amplitud de distribucion eritrocitaria",
-    "red cell distribution","rdw","adv",
-  ], 8, 25);
-
-  // ── Renal ─────────────────────────────────────────────────────
-  r.creatinina = buscar([
-    "creatinina serica","creatinina en suero","creatinina","creatinine",
-  ], 0.1, 20);
-  r.bun = buscar(["nitrogeno ureico","blood urea nitrogen","bun"], 1, 200);
-  r.acidoUrico = buscar(["acido urico","uric acid"], 0.5, 20);
-
-  // ── Vitaminas / hierro ────────────────────────────────────────
-  r.vitD = buscar([
-    "25 hidroxi vitamina d","25-hidroxivitamina d",
-    "25 oh vitamina d","25(oh)d","calcidiol",
-    "vitamina d 25","vitamina d",
-  ], 1, 200);
-  r.b12 = buscar([
-    "vitamina b12","cobalamina","cianocobalamina","vit b12","b-12",
-  ], 50, 3000);
-  r.ferritina = buscar([
-    "ferritina serica","ferritina","ferritin",
-  ], 1, 5000);
-
-  // ── Ginecológico / hormonal ───────────────────────────────────
-  r.fsh = buscar([
-    "hormona foliculoestimulante",
-    "hormona foliculo estimulante",
-    "folitropina","fsh",
-  ], 0.1, 200);
-  r.lh = buscar(["hormona luteinizante","lutropina","lh"], 0.1, 200);
-  r.estradiol = buscar(["estradiol","17 beta estradiol","e2"], 1, 5000);
-  r.progesterona = buscar(["progesterona","progesterone"], 0.1, 100);
-  r.prolactina = buscar([
-    "prolactina basal","prolactina","prolactin","prl",
-  ], 0.5, 500);
-  // Rango ampliado: Lab Ramos reporta en ng/mL (~3.43), San José en ng/dL (~339)
-  r.testosterona = buscar([
-    "testosterona total","testosterona libre","testosterona","testosterone",
-  ], 0, 1200);
-
-  // ── Fecha ─────────────────────────────────────────────────────
-  const fechaPatterns = [
-    { re: /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/, fn: m => `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
-    { re: /(\d{4})-(\d{1,2})-(\d{1,2})/, fn: m => `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` },
-    { re: /(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+(?:del?\s+)?(\d{4})/i, fn: m => {
-      const meses = {enero:"01",febrero:"02",marzo:"03",abril:"04",mayo:"05",junio:"06",julio:"07",agosto:"08",septiembre:"09",octubre:"10",noviembre:"11",diciembre:"12"};
-      return `${m[3]}-${meses[m[2].toLowerCase()]}-${m[1].padStart(2,"0")}`;
-    }},
-  ];
-  for (const { re, fn } of fechaPatterns) {
-    const m = texto.match(re);
-    if (m) { r.fecha = fn(m); break; }
+  // Extraer cada prueba del diccionario
+  for (const prueba of PRUEBAS) {
+    const val = buscarPrueba(prueba);
+    if (val !== null) r[prueba.clave] = val;
   }
 
-  // ── Laboratorio ───────────────────────────────────────────────
+  // ── Fecha ────────────────────────────────────────────────────
+  // Preferir líneas con palabras clave de fecha de toma/recepción
+  const fechaKeywords = ["toma de muestra","fecha recepcion","fecha de admision","fecha de registro","fecha:","recepcion"];
+  const fpats = [
+    { re:/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/, fn:m=>`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
+    { re:/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})/,  fn:m=>`20${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
+    { re:/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, fn:m=>`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` },
+  ];
+  const fechas = [];
+  for (const line of lines) {
+    const esRelevante = fechaKeywords.some(k => line.includes(k));
+    for (const { re, fn } of fpats) {
+      const m = line.match(re);
+      if (m) { const f = fn(m); esRelevante ? fechas.unshift(f) : fechas.push(f); break; }
+    }
+  }
+  if (fechas.length > 0) r.fecha = fechas[0];
+
+  // ── Laboratorio ──────────────────────────────────────────────
   const normFull = norm.replace(/\n/g, " ");
-  const labs = [
-    ["valtierra","Valtierra"],["salud digna","Salud Digna"],
-    ["san jose","Lab San José"],["san francisco","Lab San Francisco"],
-    ["pxlab","PxLab"],["ramos","Lab Ramos"],["chopo","Chopo"],
-    ["quest","Quest"],["biomedica","Biomedica"],["mediavanz","Mediavanz"],
-    ["lab cer","Lab CER"],["carpermor","Carpermor"],["azteca","Azteca"],
-    ["clinica ruiz","Clinica Ruiz"],["diagnostica","Diagnostica"],
+  const labsMap = [
+    ["labsanjose","Lab San José"],["san jose","Lab San José"],
+    ["valtierra","Valtierra"],
+    ["laboratorio chopo","Laboratorio Chopo"],["chopo","Laboratorio Chopo"],
+    ["familylabs","Labs Familiar"],["familiar","Labs Familiar"],
+    ["laboratorioramos","Lab Ramos"],["ramos","Lab Ramos"],
+    ["salud digna","Salud Digna"],
+    ["pxlab","PxLab"],["mediavanz","Mediavanz"],
+    ["lab cer","Lab CER"],["carpermor","Carpermor"],
+    ["azteca","Azteca"],["clinica ruiz","Clinica Ruiz"],
+    ["diagnostica","Diagnostica"],["biomedica","Biomedica"],
   ];
-  for (const [needle, label] of labs) {
-    if (normFull.includes(needle)) { r.laboratorio = label; break; }
+  let labFound = false;
+  for (const [needle, label] of labsMap) {
+    if (normFull.includes(needle)) { r.laboratorio = label; labFound = true; break; }
   }
+  if (!labFound) {
+    // Usar primera línea no vacía del texto original como nombre del laboratorio
+    const primera = texto.split("\n").map(l => l.trim()).find(l => l.length > 2 && l.length < 80);
+    if (primera) r.laboratorio = primera;
+  }
+
+  // ── Paciente ─────────────────────────────────────────────────
+  for (const line of lines) {
+    const m = line.match(/paciente[:\s]+(.+)/);
+    if (m && m[1].trim().length > 2) { r.paciente = m[1].trim(); break; }
+  }
+
   return r;
 };
+
 
 // ── Helpers de documentos ─────────────────────────────────────
 const CF = ({l, v, span=1}) => (
