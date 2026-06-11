@@ -850,6 +850,7 @@ ${texto}`,
     if (fechaPreExtracted) data.fecha = fechaPreExtracted;
     if (grasaPreExtracted) data.grasaCorporal = grasaPreExtracted;
     if (bmrPreExtracted) data.metabolismoBasal = bmrPreExtracted;
+    console.log('TANITA RESULTADO CLAUDE:', data);
     return data;
   } catch { return {}; }
 };
@@ -2020,11 +2021,11 @@ const ModalConsulta = ({p, onClose, onSave}) => {
       fecha:d.fecha||x.fecha, hora:d.hora||x.hora,
       peso:d.peso!=null?String(d.peso):x.peso,
       comp:{
-        peso:s(d.peso), grasa:s(d.grasa),
+        peso:s(d.peso), grasa:s(d.grasaCorporal),
         musculo:s(d.masaMuscular), agua:s(d.aguaCorporal),
         osea:s(d.masaOsea), visceral:s(d.grasaVisceral),
-        bmr:s(d.bmr), edadMet:s(d.edadMetabolica), imc:s(d.imc),
-        masaGrasa:s(d.masaGrasa), masaLibreGrasa:s(d.masaLibreGrasa),
+        bmr:s(d.metabolismoBasal), edadMet:s(d.edadMetabolica), imc:s(d.imc),
+        masaGrasa:s(d.grasaCorporalKg), masaLibreGrasa:s(d.masaLibreGrasa),
         aguaKg:s(d.aguaCorporalKg), proteina:s(d.proteina),
         // Segmentos músculo (kg)
         musculoTronco:s(d.musculoTronco),
@@ -2434,11 +2435,11 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                       {
                         fecha: d.fecha || hoy(),
                         hora: d.hora || ahora(),
-                        peso: ss(d.peso), grasa: ss(d.grasa),
+                        peso: ss(d.peso), grasa: ss(d.grasaCorporal),
                         musculo: ss(d.masaMuscular), agua: ss(d.aguaCorporal),
                         osea: ss(d.masaOsea), visceral: ss(d.grasaVisceral),
-                        bmr: ss(d.bmr), edadMet: ss(d.edadMetabolica), imc: ss(d.imc),
-                        masaGrasa: ss(d.masaGrasa), masaLibreGrasa: ss(d.masaLibreGrasa),
+                        bmr: ss(d.metabolismoBasal), edadMet: ss(d.edadMetabolica), imc: ss(d.imc),
+                        masaGrasa: ss(d.grasaCorporalKg), masaLibreGrasa: ss(d.masaLibreGrasa),
                         aguaKg: ss(d.aguaCorporalKg), proteina: ss(d.proteina),
                         musculoTronco: ss(d.musculoTronco),
                         musculoBD: ss(d.musculoBrazoD), musculoBI: ss(d.musculoBrazoI),
