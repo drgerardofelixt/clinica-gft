@@ -766,105 +766,48 @@ const pdfToText = async (file) => {
 // ── Tanita parser ────────────────────────────────────────────
 // kg: exec() filtrando rangos (char anterior '-'), deduplica whole-body [0-6]
 // pero toma segmental RAW (sin dedup) para soportar valores iguales entre segmentos.
-const parseTanita = (text) => {
-  window._tanitaRawText = text;
-  const r = {};
+const parseTanita = async (texto) => {
+  const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 500,
+      messages: [{
+        role: "user",
+        content: `Eres un parser de resultados de báscula de composición corporal Tanita.
+Del siguiente texto, extrae los valores numéricos.
+Devuelve ÚNICAMENTE JSON válido sin texto adicional, sin markdown, sin explicaciones:
+{
+  "fecha": "DD/MM/YYYY o null",
+  "peso": numero o null,
+  "imc": numero o null,
+  "grasaCorporal": numero o null,
+  "grasaCorporalKg": numero o null,
+  "masaMuscular": numero o null,
+  "aguaCorporal": numero o null,
+  "masaOsea": numero o null,
+  "grasaVisceral": numero o null,
+  "edadMetabolica": numero o null,
+  "metabolismoBasal": numero o null
+}
 
-  // Diagnóstico
-  const testMatch = text.match(/(\d+\.?\d*)\s*kg/gi);
-  console.log('TEST kg matches:', testMatch);
-
-  // Fecha y hora
-  const dateM = text.match(/(\d{1,2})[\/\.](\d{1,2})[\/\.](\d{4})\s+(\d{1,2}:\d{2})/);
-  if (dateM) {
-    r.fecha = `${dateM[3]}-${dateM[2].padStart(2,'0')}-${dateM[1].padStart(2,'0')}`;
-    r.hora  = dateM[4];
-  }
-
-  // Todos los kg en orden de aparición (sin deduplicar), filtrando rangos
-  const kgAll = [];
-  const kgRe = /(\d+\.?\d*)\s*kg/gi;
-  let km;
-  while ((km = kgRe.exec(text)) !== null) {
-    if (text[km.index - 1] === '-') continue;
-    kgAll.push(parseFloat(km[1]));
-  }
-
-  // Whole-body: primeros 7 únicos (deduplica duplicados del PDF)
-  const kgSeen = new Set(), kgUniq = [];
-  for (const v of kgAll) {
-    const k = Math.round(v * 100);
-    if (!kgSeen.has(k)) { kgSeen.add(k); kgUniq.push(v); }
-  }
-  // [0]=masaGrasa · [1]=masaOsea · [2]=proteina · [3]=peso
-  // [4]=masaLibreGrasa · [5]=masaMuscular · [6]=aguaKg
-  r.masaGrasa      = kgUniq[0] ?? null;
-  r.masaOsea       = kgUniq[1] ?? null;
-  r.proteina       = kgUniq[2] ?? null;
-  r.peso           = kgUniq[3] ?? null;
-  r.masaLibreGrasa = kgUniq[4] ?? null;
-  r.masaMuscular   = kgUniq[5] ?? null;
-  r.aguaKg         = kgUniq[6] ?? null;
-
-  // Segmental: 5 valores RAW en kgAll después de la última ocurrencia de aguaKg
-  // Orden PDF RD-545: tronco · brazoI · piernaI · brazoD · piernaD
-  const aguaKgKey = r.aguaKg != null ? Math.round(r.aguaKg * 100) : -1;
-  let segStart = 0;
-  for (let i = kgAll.length - 1; i >= 0; i--) {
-    if (Math.round(kgAll[i] * 100) === aguaKgKey) { segStart = i + 1; break; }
-  }
-  const segKg     = kgAll.slice(segStart, segStart + 5);
-  // Orden en PDF RD-545: tronco · brazoI · brazoD · piernaI · piernaD
-  r.musculoTronco  = segKg[0] ?? null;
-  r.musculoBrazoI  = segKg[1] ?? null;
-  r.musculoBrazoD  = segKg[2] ?? null;
-  r.musculoPiernaI = segKg[3] ?? null;
-  r.musculoPiernaD = segKg[4] ?? null;
-
-  // %: exec() loop, filtra rangos
-  // [0]=grasa · [1]=aguaCorporal · [2]=grasaTronco · [3]=grasaBrazoI
-  // [4]=grasaBrazoD · [5]=grasaPiernaI · [6]=grasaPiernaD
-  const pctAll = [];
-  const pctRe = /(\d+\.?\d*)\s*%/gi;
-  let pm;
-  while ((pm = pctRe.exec(text)) !== null) {
-    if (text[pm.index - 1] === '-') continue;
-    pctAll.push(parseFloat(pm[1]));
-  }
-  r.grasa        = pctAll[0] ?? null;
-  r.aguaCorporal = pctAll[1] ?? null;
-  r.grasaTronco  = pctAll[2] ?? null;
-  r.grasaBrazoI  = pctAll[3] ?? null;
-  r.grasaBrazoD  = pctAll[4] ?? null;
-  r.grasaPiernaI = pctAll[5] ?? null;
-  r.grasaPiernaD = pctAll[6] ?? null;
-
-  // BMR: número antes de 'kcal' (ignora kJ)
-  const bmrM = text.match(/(\d{3,5})\s*kcal/i);
-  r.bmr = bmrM ? parseInt(bmrM[1]) : null;
-
-  // Visceral: primer número 1-30 (entero o decimal X.X) después de kcal
-  r.grasaVisceral = null;
-  if (bmrM) {
-    const vm = text.slice(text.indexOf(bmrM[0]) + bmrM[0].length).match(/(\d{1,2}(?:\.\d)?)/);
-    if (vm) { const v = parseFloat(vm[1]); if (v >= 1 && v <= 30) r.grasaVisceral = v; }
-  }
-
-  // Decimales XX.XX sin unidad — imc y edadMetabolica
-  const decAll = [];
-  const decRe = /\b(\d{2}\.\d{1,2})\b/g;
-  let dm;
-  while ((dm = decRe.exec(text)) !== null) {
-    if (text[dm.index + dm[0].length] === '-') continue;
-    if (/\s*(?:kg|%|kcal)/i.test(text.slice(dm.index + dm[0].length, dm.index + dm[0].length + 5))) continue;
-    decAll.push(parseFloat(dm[1]));
-  }
-  r.imc            = decAll[0] ?? null;
-  r.edadMetabolica = decAll[1] != null ? Math.round(decAll[1]) : null;
-
-  window._tanitaArrays = { kgAll, kgUniq, segKg, pctAll, decAll, bmr: r.bmr, visceral: r.grasaVisceral };
-  return r;
+TEXTO:
+${texto}`,
+      }],
+    }),
+  });
+  if (!response.ok) throw new Error(`Anthropic API error ${response.status}`);
+  const apiData = await response.json();
+  const raw = apiData.content[0].text.replace(/^```json\s*/,'').replace(/\s*```$/,'');
+  try { return JSON.parse(raw); } catch { return {}; }
 };
+
 
 
 // ── Tesseract.js OCR para imágenes (gratis, local) ──────────
@@ -914,202 +857,113 @@ const archivoATexto = async (file) => {
   return await imageToText(f);
 };
 
-// ── Diccionario de pruebas clínicas ─────────────────────────
-// Cada entrada: clave (= key en CAMPOS_LABS), nombres (sinónimos normalizados),
-// rango fisiológico [min,max], y opciones: excluir, tomar, preferir.
-const PRUEBAS = [
-  // ── METABOLISMO ────────────────────────────────────────────
-  { clave:"glucosa",            nombres:["glucosa"],                                                                      rango:[1,600],    excluir:["promedio estimado","en orina"] },
-  { clave:"hba1c",              nombres:["glicohemoglobina","hemoglobina glicosilada","hemoglobina glucosilada","hba1c","a1c"], rango:[3,20] },
-  { clave:"insulina",           nombres:["insulina basal","insulina"],                                                    rango:[0.5,300],  excluir:["homa","resistencia"] },
-  { clave:"homa",               nombres:["indice homa","homa-ir","homa ir","resistencia a la insulina","indice de resistencia insulinica"], rango:[0.5,50], tomar:"ultimo" },
-  // ── LÍPIDOS ────────────────────────────────────────────────
-  { clave:"colesterol",         nombres:["colesterol total","colesterol"],                                                rango:[50,600] },
-  { clave:"trigliceridos",      nombres:["trigliceridos","trigliceridos"],                                               rango:[20,3000] },
-  { clave:"hdl",                nombres:["colesterol hdl","colesterol de alta densidad","hdl","lipoproteina de alta densidad"], rango:[10,200] },
-  { clave:"ldl",                nombres:["colesterol ldl","colesterol de baja densidad","ldl","lipoproteina de baja densidad"], rango:[10,300],   excluir:["muy baja densidad","vldl","no hdl","colesterol no"] },
-  { clave:"vldl",               nombres:["colesterol de muy baja densidad","vldl","lipoproteina de muy baja densidad"],  rango:[1,200] },
-  // ── HEPÁTICO ───────────────────────────────────────────────
-  { clave:"alt",                nombres:["transaminasa glutamico piruvica","transaminasa piruvica","tgp","sgpt","alt"],   rango:[1,1000] },
-  { clave:"ast",                nombres:["transaminasa glutamico oxalacetica","transaminasa oxalacetica","tgo","sgot","ast"], rango:[1,1000] },
-  { clave:"ggt",                nombres:["gamma glutamil","gama glutamil","ggt"],                                        rango:[1,1000] },
-  { clave:"fa",                 nombres:["fosfatasa alcalina"],                                                          rango:[10,1000] },
-  { clave:"ldh",                nombres:["lactato deshidrogenasa","deshidrogenasa lactica","dhl","ldh"],                 rango:[50,2000] },
-  { clave:"bilirrubinaTotal",   nombres:["bilirrubina total"],                                                           rango:[0.1,30] },
-  { clave:"bilirrubinaDirecta", nombres:["bilirrubina directa"],                                                         rango:[0,20] },
-  { clave:"bilirrubinaIndirecta", nombres:["bilirrubina indirecta"],                                                     rango:[0.1,20] },
-  { clave:"proteinasTotales",   nombres:["proteinas sericas","proteinas totales","proteinas totales"],                   rango:[3,12] },
-  { clave:"albumina",           nombres:["albumina","albumina"],                                                         rango:[1,6] },
-  { clave:"globulinas",         nombres:["globulinas","globulina"],                                                      rango:[0.5,6] },
-  // ── RENAL ──────────────────────────────────────────────────
-  { clave:"creatinina",         nombres:["creatinina"],                                                                  rango:[0.3,20] },
-  { clave:"bun",                nombres:["bun","nitrogeno ureico"],                                                      rango:[1,100] },
-  { clave:"urea",               nombres:["urea"],                                                                        rango:[5,200],    excluir:["nitrogeno ureico"] },
-  { clave:"acidoUrico",         nombres:["acido urico"],                                                                 rango:[1,20] },
-  { clave:"sodio",              nombres:["sodio"],                                                                       rango:[100,180] },
-  { clave:"potasio",            nombres:["potasio"],                                                                     rango:[2,8] },
-  { clave:"cloro",              nombres:["cloro"],                                                                       rango:[80,130] },
-  { clave:"calcio",             nombres:["calcio"],                                                                      rango:[5,15] },
-  { clave:"fosforo",            nombres:["fosforo"],                                                                     rango:[0.5,10] },
-  // ── TIROIDEO ───────────────────────────────────────────────
-  { clave:"tsh",                nombres:["tsh","hormona estimulante de tiroides","tirotropina"],                         rango:[0.01,50] },
-  { clave:"t4",                 nombres:["t4 libre","tiroxina libre","ft4"],                                             rango:[0.5,4] },
-  { clave:"t4t",                nombres:["t4 total","tiroxina total","t4 tiroxina total","tiroxina t4"],                 rango:[1,25] },
-  { clave:"t3",                 nombres:["t3 libre","triyodotironina libre","ft3"],                                      rango:[1,10] },
-  { clave:"t3t",                nombres:["t3 total triyodotironina","t3 total","triyodotironina total","triyodotironina t3","triyodotironina"], rango:[50,300] },
-  // ── BIOMETRÍA HEMÁTICA ─────────────────────────────────────
-  { clave:"hemoglobina",        nombres:["hemoglobina hgb","hemoglobina"],                                               rango:[5,25],     excluir:["glicosilada","glucosilada","corpuscular"] },
-  { clave:"hematocrito",        nombres:["hematocrito hct","hematocrito"],                                               rango:[15,70] },
-  { clave:"eritrocitos",        nombres:["eritrocitos rbc","eritrocitos"],                                               rango:[1,8] },
-  { clave:"leucocitos",         nombres:["leucocitos wbc","leucocitos"],                                                 rango:[1,100] },
-  { clave:"plaquetas",          nombres:["plaquetas plt","plaquetas"],                                                   rango:[10,1500] },
-  { clave:"neutrofilos",        nombres:["neutrofilos ne","neutrofilos"],                                                rango:[1,95],     preferir:"%" },
-  { clave:"linfocitos",         nombres:["linfocitos lyn","linfocitos"],                                                 rango:[1,80],     preferir:"%" },
-  { clave:"monocitos",          nombres:["monocitos mo","monocitos"],                                                    rango:[0.1,25],   preferir:"%" },
-  { clave:"eosinofilos",        nombres:["eosinofilos eo","eosinofilos","eosinofilo"],                                   rango:[0,25],     preferir:"%" },
-  { clave:"basofilos",          nombres:["basofilos ba","basofilos","basofilo"],                                         rango:[0,5],      preferir:"%" },
-  { clave:"mcv",                nombres:["mcv","vcm","volumen corpuscular medio"],                                       rango:[50,130] },
-  { clave:"mch",                nombres:["mch","hcm","hemoglobina corpuscular media","hgb corpuscular media"],           rango:[15,45],    excluir:["concentracion","con."] },
-  { clave:"mchc",               nombres:["mchc","chcm","con. hemoglobina corpuscular","con. hgb corpuscular"],           rango:[25,40] },
-  { clave:"rdw",                nombres:["rdw","distribucion eritrocitaria"],                                            rango:[5,25] },
-  // ── GINECOLÓGICO ───────────────────────────────────────────
-  { clave:"fsh",                nombres:["fsh","hormona foliculo estimulante"],                                          rango:[0.5,200] },
-  { clave:"lh",                 nombres:["lh","hormona luteinizante","l.h. serica"],                                     rango:[0.5,200] },
-  { clave:"estradiol",          nombres:["estradiol"],                                                                   rango:[5,5000] },
-  { clave:"progesterona",       nombres:["progesterona"],                                                                rango:[0.05,300] },
-  { clave:"prolactina",         nombres:["prolactina"],                                                                  rango:[1,300] },
-  { clave:"testosterona",       nombres:["testosterona total","testosterona"],                                           rango:[0.1,1200] },
-  // ── VITAMINAS Y OTROS ──────────────────────────────────────
-  { clave:"vitD",               nombres:["25-hidroxicolecalciferol","calcidiol","25 oh vitamina d","25-oh","vitamina d"], rango:[3,200] },
-  { clave:"b12",                nombres:["vitamina b12","cobalamina","b12"],                                             rango:[50,2000] },
-  { clave:"ferritina",          nombres:["ferritina"],                                                                   rango:[1,5000] },
-  { clave:"hierro",             nombres:["hierro serico","hierro"],                                                      rango:[10,300] },
-  { clave:"pcr",                nombres:["pcr ultrasensible","proteina c reactiva","pcr"],                               rango:[0.01,300] },
-];
-
-// ── Parser de Laboratorios ───────────────────────────────────
-// Estrategia: por cada prueba del diccionario PRUEBAS, busca la línea
-// que contenga el nombre, extrae candidatos numéricos descartando rangos
-// y artefactos, y toma el primero/último válido dentro del rango fisiológico.
+// ── Parser de Laboratorios (Claude API) ─────────────────────
 const parseLabs = async (texto) => {
-  if (!texto || texto.length < 20) return null;
-  const norm = texto.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const r = {};
-  CAMPOS_LABS.forEach(c => r[c.k] = null);
-  r.fecha = null; r.laboratorio = null; r.paciente = null; r.notasAdicionales = null;
+  const apiKey = import.meta.env.VITE_ANTHROPIC_KEY;
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1000,
+      messages: [{
+        role: "user",
+        content: `Eres un parser de resultados de laboratorio clínico.
+Del siguiente texto de un PDF de laboratorio, extrae SOLO los valores
+numéricos que encuentres con certeza. Si no encuentras un valor o no
+estás seguro, no lo incluyas.
 
-  const lines = norm.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+Devuelve ÚNICAMENTE un JSON válido con esta estructura (sin texto adicional,
+sin markdown, sin explicaciones):
+{
+  "laboratorio": "nombre del laboratorio",
+  "fecha": "DD/MM/YYYY o null",
+  "paciente": "nombre del paciente o null",
+  "glucosa": numero o null,
+  "hba1c": numero o null,
+  "insulina": numero o null,
+  "homa": numero o null,
+  "colesterol": numero o null,
+  "trigliceridos": numero o null,
+  "hdl": numero o null,
+  "ldl": numero o null,
+  "vldl": numero o null,
+  "alt": numero o null,
+  "ast": numero o null,
+  "ggt": numero o null,
+  "fa": numero o null,
+  "ldh": numero o null,
+  "bilirrubinaTotal": numero o null,
+  "bilirrubinaDirecta": numero o null,
+  "bilirrubinaIndirecta": numero o null,
+  "proteinasTotales": numero o null,
+  "albumina": numero o null,
+  "globulinas": numero o null,
+  "creatinina": numero o null,
+  "bun": numero o null,
+  "urea": numero o null,
+  "acidoUrico": numero o null,
+  "sodio": numero o null,
+  "potasio": numero o null,
+  "cloro": numero o null,
+  "calcio": numero o null,
+  "fosforo": numero o null,
+  "tsh": numero o null,
+  "t4": numero o null,
+  "t4t": numero o null,
+  "t3": numero o null,
+  "t3t": numero o null,
+  "hemoglobina": numero o null,
+  "hematocrito": numero o null,
+  "eritrocitos": numero o null,
+  "leucocitos": numero o null,
+  "plaquetas": numero o null,
+  "neutrofilos": numero o null,
+  "linfocitos": numero o null,
+  "monocitos": numero o null,
+  "eosinofilos": numero o null,
+  "basofilos": numero o null,
+  "mcv": numero o null,
+  "mch": numero o null,
+  "mchc": numero o null,
+  "rdw": numero o null,
+  "fsh": numero o null,
+  "lh": numero o null,
+  "estradiol": numero o null,
+  "progesterona": numero o null,
+  "prolactina": numero o null,
+  "testosterona": numero o null,
+  "vitD": numero o null,
+  "b12": numero o null,
+  "ferritina": numero o null,
+  "hierro": numero o null,
+  "pcr": numero o null
+}
 
-  // Extrae candidatos numéricos de una línea descartando rangos, exponentes y paginación
-  const extraerCandidatos = (line, minV, maxV) => {
-    line = line.replace(/\b\d{1,2}\s+de\s+\d{1,2}\b/gi, ' ');
-    const numRe = /(\d+[.,]\d+|\d+)/g;
-    let m;
-    const out = [];
-    while ((m = numRe.exec(line)) !== null) {
-      const v = parseFloat(m[1].replace(",", "."));
-      if (isNaN(v)) continue;
-      const pos = m.index, len = m[0].length;
-      const after  = line.slice(pos + len);
-      const before = line.slice(0, pos);
-      if (/^\s*-\s*\d/.test(after))   continue; // lado izquierdo de rango "X - Y"
-      if (/\d\s*-\s*$/.test(before))   continue; // lado derecho de rango "X - Y"
-      if (/^\s+a\s+\d/.test(after))    continue; // lado izquierdo de rango "X a Y"
-      if (/\d\s+a\s+$/.test(before))   continue; // lado derecho de rango "X a Y"
-      if (/^\^/.test(after))             continue; // base de exponente "10^"
-      if (/\^$/.test(before.trimEnd()))  continue; // exponente "^3"
-      if (v < minV || v > maxV)           continue;
-      out.push({ v, pos });
-    }
-    return out;
-  };
+REGLAS:
+- glucosa: tomar el valor de ayuno, NO el promedio estimado de glucosa
+- hemoglobina: NO incluir hemoglobina glicosilada/glucosilada
+- neutrofilos/linfocitos/monocitos/eosinofilos/basofilos: preferir % sobre valor absoluto
+- homa: es el índice calculado, no el rango de referencia
+- fecha: buscar "toma de muestra", "fecha recepción", "fecha admisión"
+- Si un valor aparece duplicado, tomar el de la sección más específica
 
-  // Busca una prueba usando su diccionario
-  const buscarPrueba = ({ nombres, rango: [minV, maxV], excluir = [], tomar = "primero", preferir }) => {
-    for (const nombre of nombres) {
-      const matches = [];
-      for (const line of lines) {
-        if (!line.includes(nombre)) continue;
-        if (excluir.some(e => line.includes(e))) continue;
-        const cands = extraerCandidatos(line, minV, maxV);
-        if (cands.length > 0) matches.push({ line, cands });
-      }
-      if (matches.length === 0) continue;
-
-      // Si preferir="%", elegir línea que tenga "%" cuando sea posible
-      let chosen = matches[0];
-      if (preferir === "%") {
-        const conPct = matches.find(m => m.line.includes("%"));
-        if (conPct) chosen = conPct;
-      }
-
-      return tomar === "ultimo"
-        ? chosen.cands[chosen.cands.length - 1].v
-        : chosen.cands[0].v;
-    }
-    return null;
-  };
-
-  // Extraer cada prueba del diccionario
-  for (const prueba of PRUEBAS) {
-    const val = buscarPrueba(prueba);
-    if (val !== null) r[prueba.clave] = val;
-  }
-
-  // ── Fecha ────────────────────────────────────────────────────
-  const fechaKeywords = [
-    "toma de muestra","fecha recepcion","fecha de admision","fecha de registro","fecha:","recepcion",
-  ];
-  const fpats = [
-    { re:/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/, fn:m=>`${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` },
-    { re:/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/, fn:m=>`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
-    { re:/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})/,  fn:m=>`20${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
-  ];
-  const fechas = [];
-  for (const line of lines) {
-    const esRelevante = fechaKeywords.some(k => line.includes(k));
-    for (const { re, fn } of fpats) {
-      const m = line.match(re);
-      if (m) { const f = fn(m); esRelevante ? fechas.unshift(f) : fechas.push(f); break; }
-    }
-  }
-  if (fechas.length > 0) r.fecha = fechas[0];
-  console.log('fecha encontrada:', r.fecha);
-
-  // ── Laboratorio ──────────────────────────────────────────────
-  const normFull = norm.replace(/\n/g, " ");
-  const labsMap = [
-    ["labsanjose","Lab San José"],["san jose","Lab San José"],
-    ["valtierra","Valtierra"],
-    ["laboratorio chopo","Laboratorio Chopo"],["chopo","Laboratorio Chopo"],
-    ["familylabs","Labs Familiar"],["familiar","Labs Familiar"],
-    ["laboratorioramos","Lab Ramos"],["ramos","Lab Ramos"],
-    ["salud digna","Salud Digna"],
-    ["pxlab","PxLab"],["mediavanz","Mediavanz"],
-    ["lab cer","Lab CER"],["carpermor","Carpermor"],
-    ["azteca","Azteca"],["clinica ruiz","Clinica Ruiz"],
-    ["diagnostica","Diagnostica"],["biomedica","Biomedica"],
-  ];
-  let labFound = false;
-  for (const [needle, label] of labsMap) {
-    if (normFull.includes(needle)) { r.laboratorio = label; labFound = true; break; }
-  }
-  if (!labFound) {
-    // Usar primera línea no vacía del texto original como nombre del laboratorio
-    const primera = texto.split("\n").map(l => l.trim()).find(l => l.length > 2 && l.length < 80);
-    if (primera) r.laboratorio = primera;
-  }
-
-  // ── Paciente ─────────────────────────────────────────────────
-  for (const line of lines) {
-    const m = line.match(/paciente[:\s]+(.+)/);
-    if (m && m[1].trim().length > 2) { r.paciente = m[1].trim(); break; }
-  }
-
-  return r;
+TEXTO DEL PDF:
+${texto}`,
+      }],
+    }),
+  });
+  if (!response.ok) throw new Error(`Anthropic API error ${response.status}`);
+  const apiData = await response.json();
+  const raw = apiData.content[0].text.replace(/^```json\s*/,'').replace(/\s*```$/,'');
+  console.log('fecha encontrada:', raw.match(/"fecha"\s*:\s*"([^"]+)"/)?.[1] ?? null);
+  try { return JSON.parse(raw); } catch { return {}; }
 };
+
 
 
 // ── Helpers de documentos ─────────────────────────────────────
@@ -1513,11 +1367,10 @@ const TanitaUp = ({nombre, onApply}) => {
     try {
       const texto = await pdfToText(file);
       setRawText(texto);
-      const r = parseTanita(texto);
+      const r = await parseTanita(texto);
       if (r.peso==null && r.grasa==null) {
         setSt("error");
-        const lineas = texto.split("\n").filter(l=>l.trim()).slice(0,30).join("\n");
-        setErr("No se encontraron datos. Primeras líneas:\n"+lineas);
+        setErr("No se encontraron datos de composición corporal.");
         return;
       }
       setData(r);
@@ -1558,7 +1411,7 @@ const TanitaUp = ({nombre, onApply}) => {
       {st==="loading" && (
         <div style={{textAlign:"center",color:C.azul}}>
           <div style={{fontSize:22}}>⏳</div>
-          <div style={{fontSize:11,fontWeight:700,marginTop:4}}>Procesando…</div>
+          <div style={{fontSize:11,fontWeight:700,marginTop:4}}>Analizando con IA…</div>
         </div>
       )}
       {st==="ok" && data && (
@@ -1744,7 +1597,7 @@ const LabsUp = ({nombre, onApply}) => {
         <div style={{textAlign:"center",color:C.morado}}>
           <div style={{fontSize:22}}>🔄</div>
           <div style={{fontSize:11,fontWeight:700,marginTop:6}}>
-            Analizando{archivosCount>1?` (${archivosProcesados}/${archivosCount})`:""}…
+            Analizando con IA{archivosCount>1?` (${archivosProcesados}/${archivosCount})`:""}…
           </div>
           <div style={{fontSize:9,color:C.suave,marginTop:3}}>
             Imágenes pueden tardar 10-30 segundos (OCR local)
