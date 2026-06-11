@@ -916,7 +916,11 @@ const archivoATexto = async (file) => {
   return await imageToText(f);
 };
 
-// ── Parser de Laboratorios (gratis, regex local) ─────────────
+// ── Parser de Laboratorios (semántico por línea) ────────────
+// Estrategia: por cada prueba busca la línea que contenga el patrón,
+// extrae números descartando los que forman rango "X - Y",
+// y devuelve el más a la derecha dentro de [min,max].
+// Soporta: orden estándar, orden invertido (San José) y formato Chopo.
 const parseLabs = async (texto) => {
   if (!texto || texto.length < 20) return null;
   const norm = texto.toLowerCase()
@@ -925,90 +929,228 @@ const parseLabs = async (texto) => {
   const r = {};
   CAMPOS_LABS.forEach(c => r[c.k] = null);
   r.fecha = null; r.laboratorio = null; r.paciente = null; r.notasAdicionales = null;
-  const buscar = (patrones, minV, maxV) => {
+
+  const lines = norm.split("\n");
+
+  // buscar: semántico por línea
+  // excluirLineas: array de strings — descarta líneas que los contengan
+  const buscar = (patrones, minV, maxV, excluirLineas = []) => {
     for (const p of patrones) {
-      const escaped = p.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
-      const regex = new RegExp(escaped + "[^\\d]{0,80}?(\\d+[.,]\\d+|\\d+)", "i");
-      const m = norm.match(regex);
-      if (m) {
-        const v = parseFloat(m[1].replace(",", "."));
-        if (!isNaN(v) && v >= minV && v <= maxV) return v;
+      for (const line of lines) {
+        if (!line.includes(p)) continue;
+        if (excluirLineas.some(e => line.includes(e))) continue;
+        const patIdx = line.indexOf(p);
+        const afterPat = line.slice(patIdx + p.length);
+        const numRe = /(\d+[.,]\d+|\d+)/g;
+        let m;
+        const candidates = [];
+        while ((m = numRe.exec(afterPat)) !== null) {
+          const v = parseFloat(m[1].replace(",", "."));
+          if (isNaN(v) || v < minV || v > maxV) continue;
+          const absPos = patIdx + p.length + m.index;
+          const after = line.slice(absPos + m[0].length);
+          const before = line.slice(0, absPos);
+          // Descartar si es lado izquierdo de rango: seguido de "- dígito"
+          if (/^\s*-\s*\d/.test(after)) continue;
+          // Descartar si es lado derecho de rango: precedido de "dígito -"
+          if (/\d\s*-\s*$/.test(before)) continue;
+          // Descartar notación exponencial "10^3": saltar base (seguida de ^) y exponente (precedido de ^)
+          if (/^\^/.test(after)) continue;
+          if (/\^\s*$/.test(before)) continue;
+          candidates.push(v);
+        }
+        // Devuelve el más a la derecha (evita capturar parte del nombre)
+        if (candidates.length > 0) return candidates[candidates.length - 1];
       }
     }
     return null;
   };
-  r.glucosa      = buscar(["glucosa serica","glucosa en suero","glucosa basal","glucosa ayuno","glucosa","glicemia","glucemia","glucose"], 30, 600);
-  r.insulina     = buscar(["insulina basal","insulina en suero","insulina","insulin"], 0.1, 500);
-  r.homa         = buscar(["indice de resistencia insulinica (homa)","resistencia a la insulina","indice homa","homa-ir","homa ir","resistencia insulinica","homa"], 0.1, 50);
-  r.hba1c        = buscar(["hemoglobina glucosilada","hemoglobina glicosilada","hemoglobina glicada","glicohemoglobina","hba1c","hb a1c","a1c"], 3, 20);
-  r.colesterol   = buscar(["colesterol total","cholesterol total","col. total","colesterol"], 50, 600);
-  r.trigliceridos= buscar(["trigliceridos","triglycerides"], 20, 2000);
-  r.hdl          = buscar(["lipoproteina de alta densidad (hdl)","hdl-colesterol","colesterol hdl","colesterol-hdl","c-hdl","hdl-c","lipoproteina de alta densidad","colesterol de alta densidad","hdl colesterol","hdl"], 10, 200);
-  r.ldl          = buscar(["lipoproteina de baja densidad (ldl)","ldl-colesterol","colesterol ldl","colesterol-ldl","c-ldl","ldl-c","lipoproteina de baja densidad","colesterol de baja densidad","ldl colesterol","ldl"], 20, 400);
-  r.vldl         = buscar(["lipoproteina de muy baja densidad (vldl)","colesterol vldl","vldl colesterol","c-vldl","vldl-c","lipoproteina de muy baja densidad","vldl"], 5, 200);
-  r.alt          = buscar(["alanina aminotransferasa","alanino aminotransferasa","alanina amino transferasa","transaminasa piruvica","transaminasa glutamico piruvica","tgp","sgpt","alt"], 1, 2000);
-  r.ast          = buscar(["aspartato aminotransferasa","aspartato amino transferasa","transaminasa oxalacetica","transaminasa oxaloacetica","transaminasa glutamico oxalacetica","tgo","sgot","ast"], 1, 2000);
-  r.ggt          = buscar(["gamma glutamil transferasa","gama glutamil transferasa","gamma glutamil transpeptidasa","gama glutamil transpeptidasa","gama glutamil traspeptidasa","gamma glutamil traspeptidasa","gammaglutamil","gamma-glutamil","gamma glutamil","gamma gt","g.g.t.","g.g.t","ggt"], 1, 1000);
-  r.fa           = buscar(["fosfatasa alcalina","alkaline phosphatase","fosfatasa alc"], 10, 1000);
-  r.ldh          = buscar(["deshidrogenasa lactica","lactato deshidrogenasa","lactic dehydrogenase","ldh"], 50, 3000);
-  r.bilirrubinaTotal     = buscar(["bilirrubina total","bilirrubinas totales","bilirubin total","bil. total","bil total"], 0.05, 30);
-  r.bilirrubinaDirecta   = buscar(["bilirrubina directa","bilirrubina conjugada","bilirubin direct","bil. directa","bil directa"], 0.01, 20);
-  r.bilirrubinaIndirecta = buscar(["bilirrubina indirecta","bilirrubina no conjugada","bilirubin indirect","bil. indirecta","bil indirecta"], 0.05, 20);
-  r.proteinasTotales     = buscar(["proteinas totales","prot. totales","prot totales","total protein"], 2, 15);
-  r.albumina             = buscar(["albumina serica","albumina en suero","albumina","albumin"], 1, 8);
-  r.globulinas           = buscar(["globulinas","globulin"], 0.5, 10);
-  r.tsh = buscar(["tirotropina","hormona estimulante de tiroides","hormona estimulante de la tiroides","thyrotropin","tsh ultrasensible","tsh"], 0.01, 100);
-  r.t4  = buscar(["tiroxina libre (t4l)","tiroxina libre","t4 libre","free t4","ft4"], 0.1, 10);
-  r.t4t = buscar(["tiroxina total (t4t)","t4 tiroxina total","tiroxina total","t4 total","total t4"], 1, 30);
-  r.t3  = buscar(["triiodotironina libre","triyodotironina libre","t3 libre","free t3","ft3","t3l"], 0.5, 15);
-  r.t3t = buscar(["triyodotironina total (t3t)","t3 total triyodotironina","triiodotironina total","triyodotironina total","t3 total","total t3"], 0.5, 200);
-  // Hemoglobina: buscar específicamente excluyendo "corpuscular" y "glucosilada"
-  r.hemoglobina = (() => {
-    const lines = norm.split("\n");
-    for (const l of lines) {
-      if ((l.includes("hemoglobina hgb") || l.includes("hemoglobina hct") || 
-           (l.includes("hemoglobina") && !l.includes("corpuscular") && !l.includes("corp.") && 
-            !l.includes("glucosilada") && !l.includes("glicosilada") && !l.includes("glicada") && 
-            !l.includes("glicohemoglobina"))) || l.includes("haemoglobin")) {
-        const m = l.match(/(\d+\.?\d*)/);
-        if (m) { const v = parseFloat(m[1]); if (v >= 3 && v <= 25) return v; }
-      }
-    }
-    return null;
-  })();
-  r.hematocrito = buscar(["hematocrito","hematocrit","hto","hct"], 10, 65);
-  r.eritrocitos = buscar(["eritrocitos","globulos rojos","red blood cells","rbc"], 1, 10);
-  r.leucocitos  = buscar(["leucocitos","globulos blancos","white blood cells","wbc"], 0.5, 100);
-  r.plaquetas   = buscar(["plaquetas","thrombocytes","platelets","plt"], 10, 1500);
+
+  // ── Metabolismo ──────────────────────────────────────────────
+  r.glucosa = buscar([
+    "glucosa serica","glucosa en suero","glucosa basal","glucosa ayuno",
+    "glucosa","glicemia","glucemia","glucose",
+  ], 30, 600);
+  r.insulina = buscar([
+    "insulina basal","insulina en suero","insulina","insulin",
+  ], 0.1, 500);
+  r.homa = buscar([
+    "indice de resistencia insulinica (homa)",
+    "indice de resistencia insulinica",
+    "resistencia a la insulina",
+    "indice homa","homa-ir","homa ir","resistencia insulinica","homa",
+  ], 0.1, 50);
+  r.hba1c = buscar([
+    "hemoglobina glucosilada a1c",
+    "hemoglobina glucosilada",
+    "hemoglobina glicosilada",
+    "hemoglobina glicada",
+    "glicohemoglobina",
+    "hba1c","hb a1c","a1c",
+  ], 3, 20);
+
+  // ── Lípidos ──────────────────────────────────────────────────
+  r.colesterol = buscar([
+    "colesterol total","cholesterol total","col. total","colesterol",
+  ], 50, 600);
+  r.trigliceridos = buscar([
+    "trigliceridos","triglycerides",
+  ], 20, 2000);
+  r.hdl = buscar([
+    "lipoproteina de alta densidad (hdl)",
+    "hdl-colesterol","colesterol hdl","colesterol-hdl",
+    "c-hdl","hdl-c",
+    "lipoproteina de alta densidad",
+    "colesterol de alta densidad",
+    "hdl colesterol","hdl",
+  ], 10, 200);
+  r.ldl = buscar([
+    "lipoproteina de baja densidad (ldl)",
+    "ldl-colesterol","colesterol ldl","colesterol-ldl",
+    "c-ldl","ldl-c",
+    "lipoproteina de baja densidad",
+    "colesterol de baja densidad",
+    "ldl colesterol","ldl",
+  ], 20, 400);
+
+  // ── Hepático ─────────────────────────────────────────────────
+  r.alt = buscar([
+    "alanina aminotransferasa","alanino aminotransferasa",
+    "alanina amino transferasa",
+    "transaminasa piruvica","transaminasa glutamico piruvica",
+    "tgp","sgpt","alt",
+  ], 1, 2000);
+  r.ast = buscar([
+    "aspartato aminotransferasa","aspartato amino transferasa",
+    "transaminasa oxalacetica","transaminasa oxaloacetica",
+    "transaminasa glutamico oxalacetica",
+    "tgo","sgot","ast",
+  ], 1, 2000);
+  r.ggt = buscar([
+    "gamma glutamil transferasa","gama glutamil transferasa",
+    "gamma glutamil transpeptidasa","gama glutamil transpeptidasa",
+    "gammaglutamil","gamma-glutamil","gamma glutamil","gamma gt",
+    "g.g.t.","g.g.t","ggt",
+  ], 1, 1000);
+  r.fa = buscar([
+    "fosfatasa alcalina","alkaline phosphatase","fosfatasa alc",
+  ], 10, 1000);
+  r.ldh = buscar([
+    "deshidrogenasa lactica","lactato deshidrogenasa",
+    "lactic dehydrogenase","dhl","ldh",
+  ], 50, 3000);
+  r.bilirrubinaTotal = buscar([
+    "bilirrubina total","bilirrubinas totales",
+    "bilirubin total","bil. total","bil total",
+  ], 0.05, 30);
+  r.bilirrubinaDirecta = buscar([
+    "bilirrubina directa","bilirrubina conjugada",
+    "bilirubin direct","bil. directa","bil directa",
+  ], 0.01, 20);
+  r.bilirrubinaIndirecta = buscar([
+    "bilirrubina indirecta","bilirrubina no conjugada",
+    "bilirubin indirect","bil. indirecta","bil indirecta",
+  ], 0.05, 20);
+  r.proteinasTotales = buscar([
+    "proteinas totales","prot. totales","prot totales","total protein",
+  ], 2, 15);
+  r.albumina = buscar([
+    "albumina serica","albumina en suero","albumina","albumin",
+  ], 1, 8);
+
+  // ── Tiroideo ─────────────────────────────────────────────────
+  r.tsh = buscar([
+    "tirotropina",
+    "hormona estimulante de tiroides",
+    "hormona estimulante de la tiroides",
+    "thyrotropin","tsh ultrasensible","tsh",
+  ], 0.01, 100);
+  r.t4 = buscar([
+    "tiroxina libre (t4l)","tiroxina libre","t4 libre","free t4","ft4",
+  ], 0.1, 10);
+  r.t3 = buscar([
+    "triiodotironina libre","triyodotironina libre",
+    "t3 libre","free t3","ft3","t3l",
+  ], 0.5, 15);
+
+  // ── Biometría hemática ────────────────────────────────────────
+  // Hemoglobina excluye líneas con "corpuscular" y variantes de "glucosilada"
+  r.hemoglobina = buscar([
+    "hemoglobina hgb","haemoglobin","hemoglobina",
+  ], 3, 25, ["corpuscular","corp.","glucosilada","glicosilada","glicada","glicohemoglobina"]);
+  r.hematocrito = buscar([
+    "hematocrito","hematocrit","hto","hct",
+  ], 10, 65);
+  r.eritrocitos = buscar([
+    "eritrocitos","globulos rojos","red blood cells","rbc",
+  ], 1, 10);
+  r.leucocitos = buscar([
+    "leucocitos","globulos blancos","white blood cells","wbc",
+  ], 0.5, 100);
+  r.plaquetas = buscar([
+    "plaquetas","thrombocytes","platelets","plt",
+  ], 10, 1500);
   r.neutrofilos = buscar(["neutrofilos","neutrophils"], 10, 95);
   r.linfocitos  = buscar(["linfocitos","lymphocytes"], 5, 80);
   r.monocitos   = buscar(["monocitos","monocytes"], 0, 25);
   r.eosinofilos = buscar(["eosinofilos","eosinophils"], 0, 25);
   r.basofilos   = buscar(["basofilos","basophils"], 0, 5);
-  r.mcv         = buscar(["volumen corpuscular medio mcv","volumen corpuscular medio","mean corpuscular volume","v.g.m.","vcm","mcv"], 50, 130);
-  r.mch         = buscar(["hgb corpuscular media mch","hemoglobina corpuscular media","mean corpuscular hemoglobin","h.c.m.","hcm","mch"], 15, 50);
-  r.mchc        = buscar(["con. hgb corpuscular media mchc","concentracion de hemoglobina corpuscular","c.m.h.c.","mchc","chcm"], 20, 45);
-  r.rdw         = buscar(["amplitud de distribucion eritrocitaria","red cell distribution","rdw","adv"], 8, 25);
-  r.creatinina  = buscar(["creatinina serica","creatinina en suero","creatinina","creatinine"], 0.1, 20);
-  r.bun         = buscar(["nitrogeno ureico","blood urea nitrogen","bun"], 1, 200);
-  r.urea        = buscar(["urea serica","urea en suero","urea"], 5, 300);
-  r.acidoUrico  = buscar(["acido urico","uric acid"], 0.5, 20);
-  r.sodio       = buscar(["sodio serico","sodio en suero","sodio","sodium"], 100, 180);
-  r.potasio     = buscar(["potasio serico","potasio en suero","potasio","potassium"], 2, 8);
-  r.cloro       = buscar(["cloro serico","cloruro","cloro","chloride"], 80, 130);
-  r.calcio      = buscar(["calcio serico","calcio total","calcio","calcium"], 4, 15);
-  r.fosforo     = buscar(["fosforo serico","fosforo inorganico","fosforo","phosphorus"], 1, 10);
-  r.vitD        = buscar(["25 hidroxi vitamina d","25-hidroxivitamina d","25 oh vitamina d","25(oh)d","calcidiol","vitamina d 25","vitamina d"], 1, 200);
-  r.b12         = buscar(["vitamina b12","cobalamina","cianocobalamina","vit b12","b-12"], 50, 3000);
-  r.ferritina   = buscar(["ferritina serica","ferritina","ferritin"], 1, 5000);
-  r.hierro      = buscar(["hierro serico","hierro en suero","hierro","serum iron"], 10, 300);
-  r.fsh          = buscar(["hormona foliculoestimulante","hormona foliculo estimulante","folitropina","fsh"], 0.1, 200);
-  r.lh           = buscar(["hormona luteinizante","lutropina","lh"], 0.1, 200);
-  r.estradiol    = buscar(["estradiol","17 beta estradiol","e2"], 1, 5000);
+  r.mcv  = buscar([
+    "volumen corpuscular medio mcv","volumen corpuscular medio",
+    "mean corpuscular volume","v.g.m.","vcm","mcv",
+  ], 50, 130);
+  r.mch  = buscar([
+    "hgb corpuscular media mch","hemoglobina corpuscular media",
+    "mean corpuscular hemoglobin","h.c.m.","hcm","mch",
+  ], 15, 50);
+  r.mchc = buscar([
+    "con. hgb corpuscular media mchc",
+    "concentracion de hemoglobina corpuscular",
+    "c.m.h.c.","mchc","chcm",
+  ], 20, 45);
+  r.rdw  = buscar([
+    "amplitud de distribucion eritrocitaria",
+    "red cell distribution","rdw","adv",
+  ], 8, 25);
+
+  // ── Renal ─────────────────────────────────────────────────────
+  r.creatinina = buscar([
+    "creatinina serica","creatinina en suero","creatinina","creatinine",
+  ], 0.1, 20);
+  r.bun = buscar(["nitrogeno ureico","blood urea nitrogen","bun"], 1, 200);
+  r.acidoUrico = buscar(["acido urico","uric acid"], 0.5, 20);
+
+  // ── Vitaminas / hierro ────────────────────────────────────────
+  r.vitD = buscar([
+    "25 hidroxi vitamina d","25-hidroxivitamina d",
+    "25 oh vitamina d","25(oh)d","calcidiol",
+    "vitamina d 25","vitamina d",
+  ], 1, 200);
+  r.b12 = buscar([
+    "vitamina b12","cobalamina","cianocobalamina","vit b12","b-12",
+  ], 50, 3000);
+  r.ferritina = buscar([
+    "ferritina serica","ferritina","ferritin",
+  ], 1, 5000);
+
+  // ── Ginecológico / hormonal ───────────────────────────────────
+  r.fsh = buscar([
+    "hormona foliculoestimulante",
+    "hormona foliculo estimulante",
+    "folitropina","fsh",
+  ], 0.1, 200);
+  r.lh = buscar(["hormona luteinizante","lutropina","lh"], 0.1, 200);
+  r.estradiol = buscar(["estradiol","17 beta estradiol","e2"], 1, 5000);
   r.progesterona = buscar(["progesterona","progesterone"], 0.1, 100);
-  r.prolactina   = buscar(["prolactina basal","prolactina","prolactin","prl"], 0.5, 500);
-  r.testosterona = buscar(["testosterona total","testosterona libre","testosterona","testosterone"], 1, 5000);
-  r.pcr          = buscar(["proteina c reactiva ultrasensible","proteina c reactiva","pcr ultrasensible","pcr us","c reactive protein","pcr"], 0.01, 500);
+  r.prolactina = buscar([
+    "prolactina basal","prolactina","prolactin","prl",
+  ], 0.5, 500);
+  // Rango ampliado: Lab Ramos reporta en ng/mL (~3.43), San José en ng/dL (~339)
+  r.testosterona = buscar([
+    "testosterona total","testosterona libre","testosterona","testosterone",
+  ], 0, 1200);
+
+  // ── Fecha ─────────────────────────────────────────────────────
   const fechaPatterns = [
     { re: /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/, fn: m => `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}` },
     { re: /(\d{4})-(\d{1,2})-(\d{1,2})/, fn: m => `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}` },
@@ -1021,6 +1163,8 @@ const parseLabs = async (texto) => {
     const m = texto.match(re);
     if (m) { r.fecha = fn(m); break; }
   }
+
+  // ── Laboratorio ───────────────────────────────────────────────
   const normFull = norm.replace(/\n/g, " ");
   const labs = [
     ["valtierra","Valtierra"],["salud digna","Salud Digna"],
