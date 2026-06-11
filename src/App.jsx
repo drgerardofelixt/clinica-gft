@@ -1481,16 +1481,16 @@ const TanitaUp = ({nombre, onApply}) => {
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"4px 12px",
               fontSize:10.5,marginBottom:8}}>
               {[
-                ["Fecha",data.fecha?fmtF(data.fecha):"—"],
+                ["Fecha",data.fecha||"—"],
                 ["Peso",data.peso!=null?data.peso+" kg":"❌"],
-                ["% Grasa",data.grasa!=null?data.grasa+"%":"❌"],
+                ["% Grasa",data.grasaCorporal!=null?data.grasaCorporal+"%":"❌"],
                 ["Músculo",data.masaMuscular!=null?data.masaMuscular+" kg":"❌"],
                 ["Agua",data.aguaCorporal!=null?data.aguaCorporal+"%":"—"],
                 ["Visceral",data.grasaVisceral!=null?data.grasaVisceral:"—"],
-                ["BMR",data.bmr!=null?data.bmr+" kcal":"—"],
+                ["BMR",data.metabolismoBasal!=null?data.metabolismoBasal+" kcal":"—"],
                 ["Edad Met.",data.edadMetabolica!=null?data.edadMetabolica+" años":"❌"],
                 ["IMC",data.imc!=null?data.imc:"—"],
-                ["Masa Grasa",data.masaGrasa!=null?data.masaGrasa+" kg":"—"],
+                ["Masa Grasa",data.grasaCorporalKg!=null?data.grasaCorporalKg+" kg":"—"],
                 ["Masa Ósea",data.masaOsea!=null?data.masaOsea+" kg":"—"],
                 ["Proteína",data.proteina!=null?data.proteina+" kg":"—"],
               ].map(([l,v])=>(
