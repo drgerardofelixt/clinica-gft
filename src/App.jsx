@@ -850,7 +850,7 @@ ${texto}`,
     if (fechaPreExtracted) data.fecha = fechaPreExtracted;
     if (grasaPreExtracted) data.grasaCorporal = grasaPreExtracted;
     if (bmrPreExtracted) data.metabolismoBasal = bmrPreExtracted;
-    console.log('TANITA RESULTADO CLAUDE:', data);
+    console.log('TANITA RESULTADO CLAUDE:', JSON.stringify(data, null, 2));
     return data;
   } catch { return {}; }
 };
