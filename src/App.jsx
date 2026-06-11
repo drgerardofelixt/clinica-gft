@@ -767,6 +767,19 @@ const pdfToText = async (file) => {
 // kg: exec() filtrando rangos (char anterior '-'), deduplica whole-body [0-6]
 // pero toma segmental RAW (sin dedup) para soportar valores iguales entre segmentos.
 const parseTanita = async (texto) => {
+  const fechaMatch = texto.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  let fechaPreExtracted = null;
+  if (fechaMatch) {
+    const d = fechaMatch[1].padStart(2,'0');
+    const m = fechaMatch[2].padStart(2,'0');
+    const y = fechaMatch[3];
+    fechaPreExtracted = `${d}/${m}/${y}`;
+  }
+  const grasaMatch = texto.match(/Fat\s*%[\s\S]*?(\d+\.\d+)\s*%/);
+  const grasaPreExtracted = grasaMatch ? parseFloat(grasaMatch[1]) : null;
+  const bmrMatch = texto.match(/(\d+)\s*kcal/);
+  const bmrPreExtracted = bmrMatch ? parseFloat(bmrMatch[1]) : null;
+
   const response = await fetch("/api/claude", {
     method: "POST",
     headers: {
@@ -833,6 +846,9 @@ ${texto}`,
   try {
     const data = JSON.parse(raw);
     if (data.fecha && data.fecha.includes('undefined')) data.fecha = null;
+    if (fechaPreExtracted) data.fecha = fechaPreExtracted;
+    if (grasaPreExtracted) data.grasaCorporal = grasaPreExtracted;
+    if (bmrPreExtracted) data.metabolismoBasal = bmrPreExtracted;
     return data;
   } catch { return {}; }
 };
