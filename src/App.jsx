@@ -782,12 +782,17 @@ const parseTanita = async (texto) => {
 CRITICAL RULES:
 1. Any value of -1 means "no data" — treat it as null, never use it.
 2. IGNORE all segmental values (Trunk, Left Arm, Right Arm, Left Leg, Right Leg). Only extract whole-body totals.
-3. For BMR: use the kcal value only, ignore kJ.
+3. IGNORE kJ values. For BMR the PDF shows two numbers: kJ first, kcal second — use only kcal.
 4. For Total Body Water: use the percentage value (%), not the kg value.
 5. For Muscle Mass: use the "Muscle Mass" field, NOT "Fat Free Mass".
 6. For Visceral Fat: use "Visceral Fat Rating" (an integer like 15), not any segmental or -1 value.
 7. For Fat %: extract the number only, without the % symbol.
-8. Date format: input is M/D/YYYY (e.g. "11/6/2026"), output as DD/MM/YYYY (e.g. "11/06/2026").
+8. Date: appears at the top of the document as M/D/YYYY HH:MM — output as DD/MM/YYYY with zero-padded day and month. Never return undefined or null if a date is present.
+
+EXACT LINE EXAMPLES from this PDF — extract exactly as shown:
+- Line "11/6/2026 20:20" → fecha = "11/06/2026"  (zero-pad day and month, drop time)
+- Line "Fat %   33.10 %" → grasaCorporal = 33.10  (number only, no %)
+- Line "BMR     9021 kJ   2156 kcal" → metabolismoBasal = 2156  (the kcal number, ignore kJ)
 
 FIELD MAPPING (label in PDF → JSON key):
 - "Weight" → peso (kg, e.g. 106.6)
@@ -825,7 +830,11 @@ ${texto}`,
   if (!response.ok) throw new Error(`Anthropic API error ${response.status}`);
   const apiData = await response.json();
   const raw = apiData.content[0].text.replace(/^```json\s*/,'').replace(/\s*```$/,'');
-  try { return JSON.parse(raw); } catch { return {}; }
+  try {
+    const data = JSON.parse(raw);
+    if (data.fecha && data.fecha.includes('undefined')) data.fecha = null;
+    return data;
+  } catch { return {}; }
 };
 
 
