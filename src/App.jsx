@@ -2273,7 +2273,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
 // ── Modal Paciente ────────────────────────────────────────────
 const ModalPaciente = ({pac, onClose, onSave}) => {
   const [step, setStep] = useState(0);
-  const [f, setF] = useState(pac||{
+  const DEF = {
     id:crypto.randomUUID(), nombre:"", edad:"", sexo:"Femenino",
     fechaNacimiento:"", talla:"", telefono:"", email:"", domicilio:"",
     estadoCivil:"", escolaridad:"", ocupacion:"", curp:"",
@@ -2290,6 +2290,19 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
     dx:{principal:"",riesgoCV:""},
     labsI:{glucosa:"",hba1c:"",insulina:"",homa:"",colesterol:"",trigliceridos:"",hdl:"",ldl:"",tsh:"",creatinina:"",fecha:""},
     consultas:[], composicion:[], recetas:[], laboratorios:[], resultadosLabs:[],
+  };
+  // Merge pac with DEF so nested objects (ef, ci, hf…) always exist,
+  // even for patients created before these fields were added.
+  const [f, setF] = useState(!pac ? DEF : {
+    ...DEF, ...pac,
+    hf:{...DEF.hf,...(pac.hf||{})},
+    ant:{...DEF.ant,...(pac.ant||{})},
+    meta:{...DEF.meta,...(pac.meta||{})},
+    gine:{...DEF.gine,...(pac.gine||{})},
+    ef:{...DEF.ef,...(pac.ef||{})},
+    ci:{...DEF.ci,...(pac.ci||{})},
+    dx:{...DEF.dx,...(pac.dx||{})},
+    labsI:{...DEF.labsI,...(pac.labsI||{})},
   });
   const s = (path,val) => setF(prev=>{
     const n=JSON.parse(JSON.stringify(prev));
