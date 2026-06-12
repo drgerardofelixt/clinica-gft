@@ -4247,11 +4247,8 @@ Saludos!`;
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
       <aside className="gft-sidebar">
         <div className="gft-sidebar__logo">
-          <img src={logoNavbar} alt="Logo GFT" style={{height:36,width:"auto",objectFit:"contain",flexShrink:0,filter:"brightness(0) invert(1)"}}/>
-          <div>
-            <div className="gft-sidebar__logo-name">Dr. Gerardo Félix Tapia</div>
-            <div className="gft-sidebar__logo-sub">Medicina Integral</div>
-          </div>
+          <img src={logoNavbar} alt="Logo GFT" className="gft-sidebar__logo-img"/>
+          <div className="gft-sidebar__logo-sub">Medicina Integral</div>
         </div>
         <nav className="gft-sidebar__nav">
           <div className="gft-sidebar__section">HOY</div>
