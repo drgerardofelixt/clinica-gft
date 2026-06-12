@@ -4250,6 +4250,7 @@ Saludos!`;
           <div className="gft-sidebar__logo-frame">
             <img src={logoNavbar} alt="Logo GFT" className="gft-sidebar__logo-img"/>
           </div>
+          <div className="gft-sidebar__logo-sub">Medicina Integral</div>
         </div>
         <nav className="gft-sidebar__nav">
           <div className="gft-sidebar__section">HOY</div>
