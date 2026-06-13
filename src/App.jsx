@@ -1244,52 +1244,94 @@ const DocNota = ({p, consulta={}}) => (
   </div>
 );
 
-const DocReceta = ({p, rec={}, firmaB64}) => (
-  <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-    <LogoDoc conCedula={true} firmaB64={rec.conFirma?firmaB64:null}/>
-    <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
-      RECETA MÉDICA
-    </div>
-    <G4>
-      <CF l="Paciente" v={p.nombre} span={2}/>
-      <CF l="Edad" v={p.edad+" años"}/>
-      <CF l="Fecha" v={rec.fecha||"—"}/>
-    </G4>
-    <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
-    <div style={{fontWeight:700,color:C.azul,marginBottom:6,fontSize:13}}>Rx</div>
-    {(rec.medicamentos||[]).map((m,i)=>(
-      <div key={i} style={{marginBottom:8,paddingBottom:8,borderBottom:"1px solid "+C.gris}}>
-        <div style={{fontWeight:700}}>{m.nombre}</div>
-        <div style={{color:C.suave}}>{m.dosis} — {m.frecuencia} — {m.duracion}</div>
-        {m.indicaciones&&<div style={{fontSize:10,fontStyle:"italic"}}>{m.indicaciones}</div>}
-      </div>
-    ))}
-    {!rec.conFirma && <Firma/>}
-    <FooterDoc/>
-  </div>
+const SepDoc = () => (
+  <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#5BC4A0)",
+    margin:"12px 0 16px",borderRadius:1}}/>
 );
+
+const DocReceta = ({p, rec={}, firmaB64}) => {
+  const isGlp1 = rec.tipo==="glp1";
+  const isList = rec.tipo==="lista";
+  const isLibre = rec.tipo==="libre";
+  const items = (rec.items||[]).filter(m=>m.ok!==false);
+  return (
+    <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+      <LogoDoc conCedula={true}/>
+      <SepDoc/>
+      <G4>
+        <CF l="Paciente" v={p.nombre} span={2}/>
+        <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
+        <CF l="Fecha" v={rec.fecha||"—"}/>
+      </G4>
+      <SepDoc/>
+      {isGlp1&&(
+        <div style={{marginBottom:12}}>
+          <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>1. {rec.med||"—"}</div>
+          {(rec.instr||[]).slice(0,1).map((s,i)=>(
+            <div key={i} style={{marginLeft:16,marginBottom:12}}>{s}</div>
+          ))}
+          {(rec.instr||[]).slice(1).map((s,i)=>(
+            <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
+              <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span><span>{s}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {(isList||isLibre)&&(
+        <div>
+          {items.map((m,i)=>(
+            <div key={i} style={{marginBottom:13}}>
+              <div style={{fontWeight:700,fontSize:12}}>
+                {isList?`${i+1}. `:""}{m.n}
+              </div>
+              {m.i&&<div style={{marginLeft:isList?16:0,color:C.texto}}>{m.i}</div>}
+            </div>
+          ))}
+          {rec.notaPie&&(
+            <div style={{marginTop:14,whiteSpace:"pre-line",fontWeight:700,fontSize:11}}>
+              {rec.notaPie}
+            </div>
+          )}
+        </div>
+      )}
+      {rec.notasExtra&&(
+        <div style={{marginTop:10,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
+          {rec.notasExtra}
+        </div>
+      )}
+      {rec.proxCita&&(
+        <div style={{marginTop:12,fontSize:10.5,color:C.suave}}>
+          <b>Próxima cita:</b> {rec.proxCita}
+        </div>
+      )}
+      <Firma firmaB64={rec.conFirma?firmaB64:null}/>
+      <FooterDoc/>
+    </div>
+  );
+};
 
 const DocLabs = ({p, labs={}, firmaB64}) => (
   <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
     <LogoDoc compact conCedula={true}/>
+    <SepDoc/>
     <G4>
       <CF l="Paciente" v={p.nombre} span={2}/>
-      <CF l="Edad" v={p.edad+" años"}/>
+      <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
       <CF l="Fecha" v={labs.fecha||"—"}/>
     </G4>
-    <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
-    <div style={{fontSize:13,fontWeight:700,marginBottom:12,color:C.azul}}>
-      Laboratorios solicitados:
+    <SepDoc/>
+    <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:C.azul}}>
+      Realizar los siguientes laboratorios:
     </div>
     {(labs.estudios||[]).map((e,i)=>(
-      <div key={i} style={{display:"flex",alignItems:"center",gap:10,
-        padding:"5px 0",borderBottom:"1px solid "+C.gris}}>
-        <span style={{color:C.azul,fontWeight:700}}>—</span>
+      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,
+        padding:"7px 0",borderBottom:"1px solid "+C.grisMedio}}>
+        <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span>
         <span>{e}</span>
       </div>
     ))}
     {labs.notas&&(
-      <div style={{marginTop:10,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
+      <div style={{marginTop:14,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
         <b>Indicaciones:</b> {labs.notas}
       </div>
     )}
