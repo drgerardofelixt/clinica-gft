@@ -780,10 +780,15 @@ const parseTanita = async (texto) => {
   const grasaPreExtracted = grasaMatch ? parseFloat(grasaMatch[1]) : null;
   const bmrMatch = texto.match(/(\d+)\s*kcal/);
   const bmrPreExtracted = bmrMatch ? parseFloat(bmrMatch[1]) : null;
-  const visceralMatch = texto.match(/Visceral\s+Fat\s+Rating[^\d]*(\d+(?:\.\d+)?)/i);
+  const visceralMatch = texto.match(/Visceral\s*Fat\s*Rating\s*(\d+\.?\d*)/i);
   const visceralPreExtracted = visceralMatch ? parseFloat(visceralMatch[1]) : null;
-  const edadMetMatch = texto.match(/Metabolic\s+Age[^\d]*(\d+(?:\.\d+)?)/i);
+  const edadMetMatch = texto.match(/Metabolic\s*Age\s*(\d+\.?\d*)/i);
   const edadMetPreExtracted = edadMetMatch ? parseFloat(edadMetMatch[1]) : null;
+  console.log('TANITA PRE-EXTRACT:', {
+    grasa: grasaPreExtracted, bmr: bmrPreExtracted,
+    visceral: visceralPreExtracted, edadMet: edadMetPreExtracted,
+    visceralRaw: visceralMatch?.[0], edadMetRaw: edadMetMatch?.[0],
+  });
 
   const response = await fetch("/api/claude", {
     method: "POST",
@@ -803,7 +808,7 @@ CRITICAL RULES:
 3. IGNORE kJ values. For BMR the PDF shows two numbers: kJ first, kcal second — use only kcal.
 4. For Total Body Water: use the percentage value (%), not the kg value.
 5. For Muscle Mass: use the "Muscle Mass" field, NOT "Fat Free Mass".
-6. For Visceral Fat: use "Visceral Fat Rating" (a decimal number, e.g. 5.5 or 15.0), not any segmental or -1 value.
+6. For Visceral Fat: use "Visceral Fat Rating" (a number — can be integer like 8 or decimal like 5.5), not any segmental or -1 value.
 7. For Fat %: extract the number only, without the % symbol.
 8. Date: appears at the top of the document as M/D/YYYY HH:MM — output as DD/MM/YYYY with zero-padded day and month. Never return undefined or null if a date is present.
 
@@ -819,10 +824,10 @@ FIELD MAPPING (label in PDF → JSON key):
 - "Muscle Mass" → masaMuscular (kg, e.g. 67.75)
 - "Total Body Water" → aguaCorporal (the % value, e.g. 47.90)
 - "Bone Mass" → masaOsea (kg, e.g. 3.50)
-- "Visceral Fat Rating" → grasaVisceral (decimal number, e.g. 5.5 or 15.0)
+- "Visceral Fat Rating" → grasaVisceral (number, integer or decimal, e.g. 8 or 5.5)
 - "BMI" → imc (e.g. 35.20)
 - "BMR" in kcal → metabolismoBasal (integer, e.g. 2156)
-- "Metabolic Age" → edadMetabolica (decimal number, e.g. 40.00 or 79.0)
+- "Metabolic Age" → edadMetabolica (number, integer or decimal, e.g. 47 or 40.00)
 - "Protein" → proteina (kg in the body composition diagram, e.g. 16.69). NOTE: in this PDF protein has no label — it is the THIRD kg value on the line that contains Fat Mass and Bone Mass. Pattern: "[fatMassKg] kg - [boneKg] kg [proteinKg] kg". Example: "35.28 kg - 3.50 kg 16.69 kg" → proteina = 16.69
 - date field → fecha (DD/MM/YYYY)
 
