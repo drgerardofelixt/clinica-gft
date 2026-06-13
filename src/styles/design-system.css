@@ -702,30 +702,19 @@ select.gft-input {
 }
 
 .gft-sidebar__logo {
-  padding: 18px 16px 14px;
+  padding: 8px;
   border-bottom: 1px solid var(--gft-border);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
   flex-shrink: 0;
 }
 
-.gft-sidebar__logo-frame {
-  background: rgba(255,255,255,0.09);
-  border-radius: 8px;
-  padding: 8px 12px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .gft-sidebar__logo-img {
-  height: 90px;
-  width: auto;
-  object-fit: contain;
+  width: 100%;
+  height: auto;
   display: block;
-  max-width: 200px;
+  filter: brightness(0) invert(1);
 }
 
 .gft-sidebar__logo-sub {

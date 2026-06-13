@@ -4247,10 +4247,7 @@ Saludos!`;
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
       <aside className="gft-sidebar">
         <div className="gft-sidebar__logo">
-          <div className="gft-sidebar__logo-frame">
-            <img src={logoNavbar} alt="Logo GFT" className="gft-sidebar__logo-img"/>
-          </div>
-          <div className="gft-sidebar__logo-sub">Medicina Integral</div>
+          <img src={logoNavbar} alt="Logo GFT" className="gft-sidebar__logo-img"/>
         </div>
         <nav className="gft-sidebar__nav">
           <div className="gft-sidebar__section">HOY</div>
