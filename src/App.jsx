@@ -1359,119 +1359,211 @@ const DocLabs = ({p, labs={}, firmaB64}) => (
 const DocProgreso = ({p}) => {
   const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
   const primera = comps[0];
-  const ultima = comps[comps.length-1];
-  const d = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")?
-    (parseFloat(a)-parseFloat(b)).toFixed(2):"—";
-  const consultas = (p.consultas||[]).filter(c=>c.ca);
-  const caIni = consultas[0]?consultas[0].ca:null;
-  const caAct = consultas[consultas.length-1]?consultas[consultas.length-1].ca:null;
+  const ultima  = comps[comps.length-1];
   const n = comps.length;
 
-  const Col = ({label,ini,act,cambio,unit="",positive=false}) => {
-    const num = parseFloat(cambio);
-    const color = isNaN(num)||cambio==="—"?C.suave:
-      positive?(num>0?C.verde:C.rojo):(num<0?C.verde:num>0?C.rojo:C.suave);
+  const difNum = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")
+    ? parseFloat((parseFloat(a)-parseFloat(b)).toFixed(2)) : null;
+  const difStr = (a,b) => { const v=difNum(a,b); return v==null?null:(v>0?"+":"")+v; };
+  const dcol = (val,pos) => {
+    const v=parseFloat(val);
+    if(isNaN(v)||v===0) return C.suave;
+    return pos?(v>0?"#1D9E75":"#D85A30"):(v<0?"#1D9E75":"#D85A30");
+  };
+
+  const caConsultas = (p.consultas||[]).filter(c=>c.ca);
+  const caIni = caConsultas[0]?.ca;
+  const caAct = caConsultas[caConsultas.length-1]?.ca;
+  const proxCita = [...(p.consultas||[])].reverse().find(c=>c.proxCita)?.proxCita;
+  const med   = p.ci?.glp1 || p.ci?.medicamento || null;
+  const dosis = p.ci?.dosis || null;
+  const esMujer = /mujer|femenino|f/i.test(p.sexo||"");
+
+  const pesoDif    = difStr(ultima?.peso, primera?.peso);
+  const grasaDif   = difStr(ultima?.grasa, primera?.grasa);
+  const musculoDif = difStr(ultima?.musculo, primera?.musculo);
+  const caDif      = difStr(caAct, caIni);
+  const pesoChange = difNum(ultima?.peso, primera?.peso);
+
+  const motiv = pesoChange==null ? "¡Continúe con su plan de tratamiento y nutrición para alcanzar sus metas!"
+    : pesoChange<0
+      ? `¡Felicitaciones! Ha logrado una reducción de ${Math.abs(pesoChange)} kg. Continúe con su excelente progreso.`
+      : "Cada paso cuenta. Continúe fiel a su plan de tratamiento y nutrición para alcanzar sus metas.";
+
+  // SVG line chart for weight evolution
+  const pesoData = comps.filter(c=>c.peso).map(c=>({f:normDate(c.fecha),v:parseFloat(c.peso)}));
+  const CW=560, CH=110;
+  const pMin = pesoData.length?Math.min(...pesoData.map(d=>d.v))-3:60;
+  const pMax = pesoData.length?Math.max(...pesoData.map(d=>d.v))+3:100;
+  const tx = i => 32+(i/(pesoData.length-1||1))*(CW-40);
+  const ty = v => CH-14-((v-pMin)/(pMax-pMin||1))*(CH-24);
+  const pts = pesoData.map((d,i)=>({x:tx(i),y:ty(d.v),f:d.f,v:d.v}));
+  const lineD = pts.length>1?pts.map((p,i)=>(i===0?`M`:` L`)+p.x+","+p.y).join(""): null;
+  const areaD = lineD?lineD+` L${pts[pts.length-1].x},${CH-14} L${pts[0].x},${CH-14} Z`:null;
+
+  // Range bar (pure SVG-ish via inline div)
+  const RangeBar = ({label, value, min, max, unit=""}) => {
+    const v=parseFloat(value);
+    if(isNaN(v)) return null;
+    const lo=min*0.7, hi=max*1.35;
+    const pct=Math.min(Math.max((v-lo)/(hi-lo)*100,2),98);
+    const ok=v>=min&&v<=max;
     return (
-      <tr>
-        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris}}>{label}</td>
-        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris,textAlign:"right"}}>{ini!=null&&ini!==""?ini+(unit?" "+unit:""):"—"}</td>
-        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris,textAlign:"right",fontWeight:700}}>{act!=null&&act!==""?act+(unit?" "+unit:""):"—"}</td>
-        <td style={{padding:"5px 8px",borderBottom:"1px solid "+C.gris,textAlign:"right",fontWeight:700,color}}>{cambio!=="—"&&!isNaN(num)?`${num>0?"+":""}${cambio}${unit?" "+unit:""}`:cambio}</td>
-      </tr>
+      <div style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+          <span style={{fontSize:10,fontWeight:700}}>{label}</span>
+          <span style={{fontSize:10,fontWeight:800,color:ok?"#1D9E75":"#D85A30"}}>{value} {unit}</span>
+        </div>
+        <div style={{position:"relative",height:8,borderRadius:4,
+          background:"linear-gradient(to right,#F0997B 0%,#FAC775 30%,#5DCAA5 50%,#FAC775 75%,#F0997B 100%)"}}>
+          <div style={{position:"absolute",top:-3,left:pct+"%",transform:"translateX(-50%)",
+            width:14,height:14,borderRadius:"50%",background:ok?"#1D9E75":"#D85A30",
+            border:"2px solid white",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:8,color:C.suave}}>
+          <span>Bajo</span><span>Normal: {min}–{max} {unit}</span><span>Alto</span>
+        </div>
+      </div>
+    );
+  };
+
+  const CompRow = ({label, value, unit=""}) => {
+    if(!value&&value!==0) return null;
+    return (
+      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",
+        borderBottom:"1px solid #E2E8F0",fontSize:11}}>
+        <span style={{color:C.suave}}>{label}</span>
+        <span style={{fontWeight:700}}>{value} {unit}</span>
+      </div>
     );
   };
 
   return (
     <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-      <LogoDoc conCedula={false}/>
-      <div style={{textAlign:"center",background:"linear-gradient(135deg,#1B3F8B,#5BC4A0)",
-        color:"white",borderRadius:10,padding:"14px 20px",marginBottom:16}}>
-        <div style={{fontWeight:800,fontSize:14}}>REPORTE DE PROGRESO</div>
-        <div style={{fontSize:12,opacity:0.9}}>{p.nombre}</div>
-        <div style={{fontSize:10,opacity:0.8}}>{n} mediciones · {normDate(primera&&primera.fecha)} → {normDate(ultima&&ultima.fecha)}</div>
+      {/* Header — logo + cédula explícita (sin firma, sin footer info) */}
+      <div style={{marginBottom:12,paddingBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
+        <img src={IMG_LOGO} alt="Logo" style={{maxWidth:225,width:"100%",height:"auto",display:"block"}}/>
+        <div style={{fontSize:8,color:C.suave,marginTop:2,letterSpacing:"0.02em"}}>
+          Céd. Prof. 15131213 · Reg. SSA: 10361/16
+        </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:16}}>
+
+      {/* Hero banner */}
+      <div style={{background:"linear-gradient(135deg,#1B3F8B,#5BC4A0)",color:"white",
+        borderRadius:10,padding:"18px 20px",marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",opacity:0.85,marginBottom:2}}>
+          REPORTE DE PROGRESO
+        </div>
+        <div style={{fontSize:19,fontWeight:800,marginBottom:3}}>{p.nombre}</div>
+        <div style={{fontSize:11,opacity:0.85}}>
+          {n} medición{n!==1?"es":""} · {normDate(primera?.fecha)} → {normDate(ultima?.fecha)}
+        </div>
+      </div>
+
+      {/* Métricas hero 2×2 */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         {[
-          {label:"PESO PERDIDO",value:primera&&ultima?Math.abs(d(primera.peso,ultima.peso))+" kg":"—",color:C.azul},
-          {label:"GRASA REDUCIDA",value:primera&&ultima?Math.abs(d(primera.grasa,ultima.grasa))+" %":"—",color:C.naranja},
-          {label:"MÚSCULO ACTUAL",value:ultima&&ultima.masaMuscular?ultima.masaMuscular+" kg":"—",color:C.verde},
-          {label:"CA ACTUAL",value:caAct?caAct+" cm":"—",color:C.morado},
-        ].map((k,i)=>(
-          <div key={i} style={{border:"1px solid "+k.color+"30",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
-            <div style={{fontSize:9,color:C.suave,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>{k.label}</div>
-            <div style={{fontSize:16,fontWeight:800,color:k.color}}>{k.value}</div>
+          {l:"PESO ACTUAL",    v:ultima?.peso    ?ultima.peso+" kg":"—",     d:pesoDif,    pos:false},
+          {l:"GRASA CORPORAL", v:ultima?.grasa   ?ultima.grasa+"%":"—",      d:grasaDif,   pos:false},
+          {l:"MASA MUSCULAR",  v:ultima?.musculo ?ultima.musculo+" kg":"—",  d:musculoDif, pos:true},
+          {l:"CIRC. ABDOMINAL",v:caAct           ?caAct+" cm":"—",           d:caDif,      pos:false},
+        ].map((m,i)=>(
+          <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.suave,textTransform:"uppercase",
+              letterSpacing:"0.05em",marginBottom:4}}>{m.l}</div>
+            <div style={{fontSize:22,fontWeight:800,lineHeight:1}}>{m.v}</div>
+            {m.d!=null&&(
+              <div style={{fontSize:11,fontWeight:700,marginTop:4,color:dcol(m.d,m.pos)}}>{m.d}</div>
+            )}
           </div>
         ))}
       </div>
-      <div style={{fontWeight:800,color:C.azul,marginBottom:8,fontSize:12}}>📊 Composición corporal</div>
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:11}}>
-        <thead>
-          <tr style={{background:C.azul,color:"white"}}>
-            <th style={{padding:"6px 8px",textAlign:"left"}}>Métrica</th>
-            <th style={{padding:"6px 8px",textAlign:"right"}}>Inicio</th>
-            <th style={{padding:"6px 8px",textAlign:"right"}}>Actual</th>
-            <th style={{padding:"6px 8px",textAlign:"right"}}>Cambio</th>
-          </tr>
-        </thead>
-        <tbody>
-          <Col label="Peso" ini={primera&&primera.peso} act={ultima&&ultima.peso} cambio={d(ultima&&ultima.peso,primera&&primera.peso)} unit="kg" positive={false}/>
-          <Col label="IMC" ini={primera&&primera.imc} act={ultima&&ultima.imc} cambio={d(ultima&&ultima.imc,primera&&primera.imc)} positive={false}/>
-          <Col label="% Grasa" ini={primera&&primera.grasa} act={ultima&&ultima.grasa} cambio={d(ultima&&ultima.grasa,primera&&primera.grasa)} unit="%" positive={false}/>
-          <Col label="Músculo" ini={primera&&primera.musculo} act={ultima&&ultima.musculo} cambio={d(ultima&&ultima.musculo,primera&&primera.musculo)} unit="kg" positive={true}/>
-          <Col label="Agua" ini={primera&&primera.agua} act={ultima&&ultima.agua} cambio={d(ultima&&ultima.agua,primera&&primera.agua)} unit="%" positive={true}/>
-          <Col label="Grasa visceral" ini={primera&&primera.visceral} act={ultima&&ultima.visceral} cambio={d(ultima&&ultima.visceral,primera&&primera.visceral)} positive={false}/>
-          <Col label="Edad metabólica" ini={primera&&primera.edadMet} act={ultima&&ultima.edadMet} cambio={d(ultima&&ultima.edadMet,primera&&primera.edadMet)} unit="años" positive={false}/>
-          <Col label="Circ. abdominal" ini={caIni} act={caAct} cambio={d(caAct,caIni)} unit="cm" positive={false}/>
-          <Col label="Masa ósea" ini={primera&&primera.osea} act={ultima&&ultima.osea} cambio={d(ultima&&ultima.osea,primera&&primera.osea)} unit="kg" positive={true}/>
-          <Col label="BMR" ini={primera&&primera.bmr} act={ultima&&ultima.bmr} cambio={d(ultima&&ultima.bmr,primera&&primera.bmr)} unit="kcal" positive={true}/>
-        </tbody>
-      </table>
-      {primera&&ultima&&(
-        <>
-          <div style={{fontWeight:800,color:C.naranja,marginBottom:8,fontSize:12}}>💪 Músculo por segmento (kg)</div>
-          <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:11}}>
-            <thead>
-              <tr style={{background:C.naranja,color:"white"}}>
-                <th style={{padding:"6px 8px",textAlign:"left"}}>Zona</th>
-                <th style={{padding:"6px 8px",textAlign:"right"}}>Inicio</th>
-                <th style={{padding:"6px 8px",textAlign:"right"}}>Actual</th>
-                <th style={{padding:"6px 8px",textAlign:"right"}}>Cambio</th>
-              </tr>
-            </thead>
-            <tbody>
-              <Col label="Tronco" ini={primera.musculoTronco} act={ultima.musculoTronco} cambio={d(ultima.musculoTronco,primera.musculoTronco)} unit="kg" positive={true}/>
-              <Col label="Brazo izquierdo" ini={primera.musculoBrazoI} act={ultima.musculoBrazoI} cambio={d(ultima.musculoBrazoI,primera.musculoBrazoI)} unit="kg" positive={true}/>
-              <Col label="Brazo derecho" ini={primera.musculoBrazoD} act={ultima.musculoBrazoD} cambio={d(ultima.musculoBrazoD,primera.musculoBrazoD)} unit="kg" positive={true}/>
-              <Col label="Pierna izquierda" ini={primera.musculoPiernaI} act={ultima.musculoPiernaI} cambio={d(ultima.musculoPiernaI,primera.musculoPiernaI)} unit="kg" positive={true}/>
-              <Col label="Pierna derecha" ini={primera.musculoPiernaD} act={ultima.musculoPiernaD} cambio={d(ultima.musculoPiernaD,primera.musculoPiernaD)} unit="kg" positive={true}/>
-            </tbody>
-          </table>
-          <div style={{fontWeight:800,color:C.rojo,marginBottom:8,fontSize:12}}>🔥 Grasa por segmento (%)</div>
-          <table style={{width:"100%",borderCollapse:"collapse",marginBottom:16,fontSize:11}}>
-            <thead>
-              <tr style={{background:C.rojo,color:"white"}}>
-                <th style={{padding:"6px 8px",textAlign:"left"}}>Zona</th>
-                <th style={{padding:"6px 8px",textAlign:"right"}}>Inicio</th>
-                <th style={{padding:"6px 8px",textAlign:"right"}}>Actual</th>
-                <th style={{padding:"6px 8px",textAlign:"right"}}>Cambio</th>
-              </tr>
-            </thead>
-            <tbody>
-              <Col label="Tronco" ini={primera.grasaTronco} act={ultima.grasaTronco} cambio={d(ultima.grasaTronco,primera.grasaTronco)} unit="%" positive={false}/>
-              <Col label="Brazo izquierdo" ini={primera.grasaBrazoI} act={ultima.grasaBrazoI} cambio={d(ultima.grasaBrazoI,primera.grasaBrazoI)} unit="%" positive={false}/>
-              <Col label="Brazo derecho" ini={primera.grasaBrazoD} act={ultima.grasaBrazoD} cambio={d(ultima.grasaBrazoD,primera.grasaBrazoD)} unit="%" positive={false}/>
-              <Col label="Pierna izquierda" ini={primera.grasaPiernaI} act={ultima.grasaPiernaI} cambio={d(ultima.grasaPiernaI,primera.grasaPiernaI)} unit="%" positive={false}/>
-              <Col label="Pierna derecha" ini={primera.grasaPiernaD} act={ultima.grasaPiernaD} cambio={d(ultima.grasaPiernaD,primera.grasaPiernaD)} unit="%" positive={false}/>
-            </tbody>
-          </table>
-        </>
+
+      {/* Gráfica de peso SVG */}
+      {pts.length>=2&&(
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>Evolución de peso</div>
+          <div style={{background:"#F4F6FB",borderRadius:10,padding:"10px 8px 4px"}}>
+            <svg viewBox={`0 0 ${CW} ${CH}`} style={{width:"100%",height:130,display:"block"}}>
+              <defs>
+                <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#5BC4A0" stopOpacity="0.3"/>
+                  <stop offset="100%" stopColor="#5BC4A0" stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+              {[0,1,2,3].map(i=>{
+                const yy=12+i*((CH-26)/3);
+                const vv=(pMax-i*(pMax-pMin)/3).toFixed(1);
+                return <g key={i}>
+                  <line x1="30" y1={yy} x2={CW-4} y2={yy} stroke="#E2E8F0" strokeWidth="1"/>
+                  <text x="28" y={yy+3} textAnchor="end" fontSize="7" fill="#94A3B8">{vv}</text>
+                </g>;
+              })}
+              <path d={areaD} fill="url(#wg)"/>
+              <path d={lineD} fill="none" stroke="#1B3F8B" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"/>
+              {pts.map((pt,i)=>(
+                <g key={i}>
+                  <circle cx={pt.x} cy={pt.y} r="4" fill="#1B3F8B"/>
+                  <text x={pt.x} y={CH-2} textAnchor="middle" fontSize="7" fill="#94A3B8">
+                    {pt.f.slice(0,5)}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        </div>
       )}
-      <div style={{background:C.verdePale,border:"1.5px solid "+C.verde+"30",borderRadius:8,
-        padding:10,marginTop:8,fontSize:10,textAlign:"center"}}>
-        <div style={{fontWeight:800,color:C.verde,marginBottom:3}}>¡Excelente avance!</div>
-        <div style={{color:C.texto}}>Continúe con su plan de tratamiento y nutrición.</div>
+
+      {/* Rangos saludables */}
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Rangos saludables</div>
+        <div style={{background:"#F4F6FB",borderRadius:10,padding:"14px 16px"}}>
+          <RangeBar label="IMC" value={ultima?.imc} min={18.5} max={25}/>
+          <RangeBar label="Grasa corporal" value={ultima?.grasa} min={esMujer?24:11} max={esMujer?36:21} unit="%"/>
+          <RangeBar label="Grasa visceral" value={ultima?.visceral} min={1} max={12}/>
+        </div>
       </div>
+
+      {/* Composición actual */}
+      {ultima&&(ultima.musculo||ultima.agua||ultima.bmr)&&(
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Composición actual</div>
+          <div style={{background:"#F4F6FB",borderRadius:10,padding:"12px 14px"}}>
+            <CompRow label="Masa muscular"        value={ultima.musculo}  unit="kg"/>
+            <CompRow label="Agua corporal"         value={ultima.agua}     unit="%"/>
+            <CompRow label="Tasa metabólica basal" value={ultima.bmr}      unit="kcal"/>
+            <CompRow label="Masa ósea"             value={ultima.osea}     unit="kg"/>
+            <CompRow label="Edad metabólica"       value={ultima.edadMet}  unit="años"/>
+            <CompRow label="Proteína"              value={ultima.proteina} unit="kg"/>
+          </div>
+        </div>
+      )}
+
+      {/* Tratamiento actual */}
+      {(med||proxCita)&&(
+        <div style={{background:"#F4F6FB",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>Tratamiento actual</div>
+          {med&&<div style={{marginBottom:4}}>💊 {med}{dosis?" — "+dosis:""}</div>}
+          {proxCita&&(
+            <div style={{color:C.suave}}>
+              📅 Próxima cita: <b style={{color:C.texto}}>{normDate(proxCita)}</b>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Mensaje motivacional */}
+      <div style={{background:"linear-gradient(135deg,#E1F5EE,#E6F1FB)",borderRadius:10,
+        padding:"12px 16px",marginBottom:14}}>
+        <div style={{fontWeight:800,color:"#1D9E75",marginBottom:3}}>
+          {pesoChange!=null&&pesoChange<0?"¡Excelente avance!":"¡Siga adelante!"}
+        </div>
+        <div>{motiv}</div>
+      </div>
+
       <FooterDoc/>
+      <OlasDoc/>
     </div>
   );
 };
@@ -2737,36 +2829,90 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   ];
 
   const waProgreso = () => {
-    // Construir mensaje con los datos clave en texto plano
     const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
     const primera = comps[0];
-    const ultima = comps[comps.length-1];
-    const cons = (p.consultas||[]).filter(c=>c.ca);
-    const caIni = cons[0]?cons[0].ca:null;
-    const caAct = cons[cons.length-1]?cons[cons.length-1].ca:null;
-    const dif = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")?(parseFloat(a)-parseFloat(b)).toFixed(2):null;
-    const flecha = (v) => v==null?"-":(parseFloat(v)>0?"-":parseFloat(v)<0?"+":"")+Math.abs(parseFloat(v));
+    const ultima  = comps[comps.length-1];
+    const n = comps.length;
+    const caConsultas = (p.consultas||[]).filter(c=>c.ca);
+    const caIni = caConsultas[0]?.ca;
+    const caAct = caConsultas[caConsultas.length-1]?.ca;
+    const proxCita = [...(p.consultas||[])].reverse().find(c=>c.proxCita)?.proxCita;
+    const med   = p.ci?.glp1 || p.ci?.medicamento || null;
+    const dosis = p.ci?.dosis || null;
+    const esMujer = /mujer|femenino|f/i.test(p.sexo||"");
+
+    const difNum = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")
+      ? parseFloat((parseFloat(a)-parseFloat(b)).toFixed(2)) : null;
+    const difStr = (a,b) => { const v=difNum(a,b); return v==null?null:(v>0?"+":"")+v; };
+
+    const pesoDif    = difStr(ultima?.peso,    primera?.peso);
+    const grasaDif   = difStr(ultima?.grasa,   primera?.grasa);
+    const musculoDif = difStr(ultima?.musculo, primera?.musculo);
+    const caDif      = difStr(caAct, caIni);
+    const pesoChange = difNum(ultima?.peso, primera?.peso);
+
+    const inRange = (v, min, max) => {
+      const n=parseFloat(v); if(isNaN(n)) return null;
+      return n>=min&&n<=max ? "✅ En rango normal" : n<min ? "⚠️ Bajo lo normal" : "⚠️ Sobre lo normal";
+    };
 
     const primerNom = (p.nombre||"").split(" ")[0]||"";
     let msg = `Hola ${primerNom}, le comparto su reporte de progreso:\n\n`;
-    msg += `*RESUMEN*\n`;
+
+    // Encabezado
+    msg += `📊 *REPORTE DE PROGRESO*\n`;
     if (primera && ultima) {
-      msg += `${comps.length} mediciones\n`;
-      msg += `${normDate(primera.fecha)} - ${normDate(ultima.fecha)}\n\n`;
+      msg += `${n} medición${n!==1?"es":""}`;
+      if (n>1) msg += ` · ${normDate(primera.fecha)} → ${normDate(ultima.fecha)}`;
+      msg += `\n\n`;
     }
-    msg += `*Composición corporal*\n`;
-    if (dif(primera&&primera.peso, ultima&&ultima.peso)!=null)
-      msg += `• Peso: ${flecha(dif(primera.peso, ultima.peso))} kg\n`;
-    if (ultima && ultima.peso) msg += `  Actual: ${ultima.peso} kg\n`;
-    if (dif(primera&&primera.grasa, ultima&&ultima.grasa)!=null)
-      msg += `• Grasa corporal: ${flecha(dif(primera.grasa, ultima.grasa))}%\n`;
-    if (ultima && ultima.grasa) msg += `  Actual: ${ultima.grasa}%\n`;
-    if (ultima && ultima.musculo) msg += `• Músculo: ${ultima.musculo} kg\n`;
-    if (ultima && ultima.agua) msg += `• Agua corporal: ${ultima.agua}%\n`;
-    if (ultima && ultima.visceral) msg += `• Grasa visceral: ${ultima.visceral}\n`;
-    if (ultima && ultima.edadMet) msg += `• Edad metabólica: ${ultima.edadMet} años\n`;
-    if (caAct) msg += `• Circ. abdominal: ${caAct} cm\n`;
-    msg += `\n¡Excelente avance! Continúe con su plan.\n\n`;
+
+    // Métricas hero
+    msg += `*📈 Métricas principales*\n`;
+    if (ultima?.peso)    msg += `• Peso actual: *${ultima.peso} kg*${pesoDif!=null?` (${pesoDif} kg)`:""}\n`;
+    if (ultima?.grasa)   msg += `• Grasa corporal: *${ultima.grasa}%*${grasaDif!=null?` (${grasaDif}%)`:""}\n`;
+    if (ultima?.musculo) msg += `• Masa muscular: *${ultima.musculo} kg*${musculoDif!=null?` (${musculoDif} kg)`:""}\n`;
+    if (caAct)           msg += `• Circ. abdominal: *${caAct} cm*${caDif!=null?` (${caDif} cm)`:""}\n`;
+    msg += `\n`;
+
+    // Rangos saludables
+    const imcRange   = ultima?.imc    ? inRange(ultima.imc,   18.5, 25)  : null;
+    const grasaRange = ultima?.grasa  ? inRange(ultima.grasa, esMujer?24:11, esMujer?36:21) : null;
+    const viscRange  = ultima?.visceral ? inRange(ultima.visceral, 1, 12) : null;
+    if (imcRange||grasaRange||viscRange) {
+      msg += `*📐 Rangos saludables*\n`;
+      if (imcRange)   msg += `• IMC ${ultima.imc}: ${imcRange}\n`;
+      if (grasaRange) msg += `• Grasa ${ultima.grasa}%: ${grasaRange}\n`;
+      if (viscRange)  msg += `• Grasa visceral ${ultima.visceral}: ${viscRange}\n`;
+      msg += `\n`;
+    }
+
+    // Composición actual
+    const hasComp = ultima&&(ultima.agua||ultima.bmr||ultima.osea||ultima.edadMet||ultima.proteina);
+    if (hasComp) {
+      msg += `*🔬 Composición actual*\n`;
+      if (ultima.agua)     msg += `• Agua corporal: ${ultima.agua}%\n`;
+      if (ultima.bmr)      msg += `• TMB: ${ultima.bmr} kcal\n`;
+      if (ultima.osea)     msg += `• Masa ósea: ${ultima.osea} kg\n`;
+      if (ultima.edadMet)  msg += `• Edad metabólica: ${ultima.edadMet} años\n`;
+      if (ultima.proteina) msg += `• Proteína: ${ultima.proteina} kg\n`;
+      msg += `\n`;
+    }
+
+    // Tratamiento
+    if (med||proxCita) {
+      msg += `*💊 Tratamiento actual*\n`;
+      if (med)      msg += `• ${med}${dosis?" — "+dosis:""}\n`;
+      if (proxCita) msg += `• Próxima cita: ${normDate(proxCita)}\n`;
+      msg += `\n`;
+    }
+
+    // Mensaje motivacional
+    if (pesoChange!=null&&pesoChange<0)
+      msg += `🌟 *¡Felicitaciones!* Ha logrado una reducción de ${Math.abs(pesoChange)} kg. Continúe con su excelente progreso.\n\n`;
+    else
+      msg += `💪 *¡Siga adelante!* Cada paso cuenta. Continúe fiel a su plan de tratamiento y nutrición.\n\n`;
+
     msg += `Atentamente,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
 
     enviarWA(p.telefono, msg);
