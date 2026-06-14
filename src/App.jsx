@@ -1249,9 +1249,20 @@ const DocNota = ({p, consulta={}}) => (
   </div>
 );
 
+const fmtFecha = f => f ? f.split('-').reverse().join('/') : '—';
+
 const SepDoc = () => (
   <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#5BC4A0)",
     margin:"12px 0 16px",borderRadius:1}}/>
+);
+
+const OlasDoc = () => (
+  <svg viewBox="0 0 800 80" preserveAspectRatio="none"
+    style={{width:"100%",display:"block",marginTop:"auto"}}>
+    <path d="M0,40 Q100,20 200,40 Q300,60 400,40 Q500,20 600,40 Q700,60 800,40 L800,80 L0,80 Z" fill="#C5B8E0" opacity="0.4"/>
+    <path d="M0,48 Q100,28 200,48 Q300,68 400,48 Q500,28 600,48 Q700,68 800,48 L800,80 L0,80 Z" fill="#5B8DB8" opacity="0.3"/>
+    <path d="M0,55 Q100,35 200,55 Q300,75 400,55 Q500,35 600,55 Q700,75 800,55 L800,80 L0,80 Z" fill="#5BC4A0" opacity="0.45"/>
+  </svg>
 );
 
 const DocReceta = ({p, rec={}, firmaB64}) => {
@@ -1266,7 +1277,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
       <G4>
         <CF l="Paciente" v={p.nombre} span={2}/>
         <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
-        <CF l="Fecha" v={rec.fecha||"—"}/>
+        <CF l="Fecha" v={fmtFecha(rec.fecha)}/>
       </G4>
       <SepDoc/>
       {isGlp1&&(
@@ -1311,6 +1322,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
       )}
       <Firma firmaB64={rec.conFirma?firmaB64:null}/>
       <FooterDoc/>
+      <OlasDoc/>
     </div>
   );
 };
@@ -1322,7 +1334,7 @@ const DocLabs = ({p, labs={}, firmaB64}) => (
     <G4>
       <CF l="Paciente" v={p.nombre} span={2}/>
       <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
-      <CF l="Fecha" v={labs.fecha||"—"}/>
+      <CF l="Fecha" v={fmtFecha(labs.fecha)}/>
     </G4>
     <SepDoc/>
     <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:C.azul}}>
@@ -1342,6 +1354,7 @@ const DocLabs = ({p, labs={}, firmaB64}) => (
     )}
     <Firma fecha={labs.fecha} firmaB64={firmaB64}/>
     <FooterDoc/>
+    <OlasDoc/>
   </div>
 );
 
