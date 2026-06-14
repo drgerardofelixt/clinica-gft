@@ -1050,16 +1050,9 @@ const G4 = ({children}) => (
   </div>
 );
 
-const LogoDoc = ({compact=false, conCedula=true, firmaB64}) => (
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
-    marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
+const LogoDoc = ({compact=false}) => (
+  <div style={{marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
     <img src={IMG_LOGO} alt="Logo" style={{maxWidth:compact?220:280,width:"100%",height:"auto",display:"block"}}/>
-    <div style={{textAlign:"right",fontSize:10,color:"#64748B",lineHeight:1.6,paddingTop:0}}>
-      <div>Av. Adolfo de la Huerta 200A 2do piso</div>
-      <div>Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-      <div style={{fontWeight:700,color:"#1B3F8B"}}>(662) 298-4145</div>
-      <div>dr.gerardofelix@gmail.com</div>
-    </div>
   </div>
 );
 
@@ -1077,7 +1070,7 @@ const Firma = ({fecha="", hora="", firmaB64}) => (
       {firmaB64 && <img src={firmaB64} alt="Firma" style={{height:56,marginBottom:6,display:"block",margin:"0 auto 6px"}}/>}
       <div style={{borderTop:"1px solid #1A2332",paddingTop:6,fontSize:10,color:"#1A2332"}}>
         <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
-        <div style={{fontSize:9,color:"#64748B"}}>Céd. Prof. 15131213</div>
+        <div style={{fontSize:9,color:"#64748B"}}>Céd. Prof. 15131213 · Reg. SSA: 10361/16</div>
       </div>
     </div>
   </div>
