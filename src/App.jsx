@@ -1390,7 +1390,7 @@ const DocProgreso = ({p}) => {
       ? `¡Felicitaciones! Ha logrado una reducción de ${Math.abs(pesoChange)} kg. Continúe con su excelente progreso.`
       : "Cada paso cuenta. Continúe fiel a su plan de tratamiento y nutrición para alcanzar sus metas.";
 
-  // SVG line chart for weight evolution
+  // SVG line chart — peso
   const pesoData = comps.filter(c=>c.peso).map(c=>({f:normDate(c.fecha),v:parseFloat(c.peso)}));
   const CW=560, CH=110;
   const pMin = pesoData.length?Math.min(...pesoData.map(d=>d.v))-3:60;
@@ -1398,10 +1398,10 @@ const DocProgreso = ({p}) => {
   const tx = i => 32+(i/(pesoData.length-1||1))*(CW-40);
   const ty = v => CH-14-((v-pMin)/(pMax-pMin||1))*(CH-24);
   const pts = pesoData.map((d,i)=>({x:tx(i),y:ty(d.v),f:d.f,v:d.v}));
-  const lineD = pts.length>1?pts.map((p,i)=>(i===0?`M`:` L`)+p.x+","+p.y).join(""): null;
+  const lineD = pts.length>1?pts.map((pt,i)=>(i===0?"M":" L")+pt.x+","+pt.y).join(""):null;
   const areaD = lineD?lineD+` L${pts[pts.length-1].x},${CH-14} L${pts[0].x},${CH-14} Z`:null;
 
-  // Range bar (pure SVG-ish via inline div)
+  // RangeBar — posición dentro de rango saludable
   const RangeBar = ({label, value, min, max, unit=""}) => {
     const v=parseFloat(value);
     if(isNaN(v)) return null;
@@ -1427,20 +1427,63 @@ const DocProgreso = ({p}) => {
     );
   };
 
-  const CompRow = ({label, value, unit=""}) => {
-    if(!value&&value!==0) return null;
+  // Metas personalizadas — estimación de referencia, validar con criterio clínico
+  const tallaCm = parseFloat(p.talla)||170;
+  const tallam  = tallaCm/100;
+  const edad    = parseFloat(p.edad)||40;
+  const pesoObj = parseFloat((22*tallam*tallam).toFixed(1));
+  const grasaObjKg = parseFloat((pesoObj*(esMujer?0.30:0.16)).toFixed(1));
+  const bmrObj  = Math.round(esMujer
+    ? (10*pesoObj)+(6.25*tallaCm)-(5*edad)-161
+    : (10*pesoObj)+(6.25*tallaCm)-(5*edad)+5);
+
+  const grasaIniKg = (primera?.grasa!=null&&primera?.peso!=null)
+    ? parseFloat((parseFloat(primera.grasa)/100*parseFloat(primera.peso)).toFixed(1)) : null;
+  const grasaActKg = (ultima?.grasa!=null&&ultima?.peso!=null)
+    ? parseFloat((parseFloat(ultima.grasa)/100*parseFloat(ultima.peso)).toFixed(1)) : null;
+  const musculoIni = primera?.musculo!=null ? parseFloat(primera.musculo) : null;
+  const musculoAct = ultima?.musculo!=null  ? parseFloat(ultima.musculo)  : null;
+  const bmrIni     = primera?.bmr!=null ? parseFloat(primera.bmr) : null;
+  const bmrAct     = ultima?.bmr!=null  ? parseFloat(ultima.bmr)  : null;
+
+  // GoalBar — posición = progreso de valor inicial hacia meta
+  const GoalBar = ({label, valIni, valAct, valMeta, unit="", lowerBetter=false}) => {
+    const act  = valAct!=null  ? parseFloat(valAct)  : null;
+    const meta = valMeta!=null ? parseFloat(valMeta) : null;
+    const ini  = valIni!=null  ? parseFloat(valIni)  : null;
+    if(act==null||meta==null) return null;
+    const atGoal = lowerBetter ? act<=meta : act>=meta;
+    let pct = 50;
+    if(ini!=null) {
+      const total = lowerBetter?(ini-meta):(meta-ini);
+      const done  = lowerBetter?(ini-act):(act-ini);
+      pct = total===0?95:Math.min(Math.max((done/total)*100,2),98);
+    }
+    const fmtN = v => (typeof v==="number"&&!isNaN(v)) ? (Number.isInteger(v)?v:v.toFixed(1)) : v;
     return (
-      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",
-        borderBottom:"1px solid #E2E8F0",fontSize:11}}>
-        <span style={{color:C.suave}}>{label}</span>
-        <span style={{fontWeight:700}}>{value} {unit}</span>
+      <div style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+          <span style={{fontSize:10,fontWeight:700}}>{label}</span>
+          <span style={{fontSize:10}}>
+            <span style={{fontWeight:800,color:atGoal?"#1D9E75":"#D85A30"}}>{fmtN(act)} {unit}</span>
+            <span style={{color:C.suave,marginLeft:6}}>Meta: {fmtN(meta)} {unit}</span>
+          </span>
+        </div>
+        <div style={{position:"relative",height:8,borderRadius:4,
+          background:"linear-gradient(to right,#F0997B 0%,#FAC775 40%,#5DCAA5 100%)"}}>
+          <div style={{position:"absolute",top:-3,left:pct+"%",transform:"translateX(-50%)",
+            width:14,height:14,borderRadius:"50%",background:atGoal?"#1D9E75":"#D85A30",
+            border:"2px solid white",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
+        </div>
       </div>
     );
   };
 
+  const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
+
   return (
     <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-      {/* Header — logo + cédula explícita (sin firma, sin footer info) */}
+      {/* Header */}
       <div style={{marginBottom:12,paddingBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
         <img src={IMG_LOGO} alt="Logo" style={{maxWidth:225,width:"100%",height:"auto",display:"block"}}/>
         <div style={{fontSize:8,color:C.suave,marginTop:2,letterSpacing:"0.02em"}}>
@@ -1463,10 +1506,10 @@ const DocProgreso = ({p}) => {
       {/* Métricas hero 2×2 */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         {[
-          {l:"PESO ACTUAL",    v:ultima?.peso    ?ultima.peso+" kg":"—",     d:pesoDif,    pos:false},
-          {l:"GRASA CORPORAL", v:ultima?.grasa   ?ultima.grasa+"%":"—",      d:grasaDif,   pos:false},
-          {l:"MASA MUSCULAR",  v:ultima?.musculo ?ultima.musculo+" kg":"—",  d:musculoDif, pos:true},
-          {l:"CIRC. ABDOMINAL",v:caAct           ?caAct+" cm":"—",           d:caDif,      pos:false},
+          {l:"PESO ACTUAL",    v:ultima?.peso    ?ultima.peso+" kg":"—",    d:pesoDif,    pos:false},
+          {l:"GRASA CORPORAL", v:ultima?.grasa   ?ultima.grasa+"%":"—",     d:grasaDif,   pos:false},
+          {l:"MASA MUSCULAR",  v:ultima?.musculo ?ultima.musculo+" kg":"—", d:musculoDif, pos:true},
+          {l:"CIRC. ABDOMINAL",v:caAct           ?caAct+" cm":"—",          d:caDif,      pos:false},
         ].map((m,i)=>(
           <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:12}}>
             <div style={{fontSize:10,fontWeight:700,color:C.suave,textTransform:"uppercase",
@@ -1520,22 +1563,28 @@ const DocProgreso = ({p}) => {
         <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Rangos saludables</div>
         <div style={{background:"#F4F6FB",borderRadius:10,padding:"14px 16px"}}>
           <RangeBar label="IMC" value={ultima?.imc} min={18.5} max={25}/>
-          <RangeBar label="Grasa corporal" value={ultima?.grasa} min={esMujer?24:11} max={esMujer?36:21} unit="%"/>
+          <RangeBar label="Grasa corporal" value={ultima?.grasa}
+            min={esMujer?24:11} max={esMujer?36:21} unit="%"/>
           <RangeBar label="Grasa visceral" value={ultima?.visceral} min={1} max={12}/>
         </div>
       </div>
 
-      {/* Composición actual */}
-      {ultima&&(ultima.musculo||ultima.agua||ultima.bmr)&&(
+      {/* Metas personalizadas */}
+      {hasMetas&&(
         <div style={{marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Composición actual</div>
-          <div style={{background:"#F4F6FB",borderRadius:10,padding:"12px 14px"}}>
-            <CompRow label="Masa muscular"        value={ultima.musculo}  unit="kg"/>
-            <CompRow label="Agua corporal"         value={ultima.agua}     unit="%"/>
-            <CompRow label="Tasa metabólica basal" value={ultima.bmr}      unit="kcal"/>
-            <CompRow label="Masa ósea"             value={ultima.osea}     unit="kg"/>
-            <CompRow label="Edad metabólica"       value={ultima.edadMet}  unit="años"/>
-            <CompRow label="Proteína"              value={ultima.proteina} unit="kg"/>
+          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Metas personalizadas</div>
+          <div style={{background:"#F4F6FB",borderRadius:10,padding:"14px 16px"}}>
+            <GoalBar label="Masa muscular"
+              valIni={musculoIni!=null?parseFloat((musculoIni*0.9).toFixed(1)):null}
+              valAct={musculoAct} valMeta={musculoIni} unit="kg" lowerBetter={false}/>
+            <GoalBar label="Masa grasa"
+              valIni={grasaIniKg} valAct={grasaActKg} valMeta={grasaObjKg} unit="kg" lowerBetter={true}/>
+            <GoalBar label="TMB"
+              valIni={bmrIni} valAct={bmrAct} valMeta={bmrObj} unit="kcal" lowerBetter={false}/>
+            <div style={{fontSize:8,color:C.suave,marginTop:8,
+              borderTop:"1px solid #E2E8F0",paddingTop:6}}>
+              Metas estimadas como referencia · sujetas a criterio médico
+            </div>
           </div>
         </div>
       )}
@@ -2852,9 +2901,24 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const pesoChange = difNum(ultima?.peso, primera?.peso);
 
     const inRange = (v, min, max) => {
-      const n=parseFloat(v); if(isNaN(n)) return null;
-      return n>=min&&n<=max ? "✅ En rango normal" : n<min ? "⚠️ Bajo lo normal" : "⚠️ Sobre lo normal";
+      const nv=parseFloat(v); if(isNaN(nv)) return null;
+      return nv>=min&&nv<=max ? "✅ dentro del rango normal" : nv<min ? "⚠️ por debajo de lo normal" : "⚠️ por encima de lo normal";
     };
+
+    // Metas personalizadas — estimación de referencia, validar con criterio clínico
+    const tallaCm = parseFloat(p.talla)||170;
+    const tallam  = tallaCm/100;
+    const edad    = parseFloat(p.edad)||40;
+    const pesoObj = parseFloat((22*tallam*tallam).toFixed(1));
+    const grasaObjKg = parseFloat((pesoObj*(esMujer?0.30:0.16)).toFixed(1));
+    const bmrObj  = Math.round(esMujer
+      ? (10*pesoObj)+(6.25*tallaCm)-(5*edad)-161
+      : (10*pesoObj)+(6.25*tallaCm)-(5*edad)+5);
+    const grasaActKg = (ultima?.grasa!=null&&ultima?.peso!=null)
+      ? parseFloat((parseFloat(ultima.grasa)/100*parseFloat(ultima.peso)).toFixed(1)) : null;
+    const musculoIni = primera?.musculo!=null ? parseFloat(primera.musculo) : null;
+    const musculoAct = ultima?.musculo!=null  ? parseFloat(ultima.musculo)  : null;
+    const bmrAct     = ultima?.bmr!=null      ? parseFloat(ultima.bmr)      : null;
 
     const primerNom = (p.nombre||"").split(" ")[0]||"";
     let msg = `Hola ${primerNom}, le comparto su reporte de progreso:\n\n`;
@@ -2876,9 +2940,9 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     msg += `\n`;
 
     // Rangos saludables
-    const imcRange   = ultima?.imc    ? inRange(ultima.imc,   18.5, 25)  : null;
-    const grasaRange = ultima?.grasa  ? inRange(ultima.grasa, esMujer?24:11, esMujer?36:21) : null;
-    const viscRange  = ultima?.visceral ? inRange(ultima.visceral, 1, 12) : null;
+    const imcRange   = ultima?.imc     ? inRange(ultima.imc,   18.5, 25)                       : null;
+    const grasaRange = ultima?.grasa   ? inRange(ultima.grasa, esMujer?24:11, esMujer?36:21)   : null;
+    const viscRange  = ultima?.visceral? inRange(ultima.visceral, 1, 12)                        : null;
     if (imcRange||grasaRange||viscRange) {
       msg += `*📐 Rangos saludables*\n`;
       if (imcRange)   msg += `• IMC ${ultima.imc}: ${imcRange}\n`;
@@ -2887,16 +2951,17 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       msg += `\n`;
     }
 
-    // Composición actual
-    const hasComp = ultima&&(ultima.agua||ultima.bmr||ultima.osea||ultima.edadMet||ultima.proteina);
-    if (hasComp) {
-      msg += `*🔬 Composición actual*\n`;
-      if (ultima.agua)     msg += `• Agua corporal: ${ultima.agua}%\n`;
-      if (ultima.bmr)      msg += `• TMB: ${ultima.bmr} kcal\n`;
-      if (ultima.osea)     msg += `• Masa ósea: ${ultima.osea} kg\n`;
-      if (ultima.edadMet)  msg += `• Edad metabólica: ${ultima.edadMet} años\n`;
-      if (ultima.proteina) msg += `• Proteína: ${ultima.proteina} kg\n`;
-      msg += `\n`;
+    // Metas personalizadas
+    const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
+    if (hasMetas) {
+      msg += `*🎯 Metas personalizadas*\n`;
+      if (musculoAct!=null&&musculoIni!=null)
+        msg += `• Masa muscular: actual ${musculoAct} kg, meta ${musculoIni} kg (preservar)\n`;
+      if (grasaActKg!=null)
+        msg += `• Masa grasa: actual ${grasaActKg} kg, meta ${grasaObjKg} kg\n`;
+      if (bmrAct!=null)
+        msg += `• TMB: actual ${bmrAct} kcal, meta ${bmrObj} kcal\n`;
+      msg += `_Metas estimadas como referencia · criterio médico_\n\n`;
     }
 
     // Tratamiento
