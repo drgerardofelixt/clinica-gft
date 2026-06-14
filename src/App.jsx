@@ -269,8 +269,10 @@ const hoy = () => new Date().toISOString().split("T")[0];
 const ahora = () => new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
 const fmtF = (f) => {
   if (!f) return "";
-  const [y,m,d] = f.split("-");
-  return d+"/"+m+"/"+y;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(f)) return f; // ya está en DD/MM/YYYY
+  const parts = f.split("-");
+  if (parts.length < 3 || !parts[2]) return f;
+  return parts[2]+"/"+parts[1]+"/"+parts[0];
 };
 // Normaliza fecha a DD/MM/YYYY sea cual sea su formato de entrada
 const normDate = (f) => {
@@ -373,7 +375,7 @@ const diasHasta = (f) => {
 };
 const estadoLabs = (fecha) => {
   const d = diasDesde(fecha);
-  if (d===null) return {nivel:"none",dias:null,msg:""};
+  if (d===null) return {nivel:"rojo",dias:null,msg:"Sin laboratorios registrados — solicitar"};
   if (d>=90) return {nivel:"rojo",dias:d,msg:"Labs vencidos hace "+(d-90)+" días"};
   if (d>=80) return {nivel:"amarillo",dias:d,msg:"Labs vencen en "+(90-d)+" días"};
   return {nivel:"verde",dias:d,msg:"Labs al día"};
@@ -3040,8 +3042,12 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     "Músculo":parseFloat(c.musculo)||null,
     "Agua":parseFloat(c.agua)||null,
   }));
-  const ultLab = (p.laboratorios||[]).slice(-1)[0];
-  const alerta = estadoLabs(ultLab&&ultLab.fecha);
+  const _labDates = [
+    ...(p.resultadosLabs||[]).map(r=>r.fecha),
+    ...(p.laboratorios||[]).map(l=>l.fecha),
+    p.labsI?.fecha,
+  ].filter(Boolean).sort();
+  const alerta = estadoLabs(_labDates.length ? _labDates[_labDates.length-1] : null);
   const proxCitas = (p.consultas||[])
     .map(c=>({fecha:c.proxCita,p:c}))
     .filter(x=>x.fecha && diasHasta(x.fecha)>=0)
@@ -3568,7 +3574,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                   </Btn>
                 </div>
                 <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,color:C.texto}}>
                     <thead>
                       <tr style={{background:C.gris}}>
                         {["Fecha","Peso","IMC","% Grasa","Músculo","Agua","Visceral",
@@ -3580,18 +3586,18 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                     </thead>
                     <tbody>
                       {[...comps].reverse().map((c,i)=>(
-                        <tr key={i} style={{borderBottom:"1px solid "+C.gris}}>
-                          <td style={{padding:"6px 8px",fontWeight:700,whiteSpace:"nowrap"}}>{fmtF(c.fecha)}</td>
-                          <td style={{padding:"6px 8px"}}>{c.peso||"—"} kg</td>
-                          <td style={{padding:"6px 8px"}}>{c.imc||calcIMC(c.peso,p.talla)||"—"}</td>
+                        <tr key={i} style={{borderBottom:"1px solid "+C.grisMedio}}>
+                          <td style={{padding:"6px 8px",fontWeight:700,whiteSpace:"nowrap",color:C.texto}}>{fmtF(c.fecha)}</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.peso||"—"} kg</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.imc||calcIMC(c.peso,p.talla)||"—"}</td>
                           <td style={{padding:"6px 8px",color:C.naranja,fontWeight:700}}>{c.grasa||"—"}%</td>
                           <td style={{padding:"6px 8px",color:C.verde,fontWeight:700}}>{c.musculo||"—"} kg</td>
-                          <td style={{padding:"6px 8px"}}>{c.agua||"—"}%</td>
-                          <td style={{padding:"6px 8px"}}>{c.visceral||"—"}</td>
-                          <td style={{padding:"6px 8px"}}>{c.masaGrasa||"—"} kg</td>
-                          <td style={{padding:"6px 8px"}}>{c.osea||"—"} kg</td>
-                          <td style={{padding:"6px 8px"}}>{c.bmr||"—"}</td>
-                          <td style={{padding:"6px 8px"}}>{c.edadMet||"—"}</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.agua||"—"}%</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.visceral||"—"}</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.masaGrasa||"—"} kg</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.osea||"—"} kg</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.bmr||"—"}</td>
+                          <td style={{padding:"6px 8px",color:C.texto}}>{c.edadMet||"—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -4522,6 +4528,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [showImport, setShowImport] = useState(false);
   const [contentView, setContentView] = useState("dash");
   const [busq, setBusq] = useState("");
+  const [labsFilter, setLabsFilter] = useState(false);
+  const [hovStat, setHovStat] = useState(null);
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
   // Sanitizar pacientes: asegurar que sea array y filtrar inválidos
@@ -4529,12 +4537,19 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
   const totalC = pacientes.reduce((a,p)=>a+(p.consultas||[]).length,0);
 
-  // SOLO labs que cumplen exactamente 90 días HOY
+  // Pacientes con labs vencidos (>90 días) o sin labs registrados nunca
+  const getLastLabDate = (p) => {
+    const ds = [
+      ...(p.resultadosLabs||[]).map(r=>r.fecha),
+      ...(p.laboratorios||[]).map(l=>l.fecha),
+      p.labsI?.fecha,
+    ].filter(Boolean).sort();
+    return ds.length ? ds[ds.length-1] : null;
+  };
   const labsHoy = pacientes.filter(p=>{
-    const u = (p.laboratorios||[]).slice(-1)[0];
-    if (!u || !u.fecha) return false;
-    const f = new Date(u.fecha+"T00:00:00");
-    const dias = Math.floor((hoy.getTime()-f.getTime())/86400000);
+    const last = getLastLabDate(p);
+    if (!last) return true; // nunca ha tenido labs
+    const dias = Math.floor((hoy.getTime()-new Date(last+"T00:00:00").getTime())/86400000);
     return dias >= 90;
   });
 
@@ -4608,9 +4623,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
     const fechaMx = new Date(c.fecha+"T00:00:00").toLocaleDateString("es-MX",{
       weekday:"long",day:"numeric",month:"long"
     });
-    const msg = `Buen día ${c.pac?.nombre||"paciente"}, envío mensaje para recordarte y confirmar tu asistencia a tu cita el día ${fechaMx}${c.hora?" a las "+c.hora:""}.
-
-Saludos!`;
+    const nombre = (c.pac?.nombre||"paciente").split(" ")[0];
+    const msg = `Hola ${nombre}, te escribimos para recordarte y confirmar tu asistencia a tu cita de mañana ${fechaMx}${c.hora?" a las "+c.hora+" hrs":""} con el Dr. Félix Tapia. ¿Nos confirmas que asistirás? Quedamos al pendiente, ¡saludos!`;
     enviarWA(c.pac?.telefono||"sin telefono", msg);
   };
 
@@ -4835,12 +4849,18 @@ Saludos!`;
               {/* Stats row */}
               <div className="gft-dash-stats">
                 {[
-                  {l:"Pacientes",   v:pacientes.length, unit:"total",      color:"var(--gft-accent)"},
-                  {l:"Consultas",   v:totalC,            unit:"total",      color:"var(--gft-success)"},
-                  {l:"Citas hoy",   v:citasHoy.length,   unit:"programadas",color:"var(--gft-warning)"},
-                  {l:"Labs vencen", v:labsHoy.length,    unit:"pendientes", color:"var(--gft-danger)"},
+                  {l:"Pacientes",   v:pacientes.length, unit:"total",      color:"var(--gft-accent)",   action:()=>setContentView("pacientes")},
+                  {l:"Consultas",   v:totalC,            unit:"total",      color:"var(--gft-success)",  action:()=>setContentView("pacientes")},
+                  {l:"Citas hoy",   v:citasHoy.length,   unit:"programadas",color:"var(--gft-warning)",  action:()=>setContentView("agenda")},
+                  {l:"Labs vencen", v:labsHoy.length,    unit:"pendientes", color:"var(--gft-danger)",   action:()=>{setLabsFilter(true);setContentView("pacientes");}},
                 ].map(s=>(
-                  <div key={s.l} className="gft-stat" style={{borderTop:`2px solid ${s.color}`}}>
+                  <div key={s.l} className="gft-stat"
+                    style={{borderTop:`2px solid ${s.color}`,cursor:"pointer",
+                      background:hovStat===s.l?"var(--gft-surface2)":"var(--gft-surface)",
+                      transition:"background 0.15s"}}
+                    onClick={s.action}
+                    onMouseEnter={()=>setHovStat(s.l)}
+                    onMouseLeave={()=>setHovStat(null)}>
                     <div className="gft-stat__label">{s.l}</div>
                     <div className="gft-stat__value" style={{color:s.color}}>{s.v}</div>
                     <div className="gft-stat__unit">{s.unit}</div>
@@ -4940,7 +4960,7 @@ Saludos!`;
                   })()}
 
                   {/* Google Calendar card */}
-                  <div className={"gft-card "+(gcalAuthed?"gft-card--success":"")}>
+                  <div className={"gft-card "+(gcalAuthed?"gft-card--success":"")} style={{marginBottom:0}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
                         <span style={{fontSize:18}}>📅</span>
@@ -4963,6 +4983,40 @@ Saludos!`;
                       )}
                     </div>
                   </div>
+
+                  {/* Mañana — recordatorios */}
+                  {citasManana.length>0&&(
+                    <div className="gft-panel">
+                      <div className="gft-panel__header">
+                        <div className="gft-panel__title">Mañana</div>
+                        <span className="gft-panel__count">{citasManana.length}</span>
+                      </div>
+                      {citasManana.map((c,i)=>{
+                        const chipColor=c.tipo==="gcal"?"#4285F4":c.tipoCita==="primera"?"var(--gft-success)":"var(--gft-accent)";
+                        return (
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,
+                            padding:"9px 0",borderBottom:i<citasManana.length-1?"1px solid var(--gft-border)":"none"}}>
+                            <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
+                              color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
+                              <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
+                                {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
+                              </div>
+                            </div>
+                            {c.pac?.telefono&&(
+                              <button className="gft-btn gft-btn--secondary gft-btn--sm"
+                                style={{flexShrink:0,fontSize:11}}
+                                onClick={e=>{e.stopPropagation();enviarRecordatorio(c);}}>
+                                📱 Recordatorio
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {/* Pacientes recientes */}
                   {recientes.length>0 && (
@@ -5020,40 +5074,6 @@ Saludos!`;
                             </div>
                           </div>
                           {c.pac&&<span style={{fontSize:12,color:"var(--gft-accent)",flexShrink:0}}>→</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Mañana */}
-                  <div className="gft-panel">
-                    <div className="gft-panel__header">
-                      <div className="gft-panel__title">Mañana</div>
-                      {citasManana.length>0&&<span className="gft-panel__count">{citasManana.length}</span>}
-                    </div>
-                    {citasManana.length===0 ? (
-                      <div className="gft-panel__empty">Sin citas mañana</div>
-                    ) : citasManana.map((c,i)=>{
-                      const chipColor=c.tipo==="gcal"?"#4285F4":c.tipoCita==="primera"?"var(--gft-success)":"var(--gft-accent)";
-                      return (
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,
-                          padding:"9px 0",borderBottom:i<citasManana.length-1?"1px solid var(--gft-border)":"none"}}>
-                          <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
-                            color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
-                            <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
-                              {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
-                            </div>
-                          </div>
-                          {c.pac?.telefono&&(
-                            <button className="gft-btn gft-btn--secondary gft-btn--sm"
-                              style={{flexShrink:0,padding:"5px 8px"}}
-                              onClick={e=>{e.stopPropagation();enviarRecordatorio(c);}}>
-                              📱
-                            </button>
-                          )}
                         </div>
                       );
                     })}
@@ -5190,13 +5210,28 @@ Saludos!`;
           {/* ── VISTA PACIENTES ──────────────────────────────── */}
           {contentView==="pacientes" && (
             <>
-              <div style={{marginBottom:20}}>
+              <div style={{marginBottom:16,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                 <input className="gft-input" placeholder="🔍 Buscar paciente por nombre…"
                   value={busq} onChange={e=>setBusq(e.target.value)}
                   style={{maxWidth:400}} autoFocus/>
+                {labsFilter&&(
+                  <span style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",
+                    borderRadius:20,background:"var(--gft-danger-dim)",color:"var(--gft-danger)",
+                    fontSize:12,fontWeight:700,cursor:"pointer"}}
+                    onClick={()=>setLabsFilter(false)}>
+                    🚨 Labs pendientes ✕
+                  </span>
+                )}
               </div>
               {(()=>{
-                const filt = pacientes.filter(p=>(p.nombre||"").toLowerCase().includes(busq.toLowerCase()));
+                let filt = pacientes.filter(p=>(p.nombre||"").toLowerCase().includes(busq.toLowerCase()));
+                if (labsFilter) {
+                  filt = [...filt].sort((a,b)=>{
+                    const aNeed = estadoLabs(getLastLabDate(a)).nivel==="rojo"?0:1;
+                    const bNeed = estadoLabs(getLastLabDate(b)).nivel==="rojo"?0:1;
+                    return aNeed-bNeed;
+                  });
+                }
                 if (filt.length===0) return (
                   <div style={{textAlign:"center",padding:"60px 20px",color:"var(--gft-text-muted)"}}>
                     <div style={{fontSize:48,marginBottom:12}}>🔍</div>
@@ -5214,8 +5249,7 @@ Saludos!`;
                       const uc=(p.composicion||[]).slice(-1)[0];
                       const pc=(p.composicion||[])[0];
                       const perd=uc&&pc&&uc.peso&&pc.peso?(parseFloat(pc.peso)-parseFloat(uc.peso)).toFixed(1):null;
-                      const ultL=(p.laboratorios||[]).slice(-1)[0];
-                      const al=estadoLabs(ultL&&ultL.fecha);
+                      const al=estadoLabs(getLastLabDate(p));
                       const borderColor=al.nivel==="rojo"?"var(--gft-danger)":al.nivel==="amarillo"?"var(--gft-warning)":"var(--gft-border)";
                       return (
                         <div key={p.id} onClick={()=>onVer(p)}
