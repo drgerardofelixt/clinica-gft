@@ -1606,9 +1606,18 @@ const DocProgreso = ({p}) => {
     segRef_grasaBI:segRef?.grasaBI, ultima_grasaBI:ultima?.grasaBI,
     segRef_grasaBD:segRef?.grasaBD, ultima_grasaBD:ultima?.grasaBD,
   });
-  const SegCell = ({val, positiveGood, unit}) => {
+  // val = difNum result (number or null); null = dato ausente → "—"; 0 = sin cambio → "= X"
+  const SegCell = ({val, rawAct, positiveGood, unit}) => {
+    if(val==null) return <span style={{color:C.suave,fontSize:10}}>—</span>;
     const v=parseFloat(val);
-    if(isNaN(v)||v===0) return <span style={{color:C.suave,fontSize:10}}>—</span>;
+    if(v===0) {
+      const raw=parseFloat(rawAct);
+      return (
+        <span style={{fontSize:10,color:C.suave}}>
+          = {isNaN(raw)?"":`${raw.toFixed(1)} ${unit}`}
+        </span>
+      );
+    }
     const good=positiveGood?v>0:v<0;
     return (
       <span style={{fontWeight:700,fontSize:10,color:good?"#1D9E75":"#D85A30"}}>
@@ -1728,10 +1737,10 @@ const DocProgreso = ({p}) => {
                   alignItems:"center"}}>
                   <span style={{fontSize:10,color:C.suave}}>{s.label}</span>
                   <span style={{textAlign:"center"}}>
-                    <SegCell val={md} positiveGood={true} unit="kg"/>
+                    <SegCell val={md} rawAct={ultima[s.mKey]} positiveGood={true} unit="kg"/>
                   </span>
                   <span style={{textAlign:"right"}}>
-                    <SegCell val={gd} positiveGood={false} unit="%"/>
+                    <SegCell val={gd} rawAct={ultima[s.gKey]} positiveGood={false} unit="%"/>
                   </span>
                 </div>
               );
@@ -3149,8 +3158,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         const md=difNum(ultima[s.mKey],waSegRef[s.mKey]);
         const gd=difNum(ultima[s.gKey],waSegRef[s.gKey]);
         if(md==null&&gd==null) return null;
-        const mTxt=md==null?"":` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
-        const gTxt=gd==null?"":" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
+        const mTxt=md==null?"":md===0?` músculo = ${parseFloat(ultima[s.mKey]).toFixed(1)} kg (sin cambio)`:` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
+        const gTxt=gd==null?"":gd===0?` grasa = ${parseFloat(ultima[s.gKey]).toFixed(1)}% (sin cambio)`:" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
         return `• ${s.label}:${mTxt}${gTxt}`;
       }).filter(Boolean);
       if (segLines.length) {
