@@ -1590,12 +1590,22 @@ const DocProgreso = ({p}) => {
     c.grasaPI!=null||c.grasaPD!=null
   );
   const hasSegmental = segRef!=null&&ultima!=null&&segRef!==ultima;
-  console.log('SEGMENTAL DEBUG', comps.map((c,i)=>({
+  console.log('SEGMENTAL DEBUG — todas las mediciones:', comps.map((c,i)=>({
     i, fecha:c.fecha,
     musculoTronco:c.musculoTronco, musculoBI:c.musculoBI, musculoBD:c.musculoBD,
     musculoPI:c.musculoPI, musculoPD:c.musculoPD,
     grasaTronco:c.grasaTronco, grasaBI:c.grasaBI, grasaBD:c.grasaBD,
   })));
+  console.log('SEGMENTAL DEBUG — segRef vs ultima:', {
+    hasSegmental,
+    segRef_fecha:segRef?.fecha, ultima_fecha:ultima?.fecha,
+    segRef_musculoBI:segRef?.musculoBI, ultima_musculoBI:ultima?.musculoBI,
+    segRef_musculoBD:segRef?.musculoBD, ultima_musculoBD:ultima?.musculoBD,
+    difBI:difNum(ultima?.musculoBI, segRef?.musculoBI),
+    difBD:difNum(ultima?.musculoBD, segRef?.musculoBD),
+    segRef_grasaBI:segRef?.grasaBI, ultima_grasaBI:ultima?.grasaBI,
+    segRef_grasaBD:segRef?.grasaBD, ultima_grasaBD:ultima?.grasaBD,
+  });
   const SegCell = ({val, positiveGood, unit}) => {
     const v=parseFloat(val);
     if(isNaN(v)||v===0) return <span style={{color:C.suave,fontSize:10}}>—</span>;
