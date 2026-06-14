@@ -1385,10 +1385,36 @@ const DocProgreso = ({p}) => {
   const caDif      = difStr(caAct, caIni);
   const pesoChange = difNum(ultima?.peso, primera?.peso);
 
-  const motiv = pesoChange==null ? "¡Continúe con su plan de tratamiento y nutrición para alcanzar sus metas!"
-    : pesoChange<0
-      ? `¡Felicitaciones! Ha logrado una reducción de ${Math.abs(pesoChange)} kg. Continúe con su excelente progreso.`
-      : "Cada paso cuenta. Continúe fiel a su plan de tratamiento y nutrición para alcanzar sus metas.";
+  // Mensaje motivacional expandido con recomendaciones basadas en evidencia
+  const musculoChange = difNum(ultima?.musculo, primera?.musculo);
+  const grasaChange   = difNum(ultima?.grasa,   primera?.grasa);
+  const motivTitle = (pesoChange!=null&&pesoChange<0)||(grasaChange!=null&&grasaChange<0)
+    ? "¡Excelente avance!" : "¡Siga adelante!";
+  const motivCambios = [
+    pesoChange!=null ? `peso ${pesoChange<0?"−":"+" }${Math.abs(pesoChange)} kg` : null,
+    grasaChange!=null ? `grasa ${grasaChange<0?"−":"+"}${Math.abs(grasaChange)}%` : null,
+    musculoChange!=null ? `músculo ${musculoChange>=0?"+":"−"}${Math.abs(musculoChange)} kg` : null,
+  ].filter(Boolean);
+  let motivRec = "";
+  if(pesoChange!=null&&pesoChange<0&&musculoChange!=null&&musculoChange<-0.5){
+    // Perdió peso pero también músculo significativo
+    motivRec = "Para preservar la masa muscular, asegure una ingesta de proteínas de 1.2–1.6 g/kg/día e incorpore ejercicio de resistencia 2–3 veces por semana.";
+  } else if(pesoChange!=null&&pesoChange<0&&(musculoChange==null||musculoChange>=-0.3)){
+    // Perdió peso sin pérdida muscular significativa
+    motivRec = "Excelente preservación de masa muscular durante la pérdida de peso — esto indica un metabolismo eficiente. Continúe con su plan de alimentación y actividad física.";
+  } else if((pesoChange==null||Math.abs(pesoChange)<0.5)&&grasaChange!=null&&grasaChange<0){
+    // Estable en peso pero bajó grasa (recomposición corporal)
+    motivRec = "Recomposición corporal en progreso: mejora de composición sin cambio de peso. Mantenga el balance de proteínas y carbohidratos para optimizar este proceso.";
+  } else if(pesoChange!=null&&pesoChange>0&&musculoChange!=null&&musculoChange>0.3){
+    // Ganó peso pero también ganó músculo
+    motivRec = "El aumento de masa muscular es positivo para el metabolismo. Monitoree la grasa corporal y ajuste el plan según las metas establecidas.";
+  } else {
+    motivRec = "La constancia en el plan de tratamiento y nutrición es el factor más determinante para lograr resultados sostenibles.";
+  }
+  const motiv = [
+    motivCambios.length>0 ? "Cambios registrados: "+motivCambios.join(" · ")+"." : null,
+    motivRec,
+  ].filter(Boolean).join(" ");
 
   // SVG line chart — peso
   const pesoData = comps.filter(c=>c.peso).map(c=>({f:normDate(c.fecha),v:parseFloat(c.peso)}));
@@ -1486,18 +1512,28 @@ const DocProgreso = ({p}) => {
     );
   };
 
-  // Segmentos corporales (de Tanita segmental)
+  // Segmentos corporales — field names as stored by Tanita parser
   const SEGS = [
-    {label:"Tronco",      mKey:"musculoTronco",    gKey:"grasaTronco"},
-    {label:"Brazo izq.",  mKey:"musculoBrazoIzq",  gKey:"grasaBrazoIzq"},
-    {label:"Brazo der.",  mKey:"musculoBrazoDer",  gKey:"grasaBrazoDer"},
-    {label:"Pierna izq.", mKey:"musculoPiernaIzq", gKey:"grasaPiernaIzq"},
-    {label:"Pierna der.", mKey:"musculoPiernaDer", gKey:"grasaPiernaDer"},
+    {label:"Tronco",      mKey:"musculoTronco", gKey:"grasaTronco"},
+    {label:"Brazo izq.",  mKey:"musculoBI",     gKey:"grasaBI"},
+    {label:"Brazo der.",  mKey:"musculoBD",     gKey:"grasaBD"},
+    {label:"Pierna izq.", mKey:"musculoPI",     gKey:"grasaPI"},
+    {label:"Pierna der.", mKey:"musculoPD",     gKey:"grasaPD"},
   ];
-  const hasSegmental = primera&&ultima&&SEGS.some(s=>
-    (primera[s.mKey]!=null||primera[s.gKey]!=null)&&
-    (ultima[s.mKey]!=null ||ultima[s.gKey]!=null)
+  // First entry that has ANY segmental data (Tanita may not have been used from day 1)
+  const segRef = comps.find(c=>
+    c.musculoTronco!=null||c.musculoBI!=null||c.musculoBD!=null||
+    c.musculoPI!=null||c.musculoPD!=null||
+    c.grasaTronco!=null||c.grasaBI!=null||c.grasaBD!=null||
+    c.grasaPI!=null||c.grasaPD!=null
   );
+  const hasSegmental = segRef!=null&&ultima!=null&&segRef!==ultima;
+  console.log('SEGMENTAL DEBUG', comps.map((c,i)=>({
+    i, fecha:c.fecha,
+    musculoTronco:c.musculoTronco, musculoBI:c.musculoBI, musculoBD:c.musculoBD,
+    musculoPI:c.musculoPI, musculoPD:c.musculoPD,
+    grasaTronco:c.grasaTronco, grasaBI:c.grasaBI, grasaBD:c.grasaBD,
+  })));
   const SegCell = ({val, positiveGood, unit}) => {
     const v=parseFloat(val);
     if(isNaN(v)||v===0) return <span style={{color:C.suave,fontSize:10}}>—</span>;
@@ -1513,12 +1549,9 @@ const DocProgreso = ({p}) => {
 
   return (
     <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-      {/* 1. Header — logo + cédula alineada (mismo color que texto del logo) */}
+      {/* 1. Header — logo original con Céd./Reg. SSA ya integrados */}
       <div style={{marginBottom:12,paddingBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
-        <img src={IMG_LOGO} alt="Logo" style={{maxWidth:225,width:"100%",height:"auto",display:"block"}}/>
-        <div style={{fontSize:9,color:"#1A2332",marginTop:1,letterSpacing:"0.01em"}}>
-          Céd. Prof. 15131213 · Reg. SSA: 10361/16
-        </div>
+        <img src={IMG_LOGO_CED} alt="Logo" style={{maxWidth:260,width:"100%",height:"auto",display:"block"}}/>
       </div>
 
       {/* 2. Hero banner */}
@@ -1614,8 +1647,8 @@ const DocProgreso = ({p}) => {
               <span style={{fontSize:9,fontWeight:700,color:C.suave,textAlign:"right"}}>Grasa</span>
             </div>
             {SEGS.map((s,i)=>{
-              const md=difNum(ultima[s.mKey],primera[s.mKey]);
-              const gd=difNum(ultima[s.gKey],primera[s.gKey]);
+              const md=difNum(ultima[s.mKey],segRef[s.mKey]);
+              const gd=difNum(ultima[s.gKey],segRef[s.gKey]);
               if(md==null&&gd==null) return null;
               return (
                 <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
@@ -1671,9 +1704,7 @@ const DocProgreso = ({p}) => {
       {/* Mensaje motivacional */}
       <div style={{background:"linear-gradient(135deg,#E1F5EE,#E6F1FB)",borderRadius:10,
         padding:"12px 16px",marginBottom:14}}>
-        <div style={{fontWeight:800,color:"#1D9E75",marginBottom:3}}>
-          {pesoChange!=null&&pesoChange<0?"¡Excelente avance!":"¡Siga adelante!"}
-        </div>
+        <div style={{fontWeight:800,color:"#1D9E75",marginBottom:3}}>{motivTitle}</div>
         <div>{motiv}</div>
       </div>
 
@@ -2993,18 +3024,21 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const musculoAct = ultima?.musculo!=null  ? parseFloat(ultima.musculo)  : null;
     const bmrAct     = ultima?.bmr!=null      ? parseFloat(ultima.bmr)      : null;
 
-    // Segmentos corporales
+    // Segmentos corporales — field names as stored by Tanita parser
     const WA_SEGS = [
-      {label:"Tronco",      mKey:"musculoTronco",    gKey:"grasaTronco"},
-      {label:"Brazo izq.",  mKey:"musculoBrazoIzq",  gKey:"grasaBrazoIzq"},
-      {label:"Brazo der.",  mKey:"musculoBrazoDer",  gKey:"grasaBrazoDer"},
-      {label:"Pierna izq.", mKey:"musculoPiernaIzq", gKey:"grasaPiernaIzq"},
-      {label:"Pierna der.", mKey:"musculoPiernaDer", gKey:"grasaPiernaDer"},
+      {label:"Tronco",      mKey:"musculoTronco", gKey:"grasaTronco"},
+      {label:"Brazo izq.",  mKey:"musculoBI",     gKey:"grasaBI"},
+      {label:"Brazo der.",  mKey:"musculoBD",     gKey:"grasaBD"},
+      {label:"Pierna izq.", mKey:"musculoPI",     gKey:"grasaPI"},
+      {label:"Pierna der.", mKey:"musculoPD",     gKey:"grasaPD"},
     ];
-    const hasSegWA = primera&&ultima&&WA_SEGS.some(s=>
-      (primera[s.mKey]!=null||primera[s.gKey]!=null)&&
-      (ultima[s.mKey]!=null ||ultima[s.gKey]!=null)
+    const waSegRef = comps.find(c=>
+      c.musculoTronco!=null||c.musculoBI!=null||c.musculoBD!=null||
+      c.musculoPI!=null||c.musculoPD!=null||
+      c.grasaTronco!=null||c.grasaBI!=null||c.grasaBD!=null||
+      c.grasaPI!=null||c.grasaPD!=null
     );
+    const hasSegWA = waSegRef!=null&&ultima!=null&&waSegRef!==ultima;
 
     const primerNom = (p.nombre||"").split(" ")[0]||"";
     let msg = `Hola ${primerNom}, le comparto su reporte de progreso:\n\n`;
@@ -3040,8 +3074,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     // Progreso por segmento
     if (hasSegWA) {
       const segLines = WA_SEGS.map(s=>{
-        const md=difNum(ultima[s.mKey],primera[s.mKey]);
-        const gd=difNum(ultima[s.gKey],primera[s.gKey]);
+        const md=difNum(ultima[s.mKey],waSegRef[s.mKey]);
+        const gd=difNum(ultima[s.gKey],waSegRef[s.gKey]);
         if(md==null&&gd==null) return null;
         const mTxt=md==null?"":` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
         const gTxt=gd==null?"":" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
@@ -3074,11 +3108,29 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       msg += `\n`;
     }
 
-    // Mensaje motivacional
-    if (pesoChange!=null&&pesoChange<0)
-      msg += `🌟 *¡Felicitaciones!* Ha logrado una reducción de ${Math.abs(pesoChange)} kg. Continúe con su excelente progreso.\n\n`;
-    else
-      msg += `💪 *¡Siga adelante!* Cada paso cuenta. Continúe fiel a su plan de tratamiento y nutrición.\n\n`;
+    // Mensaje motivacional expandido
+    const musculoChWA = difNum(ultima?.musculo, primera?.musculo);
+    const grasaChWA   = difNum(ultima?.grasa,   primera?.grasa);
+    const waCambios = [
+      pesoChange!=null ? `peso ${pesoChange<0?"−":"+"}${Math.abs(pesoChange)} kg` : null,
+      grasaChWA!=null  ? `grasa ${grasaChWA<0?"−":"+"}${Math.abs(grasaChWA)}%`   : null,
+      musculoChWA!=null? `músculo ${musculoChWA>=0?"+":"−"}${Math.abs(musculoChWA)} kg` : null,
+    ].filter(Boolean);
+    let waRec = "";
+    if(pesoChange!=null&&pesoChange<0&&musculoChWA!=null&&musculoChWA<-0.5){
+      waRec = "Para preservar la masa muscular, asegure proteínas 1.2–1.6 g/kg/día e incluya ejercicio de resistencia 2–3 veces/semana.";
+    } else if(pesoChange!=null&&pesoChange<0&&(musculoChWA==null||musculoChWA>=-0.3)){
+      waRec = "Excelente preservación de masa muscular — indica un metabolismo eficiente. Continúe con su plan.";
+    } else if((pesoChange==null||Math.abs(pesoChange)<0.5)&&grasaChWA!=null&&grasaChWA<0){
+      waRec = "Recomposición corporal en progreso. Mantenga el balance de proteínas y carbohidratos para optimizar.";
+    } else {
+      waRec = "La constancia en su plan de tratamiento y nutrición es el factor más determinante para resultados sostenibles.";
+    }
+    const waMotivIcon = (pesoChange!=null&&pesoChange<0)||(grasaChWA!=null&&grasaChWA<0) ? "🌟" : "💪";
+    const waMotivTit  = (pesoChange!=null&&pesoChange<0)||(grasaChWA!=null&&grasaChWA<0) ? "¡Excelente avance!" : "¡Siga adelante!";
+    msg += `${waMotivIcon} *${waMotivTit}*\n`;
+    if(waCambios.length) msg += `Cambios: ${waCambios.join(" · ")}.\n`;
+    msg += waRec+"\n\n";
 
     msg += `Atentamente,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
 
