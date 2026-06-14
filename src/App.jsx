@@ -1052,7 +1052,7 @@ const G4 = ({children}) => (
 
 const LogoDoc = ({compact=false}) => (
   <div style={{marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
-    <img src={IMG_LOGO} alt="Logo" style={{maxWidth:compact?220:280,width:"100%",height:"auto",display:"block"}}/>
+    <img src={IMG_LOGO} alt="Logo" style={{maxWidth:compact?180:225,width:"100%",height:"auto",display:"block"}}/>
   </div>
 );
 
