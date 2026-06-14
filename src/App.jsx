@@ -775,68 +775,108 @@ const pdfToText = async (file) => {
 // pero toma segmental RAW (sin dedup) para soportar valores iguales entre segmentos.
 const parseTanita = async (texto) => {
   console.log('TANITA TEXTO COMPLETO:', texto);
+
+  // ── Pre-extracción: fecha ──────────────────────────────────────────────────
   const fechaMatch = texto.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   let fechaPreExtracted = null;
   if (fechaMatch) {
-    const d = fechaMatch[1].padStart(2,'0');
-    const m = fechaMatch[2].padStart(2,'0');
-    const y = fechaMatch[3];
-    fechaPreExtracted = `${d}/${m}/${y}`;
+    const dd = fechaMatch[1].padStart(2,'0');
+    const mm = fechaMatch[2].padStart(2,'0');
+    fechaPreExtracted = `${dd}/${mm}/${fechaMatch[3]}`;
   }
-  const grasaMatch = texto.match(/Fat\s*%[\s\S]*?(\d+\.\d+)\s*%/);
-  const grasaPreExtracted = grasaMatch ? parseFloat(grasaMatch[1]) : null;
-  const bmrMatch = texto.match(/(\d+)\s*kcal/);
-  const bmrPreExtracted = bmrMatch ? parseFloat(bmrMatch[1]) : null;
+
+  // ── Pre-extracción: campos corporales totales ──────────────────────────────
+  const grasaMatch    = texto.match(/Fat\s*%[\s\S]*?(\d+\.\d+)\s*%/);
+  const bmrMatch      = texto.match(/(\d+)\s*kcal/);
   const visceralMatch = texto.match(/Visceral\s*Fat\s*Rating\s*(\d+\.?\d*)/i);
+  const edadMetMatch  = texto.match(/Metabolic\s*Age\s*(\d+\.?\d*)/i);
+  const grasaPreExtracted    = grasaMatch    ? parseFloat(grasaMatch[1])    : null;
+  const bmrPreExtracted      = bmrMatch      ? parseFloat(bmrMatch[1])      : null;
   const visceralPreExtracted = visceralMatch ? parseFloat(visceralMatch[1]) : null;
-  const edadMetMatch = texto.match(/Metabolic\s*Age\s*(\d+\.?\d*)/i);
-  const edadMetPreExtracted = edadMetMatch ? parseFloat(edadMetMatch[1]) : null;
+  const edadMetPreExtracted  = edadMetMatch  ? parseFloat(edadMetMatch[1])  : null;
+
+  // ── Pre-extracción: segmentos músculo (kg) ─────────────────────────────────
+  // Sufijo "kg" distingue la sección de músculo de la sección de grasa
+  const segKg = (pat) => { const m=texto.match(pat); return m ? parseFloat(m[1]) : null; };
+  const musculoTroncoP  = segKg(/Trunk[^\d\n]*(\d+\.?\d*)\s*kg/i);
+  const musculoBrazoIP  = segKg(/Left\s*Arm[^\d\n]*(\d+\.?\d*)\s*kg/i);
+  const musculoBrazoDP  = segKg(/Right\s*Arm[^\d\n]*(\d+\.?\d*)\s*kg/i);
+  const musculoPiernaIP = segKg(/Left\s*Leg[^\d\n]*(\d+\.?\d*)\s*kg/i);
+  const musculoPiernaDP = segKg(/Right\s*Leg[^\d\n]*(\d+\.?\d*)\s*kg/i);
+
+  // ── Pre-extracción: segmentos grasa (%) ───────────────────────────────────
+  // Sufijo "%" distingue la sección de grasa de la sección de músculo
+  const segPct = (pat) => { const m=texto.match(pat); return m ? parseFloat(m[1]) : null; };
+  const grasaTroncoP  = segPct(/Trunk[^\d\n]*(\d+\.?\d*)\s*%/i);
+  const grasaBrazoIP  = segPct(/Left\s*Arm[^\d\n]*(\d+\.?\d*)\s*%/i);
+  const grasaBrazoDP  = segPct(/Right\s*Arm[^\d\n]*(\d+\.?\d*)\s*%/i);
+  const grasaPiernaIP = segPct(/Left\s*Leg[^\d\n]*(\d+\.?\d*)\s*%/i);
+  const grasaPiernaDP = segPct(/Right\s*Leg[^\d\n]*(\d+\.?\d*)\s*%/i);
+
   console.log('TANITA PRE-EXTRACT:', {
     grasa: grasaPreExtracted, bmr: bmrPreExtracted,
     visceral: visceralPreExtracted, edadMet: edadMetPreExtracted,
-    visceralRaw: visceralMatch?.[0], edadMetRaw: edadMetMatch?.[0],
+    seg_musculo: {
+      Tronco:musculoTroncoP, BrazoI:musculoBrazoIP, BrazoD:musculoBrazoDP,
+      PiernaI:musculoPiernaIP, PiernaD:musculoPiernaDP,
+    },
+    seg_grasa: {
+      Tronco:grasaTroncoP, BrazoI:grasaBrazoIP, BrazoD:grasaBrazoDP,
+      PiernaI:grasaPiernaIP, PiernaD:grasaPiernaDP,
+    },
   });
 
   const response = await fetch("/api/claude", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
+      max_tokens: 800,
       messages: [{
         role: "user",
         content: `You are a parser for Tanita RD-545 body composition scale PDF reports in English.
 
 CRITICAL RULES:
 1. Any value of -1 means "no data" — treat it as null, never use it.
-2. IGNORE all segmental values (Trunk, Left Arm, Right Arm, Left Leg, Right Leg). Only extract whole-body totals.
-3. IGNORE kJ values. For BMR the PDF shows two numbers: kJ first, kcal second — use only kcal.
-4. For Total Body Water: use the percentage value (%), not the kg value.
-5. For Muscle Mass: use the "Muscle Mass" field, NOT "Fat Free Mass".
-6. For Visceral Fat: use "Visceral Fat Rating" (a number — can be integer like 8 or decimal like 5.5), not any segmental or -1 value.
-7. For Fat %: extract the number only, without the % symbol.
-8. Date: appears at the top of the document as M/D/YYYY HH:MM — output as DD/MM/YYYY with zero-padded day and month. Never return undefined or null if a date is present.
+2. IGNORE kJ values. For BMR the PDF shows two numbers: kJ first, kcal second — use only kcal.
+3. For Total Body Water: use the percentage value (%), not the kg value.
+4. For Muscle Mass whole-body: use the "Muscle Mass" total field, NOT "Fat Free Mass".
+5. For Visceral Fat: use "Visceral Fat Rating" (integer or decimal, e.g. 8 or 5.5), not any segmental or -1 value.
+6. For Fat %: extract the number only, without the % symbol.
+7. Date: appears at the top as M/D/YYYY HH:MM — output as DD/MM/YYYY zero-padded. Never return null if a date is present.
+8. For segmental values: muscle segments are in kg, fat segments are in %. Extract all 5 body segments for both.
 
-EXACT LINE EXAMPLES from this PDF — extract exactly as shown:
-- Line "11/6/2026 20:20" → fecha = "11/06/2026"  (zero-pad day and month, drop time)
-- Line "Fat %   33.10 %" → grasaCorporal = 33.10  (number only, no %)
-- Line "BMR     9021 kJ   2156 kcal" → metabolismoBasal = 2156  (the kcal number, ignore kJ)
+EXACT LINE EXAMPLES:
+- "11/6/2026 20:20" → fecha = "11/06/2026"
+- "Fat %   33.10 %" → grasaCorporal = 33.10  (number only)
+- "BMR     9021 kJ   2156 kcal" → metabolismoBasal = 2156  (kcal only)
 
-FIELD MAPPING (label in PDF → JSON key):
-- "Weight" → peso (kg, e.g. 106.6)
-- "Fat %" → grasaCorporal (number only, e.g. 33.10)
-- "Fat Mass" → grasaCorporalKg (kg, e.g. 35.28)
-- "Muscle Mass" → masaMuscular (kg, e.g. 67.75)
-- "Total Body Water" → aguaCorporal (the % value, e.g. 47.90)
-- "Bone Mass" → masaOsea (kg, e.g. 3.50)
-- "Visceral Fat Rating" → grasaVisceral (number, integer or decimal, e.g. 8 or 5.5)
-- "BMI" → imc (e.g. 35.20)
-- "BMR" in kcal → metabolismoBasal (integer, e.g. 2156)
-- "Metabolic Age" → edadMetabolica (number, integer or decimal, e.g. 47 or 40.00)
-- "Protein" → proteina (kg in the body composition diagram, e.g. 16.69). NOTE: in this PDF protein has no label — it is the THIRD kg value on the line that contains Fat Mass and Bone Mass. Pattern: "[fatMassKg] kg - [boneKg] kg [proteinKg] kg". Example: "35.28 kg - 3.50 kg 16.69 kg" → proteina = 16.69
-- date field → fecha (DD/MM/YYYY)
+FIELD MAPPING (PDF label → JSON key):
+WHOLE-BODY:
+- "Weight" → peso (kg)
+- "Fat %" → grasaCorporal (number, no %)
+- "Fat Mass" → grasaCorporalKg (kg)
+- "Muscle Mass" → masaMuscular (kg, whole-body total)
+- "Total Body Water" → aguaCorporal (% value only)
+- "Bone Mass" → masaOsea (kg)
+- "Visceral Fat Rating" → grasaVisceral (number)
+- "BMI" → imc
+- "BMR" kcal → metabolismoBasal (integer)
+- "Metabolic Age" → edadMetabolica (number)
+- "Protein" → proteina (kg — third kg value on the Fat Mass / Bone Mass line)
+- date → fecha (DD/MM/YYYY)
+
+SEGMENTAL (from the segmental analysis section of the PDF):
+- "Trunk" muscle mass → musculoTronco (kg)
+- "Left Arm" muscle mass → musculoBrazoI (kg)
+- "Right Arm" muscle mass → musculoBrazoD (kg)
+- "Left Leg" muscle mass → musculoPiernaI (kg)
+- "Right Leg" muscle mass → musculoPiernaD (kg)
+- "Trunk" fat % → grasaTronco (%)
+- "Left Arm" fat % → grasaBrazoI (%)
+- "Right Arm" fat % → grasaBrazoD (%)
+- "Left Leg" fat % → grasaPiernaI (%)
+- "Right Leg" fat % → grasaPiernaD (%)
 
 Return ONLY valid JSON, no markdown, no explanations:
 {
@@ -851,7 +891,17 @@ Return ONLY valid JSON, no markdown, no explanations:
   "grasaVisceral": number or null,
   "edadMetabolica": number or null,
   "metabolismoBasal": number or null,
-  "proteina": number or null
+  "proteina": number or null,
+  "musculoTronco": number or null,
+  "musculoBrazoI": number or null,
+  "musculoBrazoD": number or null,
+  "musculoPiernaI": number or null,
+  "musculoPiernaD": number or null,
+  "grasaTronco": number or null,
+  "grasaBrazoI": number or null,
+  "grasaBrazoD": number or null,
+  "grasaPiernaI": number or null,
+  "grasaPiernaD": number or null
 }
 
 TEXT:
@@ -865,11 +915,23 @@ ${texto}`,
   try {
     const data = JSON.parse(raw);
     if (data.fecha && data.fecha.includes('undefined')) data.fecha = null;
-    if (fechaPreExtracted) data.fecha = fechaPreExtracted;
-    if (grasaPreExtracted) data.grasaCorporal = grasaPreExtracted;
-    if (bmrPreExtracted) data.metabolismoBasal = bmrPreExtracted;
-    if (visceralPreExtracted != null) data.grasaVisceral = visceralPreExtracted;
-    if (edadMetPreExtracted != null) data.edadMetabolica = edadMetPreExtracted;
+    // Sobrescribir con pre-extracciones (más confiables que Claude para valores numéricos)
+    if (fechaPreExtracted)         data.fecha            = fechaPreExtracted;
+    if (grasaPreExtracted)         data.grasaCorporal    = grasaPreExtracted;
+    if (bmrPreExtracted)           data.metabolismoBasal = bmrPreExtracted;
+    if (visceralPreExtracted!=null) data.grasaVisceral   = visceralPreExtracted;
+    if (edadMetPreExtracted!=null)  data.edadMetabolica  = edadMetPreExtracted;
+    // Segmentos: sobrescribir si el regex encontró el valor
+    if (musculoTroncoP!=null)  data.musculoTronco  = musculoTroncoP;
+    if (musculoBrazoIP!=null)  data.musculoBrazoI  = musculoBrazoIP;
+    if (musculoBrazoDP!=null)  data.musculoBrazoD  = musculoBrazoDP;
+    if (musculoPiernaIP!=null) data.musculoPiernaI = musculoPiernaIP;
+    if (musculoPiernaDP!=null) data.musculoPiernaD = musculoPiernaDP;
+    if (grasaTroncoP!=null)    data.grasaTronco    = grasaTroncoP;
+    if (grasaBrazoIP!=null)    data.grasaBrazoI    = grasaBrazoIP;
+    if (grasaBrazoDP!=null)    data.grasaBrazoD    = grasaBrazoDP;
+    if (grasaPiernaIP!=null)   data.grasaPiernaI   = grasaPiernaIP;
+    if (grasaPiernaDP!=null)   data.grasaPiernaD   = grasaPiernaDP;
     console.log('TANITA RESULTADO CLAUDE:', JSON.stringify(data, null, 2));
     return data;
   } catch { return {}; }
