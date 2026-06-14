@@ -272,6 +272,13 @@ const fmtF = (f) => {
   const [y,m,d] = f.split("-");
   return d+"/"+m+"/"+y;
 };
+// Normaliza fecha a DD/MM/YYYY sea cual sea su formato de entrada
+const normDate = (f) => {
+  if (!f) return "—";
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(f)) return f;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(f)) return f.split("-").reverse().join("/");
+  return f;
+};
 const fmtFLargo = (f) => {
   if (!f) return "";
   return new Date(f+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
@@ -1381,7 +1388,7 @@ const DocProgreso = ({p}) => {
         color:"white",borderRadius:10,padding:"14px 20px",marginBottom:16}}>
         <div style={{fontWeight:800,fontSize:14}}>REPORTE DE PROGRESO</div>
         <div style={{fontSize:12,opacity:0.9}}>{p.nombre}</div>
-        <div style={{fontSize:10,opacity:0.8}}>{n} mediciones · {primera&&primera.fecha} → {ultima&&ultima.fecha}</div>
+        <div style={{fontSize:10,opacity:0.8}}>{n} mediciones · {normDate(primera&&primera.fecha)} → {normDate(ultima&&ultima.fecha)}</div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:16}}>
         {[
@@ -1410,12 +1417,12 @@ const DocProgreso = ({p}) => {
           <Col label="Peso" ini={primera&&primera.peso} act={ultima&&ultima.peso} cambio={d(ultima&&ultima.peso,primera&&primera.peso)} unit="kg" positive={false}/>
           <Col label="IMC" ini={primera&&primera.imc} act={ultima&&ultima.imc} cambio={d(ultima&&ultima.imc,primera&&primera.imc)} positive={false}/>
           <Col label="% Grasa" ini={primera&&primera.grasa} act={ultima&&ultima.grasa} cambio={d(ultima&&ultima.grasa,primera&&primera.grasa)} unit="%" positive={false}/>
-          <Col label="Músculo" ini={primera&&primera.masaMuscular} act={ultima&&ultima.masaMuscular} cambio={d(ultima&&ultima.masaMuscular,primera&&primera.masaMuscular)} unit="kg" positive={true}/>
-          <Col label="Agua" ini={primera&&primera.aguaCorporal} act={ultima&&ultima.aguaCorporal} cambio={d(ultima&&ultima.aguaCorporal,primera&&primera.aguaCorporal)} unit="%" positive={true}/>
-          <Col label="Grasa visceral" ini={primera&&primera.grasaVisceral} act={ultima&&ultima.grasaVisceral} cambio={d(ultima&&ultima.grasaVisceral,primera&&primera.grasaVisceral)} positive={false}/>
-          <Col label="Edad metabólica" ini={primera&&primera.edadMetabolica} act={ultima&&ultima.edadMetabolica} cambio={d(ultima&&ultima.edadMetabolica,primera&&primera.edadMetabolica)} unit="años" positive={false}/>
+          <Col label="Músculo" ini={primera&&primera.musculo} act={ultima&&ultima.musculo} cambio={d(ultima&&ultima.musculo,primera&&primera.musculo)} unit="kg" positive={true}/>
+          <Col label="Agua" ini={primera&&primera.agua} act={ultima&&ultima.agua} cambio={d(ultima&&ultima.agua,primera&&primera.agua)} unit="%" positive={true}/>
+          <Col label="Grasa visceral" ini={primera&&primera.visceral} act={ultima&&ultima.visceral} cambio={d(ultima&&ultima.visceral,primera&&primera.visceral)} positive={false}/>
+          <Col label="Edad metabólica" ini={primera&&primera.edadMet} act={ultima&&ultima.edadMet} cambio={d(ultima&&ultima.edadMet,primera&&primera.edadMet)} unit="años" positive={false}/>
           <Col label="Circ. abdominal" ini={caIni} act={caAct} cambio={d(caAct,caIni)} unit="cm" positive={false}/>
-          <Col label="Masa ósea" ini={primera&&primera.masaOsea} act={ultima&&ultima.masaOsea} cambio={d(ultima&&ultima.masaOsea,primera&&primera.masaOsea)} unit="kg" positive={true}/>
+          <Col label="Masa ósea" ini={primera&&primera.osea} act={ultima&&ultima.osea} cambio={d(ultima&&ultima.osea,primera&&primera.osea)} unit="kg" positive={true}/>
           <Col label="BMR" ini={primera&&primera.bmr} act={ultima&&ultima.bmr} cambio={d(ultima&&ultima.bmr,primera&&primera.bmr)} unit="kcal" positive={true}/>
         </tbody>
       </table>
@@ -2745,7 +2752,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     msg += `*RESUMEN*\n`;
     if (primera && ultima) {
       msg += `${comps.length} mediciones\n`;
-      msg += `${primera.fecha?fmtF(primera.fecha):""} - ${ultima.fecha?fmtF(ultima.fecha):""}\n\n`;
+      msg += `${normDate(primera.fecha)} - ${normDate(ultima.fecha)}\n\n`;
     }
     msg += `*Composición corporal*\n`;
     if (dif(primera&&primera.peso, ultima&&ultima.peso)!=null)
