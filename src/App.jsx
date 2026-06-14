@@ -1614,7 +1614,7 @@ const DocProgreso = ({p}) => {
       const raw=parseFloat(rawAct);
       return (
         <span style={{fontSize:10,color:C.suave}}>
-          = {isNaN(raw)?"":`${raw.toFixed(1)} ${unit}`}
+          {isNaN(raw)?"":`${raw.toFixed(1)} ${unit}`}
         </span>
       );
     }
@@ -1659,7 +1659,7 @@ const DocProgreso = ({p}) => {
             <div style={{fontSize:10,fontWeight:700,color:C.suave,textTransform:"uppercase",
               letterSpacing:"0.05em",marginBottom:4}}>{m.l}</div>
             <div style={{fontSize:22,fontWeight:800,lineHeight:1,color:"#1B3F8B"}}>{m.v}</div>
-            {m.d!=null&&(
+            {m.d!=null&&m.d!=="0"&&(
               <div style={{fontSize:11,fontWeight:700,marginTop:4,color:dcol(m.d,m.pos)}}>{m.d}</div>
             )}
           </div>
@@ -3158,8 +3158,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         const md=difNum(ultima[s.mKey],waSegRef[s.mKey]);
         const gd=difNum(ultima[s.gKey],waSegRef[s.gKey]);
         if(md==null&&gd==null) return null;
-        const mTxt=md==null?"":md===0?` músculo = ${parseFloat(ultima[s.mKey]).toFixed(1)} kg (sin cambio)`:` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
-        const gTxt=gd==null?"":gd===0?` grasa = ${parseFloat(ultima[s.gKey]).toFixed(1)}% (sin cambio)`:" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
+        const mTxt=md==null?"":md===0?` músculo: ${parseFloat(ultima[s.mKey]).toFixed(1)} kg`:` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
+        const gTxt=gd==null?"":gd===0?` grasa: ${parseFloat(ultima[s.gKey]).toFixed(1)}%`:" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
         return `• ${s.label}:${mTxt}${gTxt}`;
       }).filter(Boolean);
       if (segLines.length) {
