@@ -1401,23 +1401,25 @@ const DocProgreso = ({p}) => {
   const lineD = pts.length>1?pts.map((pt,i)=>(i===0?"M":" L")+pt.x+","+pt.y).join(""):null;
   const areaD = lineD?lineD+` L${pts[pts.length-1].x},${CH-14} L${pts[0].x},${CH-14} Z`:null;
 
-  // RangeBar — posición dentro de rango saludable
+  // RangeBar — dot color driven by zone (same gradient logic as track)
   const RangeBar = ({label, value, min, max, unit=""}) => {
     const v=parseFloat(value);
     if(isNaN(v)) return null;
     const lo=min*0.7, hi=max*1.35;
     const pct=Math.min(Math.max((v-lo)/(hi-lo)*100,2),98);
     const ok=v>=min&&v<=max;
+    // zone: green if in range, yellow if slightly outside, red if far
+    const dotCol = ok?"#1D9E75":(pct>20&&pct<80?"#FAC775":"#D85A30");
     return (
       <div style={{marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
           <span style={{fontSize:10,fontWeight:700}}>{label}</span>
-          <span style={{fontSize:10,fontWeight:800,color:ok?"#1D9E75":"#D85A30"}}>{value} {unit}</span>
+          <span style={{fontSize:10,fontWeight:800,color:dotCol}}>{value} {unit}</span>
         </div>
         <div style={{position:"relative",height:8,borderRadius:4,
           background:"linear-gradient(to right,#F0997B 0%,#FAC775 30%,#5DCAA5 50%,#FAC775 75%,#F0997B 100%)"}}>
           <div style={{position:"absolute",top:-3,left:pct+"%",transform:"translateX(-50%)",
-            width:14,height:14,borderRadius:"50%",background:ok?"#1D9E75":"#D85A30",
+            width:14,height:14,borderRadius:"50%",background:dotCol,
             border:"2px solid white",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:8,color:C.suave}}>
@@ -1446,7 +1448,7 @@ const DocProgreso = ({p}) => {
   const bmrIni     = primera?.bmr!=null ? parseFloat(primera.bmr) : null;
   const bmrAct     = ultima?.bmr!=null  ? parseFloat(ultima.bmr)  : null;
 
-  // GoalBar — posición = progreso de valor inicial hacia meta
+  // GoalBar — dot color by zone (red→yellow→green track), labels show inicio/meta
   const GoalBar = ({label, valIni, valAct, valMeta, unit="", lowerBetter=false}) => {
     const act  = valAct!=null  ? parseFloat(valAct)  : null;
     const meta = valMeta!=null ? parseFloat(valMeta) : null;
@@ -1459,23 +1461,51 @@ const DocProgreso = ({p}) => {
       const done  = lowerBetter?(ini-act):(act-ini);
       pct = total===0?95:Math.min(Math.max((done/total)*100,2),98);
     }
-    const fmtN = v => (typeof v==="number"&&!isNaN(v)) ? (Number.isInteger(v)?v:v.toFixed(1)) : v;
+    const dotCol = pct>=70?"#1D9E75":pct>=35?"#FAC775":"#D85A30";
+    const fmtN = v => (typeof v==="number"&&!isNaN(v))?(Number.isInteger(v)?String(v):v.toFixed(1)):String(v);
     return (
       <div style={{marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
           <span style={{fontSize:10,fontWeight:700}}>{label}</span>
           <span style={{fontSize:10}}>
-            <span style={{fontWeight:800,color:atGoal?"#1D9E75":"#D85A30"}}>{fmtN(act)} {unit}</span>
+            <span style={{fontWeight:800,color:atGoal?"#1D9E75":dotCol}}>{fmtN(act)} {unit}</span>
             <span style={{color:C.suave,marginLeft:6}}>Meta: {fmtN(meta)} {unit}</span>
           </span>
         </div>
         <div style={{position:"relative",height:8,borderRadius:4,
           background:"linear-gradient(to right,#F0997B 0%,#FAC775 40%,#5DCAA5 100%)"}}>
           <div style={{position:"absolute",top:-3,left:pct+"%",transform:"translateX(-50%)",
-            width:14,height:14,borderRadius:"50%",background:atGoal?"#1D9E75":"#D85A30",
+            width:14,height:14,borderRadius:"50%",background:dotCol,
             border:"2px solid white",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
         </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:8,color:C.suave}}>
+          <span>Inicio: {fmtN(ini!=null?ini:act)} {unit}</span>
+          <span>Meta: {fmtN(meta)} {unit}</span>
+        </div>
       </div>
+    );
+  };
+
+  // Segmentos corporales (de Tanita segmental)
+  const SEGS = [
+    {label:"Tronco",      mKey:"musculoTronco",    gKey:"grasaTronco"},
+    {label:"Brazo izq.",  mKey:"musculoBrazoIzq",  gKey:"grasaBrazoIzq"},
+    {label:"Brazo der.",  mKey:"musculoBrazoDer",  gKey:"grasaBrazoDer"},
+    {label:"Pierna izq.", mKey:"musculoPiernaIzq", gKey:"grasaPiernaIzq"},
+    {label:"Pierna der.", mKey:"musculoPiernaDer", gKey:"grasaPiernaDer"},
+  ];
+  const hasSegmental = primera&&ultima&&SEGS.some(s=>
+    (primera[s.mKey]!=null||primera[s.gKey]!=null)&&
+    (ultima[s.mKey]!=null ||ultima[s.gKey]!=null)
+  );
+  const SegCell = ({val, positiveGood, unit}) => {
+    const v=parseFloat(val);
+    if(isNaN(v)||v===0) return <span style={{color:C.suave,fontSize:10}}>—</span>;
+    const good=positiveGood?v>0:v<0;
+    return (
+      <span style={{fontWeight:700,fontSize:10,color:good?"#1D9E75":"#D85A30"}}>
+        {v>0?"↑":"↓"} {Math.abs(v).toFixed(1)} {unit}
+      </span>
     );
   };
 
@@ -1483,15 +1513,15 @@ const DocProgreso = ({p}) => {
 
   return (
     <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-      {/* Header */}
+      {/* 1. Header — logo + cédula alineada (mismo color que texto del logo) */}
       <div style={{marginBottom:12,paddingBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
         <img src={IMG_LOGO} alt="Logo" style={{maxWidth:225,width:"100%",height:"auto",display:"block"}}/>
-        <div style={{fontSize:8,color:C.suave,marginTop:2,letterSpacing:"0.02em"}}>
+        <div style={{fontSize:9,color:"#1A2332",marginTop:1,letterSpacing:"0.01em"}}>
           Céd. Prof. 15131213 · Reg. SSA: 10361/16
         </div>
       </div>
 
-      {/* Hero banner */}
+      {/* 2. Hero banner */}
       <div style={{background:"linear-gradient(135deg,#1B3F8B,#5BC4A0)",color:"white",
         borderRadius:10,padding:"18px 20px",marginBottom:14}}>
         <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",opacity:0.85,marginBottom:2}}>
@@ -1503,7 +1533,7 @@ const DocProgreso = ({p}) => {
         </div>
       </div>
 
-      {/* Métricas hero 2×2 */}
+      {/* 3. Métricas hero 2×2 — valor en azul marino */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         {[
           {l:"PESO ACTUAL",    v:ultima?.peso    ?ultima.peso+" kg":"—",    d:pesoDif,    pos:false},
@@ -1514,7 +1544,7 @@ const DocProgreso = ({p}) => {
           <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:12}}>
             <div style={{fontSize:10,fontWeight:700,color:C.suave,textTransform:"uppercase",
               letterSpacing:"0.05em",marginBottom:4}}>{m.l}</div>
-            <div style={{fontSize:22,fontWeight:800,lineHeight:1}}>{m.v}</div>
+            <div style={{fontSize:22,fontWeight:800,lineHeight:1,color:"#1B3F8B"}}>{m.v}</div>
             {m.d!=null&&(
               <div style={{fontSize:11,fontWeight:700,marginTop:4,color:dcol(m.d,m.pos)}}>{m.d}</div>
             )}
@@ -1568,6 +1598,42 @@ const DocProgreso = ({p}) => {
           <RangeBar label="Grasa visceral" value={ultima?.visceral} min={1} max={12}/>
         </div>
       </div>
+
+      {/* 4. Progreso por segmento */}
+      {hasSegmental&&(
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:2}}>Progreso por segmento</div>
+          <div style={{fontSize:9,color:C.suave,marginBottom:8}}>
+            Cambio en composición muscular y grasa por zona
+          </div>
+          <div style={{background:"#F4F6FB",borderRadius:10,padding:"12px 14px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
+              borderBottom:"1px solid #E2E8F0",paddingBottom:6,marginBottom:4}}>
+              <span style={{fontSize:9,fontWeight:700,color:C.suave}}>Zona</span>
+              <span style={{fontSize:9,fontWeight:700,color:C.suave,textAlign:"center"}}>Músculo</span>
+              <span style={{fontSize:9,fontWeight:700,color:C.suave,textAlign:"right"}}>Grasa</span>
+            </div>
+            {SEGS.map((s,i)=>{
+              const md=difNum(ultima[s.mKey],primera[s.mKey]);
+              const gd=difNum(ultima[s.gKey],primera[s.gKey]);
+              if(md==null&&gd==null) return null;
+              return (
+                <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
+                  padding:"5px 0",borderBottom:i<SEGS.length-1?"1px solid #E2E8F0":"none",
+                  alignItems:"center"}}>
+                  <span style={{fontSize:10,color:C.suave}}>{s.label}</span>
+                  <span style={{textAlign:"center"}}>
+                    <SegCell val={md} positiveGood={true} unit="kg"/>
+                  </span>
+                  <span style={{textAlign:"right"}}>
+                    <SegCell val={gd} positiveGood={false} unit="%"/>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Metas personalizadas */}
       {hasMetas&&(
@@ -2900,9 +2966,16 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const caDif      = difStr(caAct, caIni);
     const pesoChange = difNum(ultima?.peso, primera?.peso);
 
-    const inRange = (v, min, max) => {
+    // Zona del rango (verde/amarillo/rojo según distancia)
+    const zoneRange = (v, min, max) => {
       const nv=parseFloat(v); if(isNaN(nv)) return null;
-      return nv>=min&&nv<=max ? "✅ dentro del rango normal" : nv<min ? "⚠️ por debajo de lo normal" : "⚠️ por encima de lo normal";
+      if(nv>=min&&nv<=max) return "✅ dentro del rango normal";
+      const lo=min*0.7, hi=max*1.35;
+      const pct=Math.min(Math.max((nv-lo)/(hi-lo)*100,0),100);
+      const near=(pct>20&&pct<80);
+      return nv<min
+        ? (near?"🟡 ligeramente por debajo del rango":"⚠️ por debajo del rango normal")
+        : (near?"🟡 ligeramente elevado":"⚠️ por encima del rango normal");
     };
 
     // Metas personalizadas — estimación de referencia, validar con criterio clínico
@@ -2919,6 +2992,19 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const musculoIni = primera?.musculo!=null ? parseFloat(primera.musculo) : null;
     const musculoAct = ultima?.musculo!=null  ? parseFloat(ultima.musculo)  : null;
     const bmrAct     = ultima?.bmr!=null      ? parseFloat(ultima.bmr)      : null;
+
+    // Segmentos corporales
+    const WA_SEGS = [
+      {label:"Tronco",      mKey:"musculoTronco",    gKey:"grasaTronco"},
+      {label:"Brazo izq.",  mKey:"musculoBrazoIzq",  gKey:"grasaBrazoIzq"},
+      {label:"Brazo der.",  mKey:"musculoBrazoDer",  gKey:"grasaBrazoDer"},
+      {label:"Pierna izq.", mKey:"musculoPiernaIzq", gKey:"grasaPiernaIzq"},
+      {label:"Pierna der.", mKey:"musculoPiernaDer", gKey:"grasaPiernaDer"},
+    ];
+    const hasSegWA = primera&&ultima&&WA_SEGS.some(s=>
+      (primera[s.mKey]!=null||primera[s.gKey]!=null)&&
+      (ultima[s.mKey]!=null ||ultima[s.gKey]!=null)
+    );
 
     const primerNom = (p.nombre||"").split(" ")[0]||"";
     let msg = `Hola ${primerNom}, le comparto su reporte de progreso:\n\n`;
@@ -2940,15 +3026,31 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     msg += `\n`;
 
     // Rangos saludables
-    const imcRange   = ultima?.imc     ? inRange(ultima.imc,   18.5, 25)                       : null;
-    const grasaRange = ultima?.grasa   ? inRange(ultima.grasa, esMujer?24:11, esMujer?36:21)   : null;
-    const viscRange  = ultima?.visceral? inRange(ultima.visceral, 1, 12)                        : null;
+    const imcRange   = ultima?.imc      ? zoneRange(ultima.imc,    18.5, 25)                     : null;
+    const grasaRange = ultima?.grasa    ? zoneRange(ultima.grasa,  esMujer?24:11, esMujer?36:21) : null;
+    const viscRange  = ultima?.visceral ? zoneRange(ultima.visceral, 1, 12)                       : null;
     if (imcRange||grasaRange||viscRange) {
       msg += `*📐 Rangos saludables*\n`;
       if (imcRange)   msg += `• IMC ${ultima.imc}: ${imcRange}\n`;
       if (grasaRange) msg += `• Grasa ${ultima.grasa}%: ${grasaRange}\n`;
       if (viscRange)  msg += `• Grasa visceral ${ultima.visceral}: ${viscRange}\n`;
       msg += `\n`;
+    }
+
+    // Progreso por segmento
+    if (hasSegWA) {
+      const segLines = WA_SEGS.map(s=>{
+        const md=difNum(ultima[s.mKey],primera[s.mKey]);
+        const gd=difNum(ultima[s.gKey],primera[s.gKey]);
+        if(md==null&&gd==null) return null;
+        const mTxt=md==null?"":` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
+        const gTxt=gd==null?"":" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
+        return `• ${s.label}:${mTxt}${gTxt}`;
+      }).filter(Boolean);
+      if (segLines.length) {
+        msg += `*📊 Progreso por segmento*\n`;
+        msg += segLines.join("\n")+"\n\n";
+      }
     }
 
     // Metas personalizadas
