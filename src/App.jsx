@@ -1053,7 +1053,7 @@ const G4 = ({children}) => (
 const LogoDoc = ({compact=false, conCedula=true, firmaB64}) => (
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
     marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
-    <img src={IMG_LOGO} alt="Logo" style={{height:compact?165:215,objectFit:"contain",display:"block"}}/>
+    <img src={IMG_LOGO} alt="Logo" style={{height:compact?165:215,objectFit:"contain",objectPosition:"top",display:"block"}}/>
     <div style={{textAlign:"right",fontSize:10,color:"#64748B",lineHeight:1.6,paddingTop:0}}>
       <div>Av. Adolfo de la Huerta 200A 2do piso</div>
       <div>Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
