@@ -5003,19 +5003,24 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                             <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
                               color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
                             <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                              <div title={c.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
                                 textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
                               <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
                                 {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
                               </div>
                             </div>
-                            {c.pac?.telefono&&(
+                            {c.pac&&(c.pac.telefono?(
                               <button className="gft-btn gft-btn--secondary gft-btn--sm"
                                 style={{flexShrink:0,fontSize:11}}
                                 onClick={e=>{e.stopPropagation();enviarRecordatorio(c);}}>
                                 📱 Recordatorio
                               </button>
-                            )}
+                            ):(
+                              <span title="Sin teléfono registrado"
+                                style={{flexShrink:0,fontSize:16,opacity:0.35,cursor:"default",userSelect:"none"}}>
+                                📵
+                              </span>
+                            ))}
                           </div>
                         );
                       })}
@@ -5038,7 +5043,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                           <div key={pac.id} className="gft-patient-row" onClick={()=>onVer(pac)}>
                             <div className={`gft-avatar gft-avatar--sm gft-avatar--${color}`}>{getIniciales(pac.nombre)}</div>
                             <div style={{flex:1,minWidth:0}}>
-                              <div className="gft-patient-row__name" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pac.nombre}</div>
+                              <div title={pac.nombre} className="gft-patient-row__name" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pac.nombre}</div>
                               <div className="gft-patient-row__meta">
                                 {(pac.consultas||[]).length} consultas{uc?.fecha?" · "+fmtF(uc.fecha):""}
                               </div>
@@ -5071,7 +5076,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                           <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
                             color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
                           <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                            <div title={c.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
                               textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
                             <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
                               {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
@@ -5096,7 +5101,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                           <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
                             padding:"8px 0",borderBottom:i<labsHoy.length-1?"1px solid var(--gft-border)":"none",
                             cursor:"pointer"}} onClick={()=>onVer(pac)}>
-                            <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                            <div title={pac.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
                               textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,marginRight:8}}>{pac.nombre}</div>
                             {sinLabs
                               ? <span className="gft-pill gft-pill--amber">Sin labs</span>
