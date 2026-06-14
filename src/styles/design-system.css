@@ -926,6 +926,27 @@ select.gft-input {
 
 @media (max-width: 768px) {
   .gft-sidebar { display: none; }
-  .gft-content { padding: 16px; }
-  .gft-topbar  { padding: 0 16px; }
+  .gft-content { padding: 12px; }
+  .gft-topbar  { padding: 0 12px; gap: 8px; }
+
+  /* Topbar — título truncado en pantallas pequeñas */
+  .gft-topbar__info { overflow: hidden; }
+  .gft-topbar__title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Stats — más compactos en móvil (2×2) */
+  .gft-dash-stats { gap: 8px; margin-bottom: 12px; }
+  .gft-stat { padding: 10px 12px; }
+  .gft-stat__label { font-size: 10px; margin-bottom: 3px; letter-spacing: 0; }
+  .gft-stat__value { font-size: 26px; }
+  .gft-stat__unit  { font-size: 10px; }
+
+  /* Panels — reducir espaciado entre secciones */
+  .gft-panel { padding: 12px; margin-bottom: 10px; }
+  .gft-panel__header { margin-bottom: 8px; }
+  .gft-paciente-actual { padding: 14px; margin-bottom: 10px; }
+}
+
+@media (max-width: 400px) {
+  /* iPhone SE / mini: ocultar texto del botón "Nuevo paciente", dejar solo "+" */
+  .gft-topbar .gft-btn--primary span.label-full { display: none; }
 }

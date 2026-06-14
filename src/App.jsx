@@ -4525,7 +4525,7 @@ const getAvatarColor = (nombre="") => {
   return colors[(nombre.charCodeAt(0)||0)%colors.length];
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes}) => {
+const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida}) => {
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
   const [showImport, setShowImport] = useState(false);
@@ -4533,6 +4533,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [busq, setBusq] = useState("");
   const [labsFilter, setLabsFilter] = useState(false);
   const [hovStat, setHovStat] = useState(null);
+  const [quickAction, setQuickAction] = useState(null); // null | "receta" | "labs"
+  const [quickBusq, setQuickBusq] = useState("");
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
   // Sanitizar pacientes: asegurar que sea array y filtrar inválidos
@@ -4871,6 +4873,69 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                   </div>
                 ))}
               </div>
+
+              {/* Acciones rápidas */}
+              <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+                {[
+                  {l:"📝 Receta rápida",     k:"receta"},
+                  {l:"🧪 Orden de labs rápida", k:"labs"},
+                ].map(a=>(
+                  <button key={a.k} className="gft-btn gft-btn--secondary gft-btn--sm"
+                    style={{flex:"1 1 140px",justifyContent:"center",fontWeight:700}}
+                    onClick={()=>{setQuickAction(a.k);setQuickBusq("");}}>
+                    {a.l}
+                  </button>
+                ))}
+              </div>
+
+              {/* Patient picker modal para acciones rápidas */}
+              {quickAction&&(
+                <div style={{position:"fixed",inset:0,zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"}}
+                  onClick={()=>setQuickAction(null)}>
+                  <div style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",
+                    borderRadius:16,padding:20,width:"min(420px,92vw)",maxHeight:"70vh",display:"flex",
+                    flexDirection:"column",boxShadow:"0 24px 80px rgba(0,0,0,.7)"}}
+                    onClick={e=>e.stopPropagation()}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                      <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)"}}>
+                        {quickAction==="receta"?"📝 Receta rápida — seleccionar paciente":"🧪 Labs rápida — seleccionar paciente"}
+                      </div>
+                      <button onClick={()=>setQuickAction(null)}
+                        style={{background:"none",border:"none",color:"var(--gft-text-muted)",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
+                    </div>
+                    <input className="gft-input" autoFocus placeholder="Buscar paciente…"
+                      value={quickBusq} onChange={e=>setQuickBusq(e.target.value)}
+                      style={{marginBottom:12}}/>
+                    <div style={{overflowY:"auto",flex:1}}>
+                      {pacientes
+                        .filter(p=>(p.nombre||"").toLowerCase().includes(quickBusq.toLowerCase()))
+                        .slice(0,20)
+                        .map(p=>(
+                          <div key={p.id} onClick={()=>{
+                            setQuickAction(null);
+                            quickAction==="receta" ? onRecetaRapida&&onRecetaRapida(p) : onLabsRapida&&onLabsRapida(p);
+                          }} style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",
+                            display:"flex",alignItems:"center",gap:10,
+                            borderBottom:"1px solid var(--gft-border)"}}
+                            onMouseEnter={e=>e.currentTarget.style.background="var(--gft-surface2)"}
+                            onMouseLeave={e=>e.currentTarget.style.background=""}>
+                            <div className={`gft-avatar gft-avatar--sm gft-avatar--${getAvatarColor(p.nombre||"")}`}>{getIniciales(p.nombre)}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontWeight:700,fontSize:13,color:"var(--gft-text)",
+                                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                              <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
+                                {p.edad?" "+p.edad+" años ·":""} {(p.consultas||[]).length} consultas
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      {pacientes.filter(p=>(p.nombre||"").toLowerCase().includes(quickBusq.toLowerCase())).length===0&&(
+                        <div style={{textAlign:"center",padding:20,color:"var(--gft-text-muted)",fontSize:13}}>Sin resultados</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 2-col grid */}
               <div className="gft-dash-grid">
@@ -5469,6 +5534,8 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
   const [firmaB64, setFirmaB64] = useState(null);
   const [showOrdenRapida, setShowOrdenRapida] = useState(false);
+  const [rapidaRecetaPac, setRapidaRecetaPac] = useState(null);
+  const [rapidaLabsPac, setRapidaLabsPac] = useState(null);
   const [agendarPara, setAgendarPara] = useState(false); // false=cerrado, null=abierto sin paciente, objeto=abierto con paciente
   const [ultimaCita, setUltimaCita] = useState(null);
   const [gcalAuthed, setGcalAuthed] = useState(false);
@@ -5648,7 +5715,13 @@ export default function App() {
         onCancelarCita={cancelarCitaDashboard}
         onImportarGCal={importarPacientesGCal}
         onAjustes={()=>setShowConfig(true)}
+        onRecetaRapida={p=>setRapidaRecetaPac(p)}
+        onLabsRapida={p=>setRapidaLabsPac(p)}
       />
+      {rapidaRecetaPac&&<ModalReceta p={rapidaRecetaPac} firmaB64={firmaB64} onClose={()=>setRapidaRecetaPac(null)}
+        onSave={async r=>{await updPac({...rapidaRecetaPac,recetas:[...(rapidaRecetaPac.recetas||[]),r]});setRapidaRecetaPac(null);}}/>}
+      {rapidaLabsPac&&<ModalLabs p={rapidaLabsPac} onClose={()=>setRapidaLabsPac(null)}
+        onSave={async l=>{await updPac({...rapidaLabsPac,laboratorios:[...(rapidaLabsPac.laboratorios||[]),l]});setRapidaLabsPac(null);}}/>}
       {mNuevo && <ModalPaciente onClose={()=>setMNuevo(false)} onSave={savePac}/>}
       {showConfig && (
         <ModalConfig firmaB64={firmaB64} onSave={saveFirma} onClose={()=>setShowConfig(false)}/>
