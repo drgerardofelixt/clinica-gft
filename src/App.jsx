@@ -1053,14 +1053,12 @@ const G4 = ({children}) => (
 const LogoDoc = ({compact=false, conCedula=true, firmaB64}) => (
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
     marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
-    <img src={IMG_LOGO} alt="Logo" style={{height:compact?165:215,objectFit:"contain"}}/>
-    <div style={{textAlign:"right",fontSize:10,color:"#64748B",lineHeight:1.6}}>
+    <img src={IMG_LOGO} alt="Logo" style={{height:compact?165:215,objectFit:"contain",display:"block"}}/>
+    <div style={{textAlign:"right",fontSize:10,color:"#64748B",lineHeight:1.6,paddingTop:0}}>
       <div>Av. Adolfo de la Huerta 200A 2do piso</div>
       <div>Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
       <div style={{fontWeight:700,color:"#1B3F8B"}}>(662) 298-4145</div>
       <div>dr.gerardofelix@gmail.com</div>
-      {conCedula && <div style={{marginTop:4,fontSize:9}}>Céd. Prof. 15131213 · Reg. SSA: 10361/16</div>}
-      {firmaB64 && <img src={firmaB64} alt="Firma" style={{height:40,marginTop:4}}/>}
     </div>
   </div>
 );
@@ -1074,10 +1072,10 @@ const FooterDoc = () => (
 );
 
 const Firma = ({fecha="", hora="", firmaB64}) => (
-  <div style={{marginTop:16,display:"flex",justifyContent:"flex-end"}}>
-    <div style={{textAlign:"center",minWidth:160}}>
-      {firmaB64 && <img src={firmaB64} alt="Firma" style={{height:50,marginBottom:4}}/>}
-      <div style={{borderTop:"1px solid #1A2332",paddingTop:4,fontSize:10,color:"#1A2332"}}>
+  <div style={{marginTop:40,display:"flex",justifyContent:"center"}}>
+    <div style={{textAlign:"center",minWidth:200}}>
+      {firmaB64 && <img src={firmaB64} alt="Firma" style={{height:56,marginBottom:6,display:"block",margin:"0 auto 6px"}}/>}
+      <div style={{borderTop:"1px solid #1A2332",paddingTop:6,fontSize:10,color:"#1A2332"}}>
         <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
         <div style={{fontSize:9,color:"#64748B"}}>Céd. Prof. 15131213</div>
       </div>
