@@ -375,7 +375,7 @@ const diasHasta = (f) => {
 };
 const estadoLabs = (fecha) => {
   const d = diasDesde(fecha);
-  if (d===null) return {nivel:"rojo",dias:null,msg:"Sin laboratorios registrados — solicitar"};
+  if (d===null) return {nivel:"amarillo",dias:null,msg:"Sin laboratorios registrados — solicitar"};
   if (d>=90) return {nivel:"rojo",dias:d,msg:"Labs vencidos hace "+(d-90)+" días"};
   if (d>=80) return {nivel:"amarillo",dias:d,msg:"Labs vencen en "+(90-d)+" días"};
   return {nivel:"verde",dias:d,msg:"Labs al día"};
@@ -3047,7 +3047,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     ...(p.laboratorios||[]).map(l=>l.fecha),
     p.labsI?.fecha,
   ].filter(Boolean).sort();
-  const alerta = estadoLabs(_labDates.length ? _labDates[_labDates.length-1] : null);
+  const _hasRealConsultas = (p.consultas||[]).filter(c=>!c.esSoloCita).length > 0;
+  const alerta = _hasRealConsultas
+    ? estadoLabs(_labDates.length ? _labDates[_labDates.length-1] : null)
+    : {nivel:"none", dias:null, msg:""};
   const proxCitas = (p.consultas||[])
     .map(c=>({fecha:c.proxCita,p:c}))
     .filter(x=>x.fecha && diasHasta(x.fecha)>=0)
@@ -4547,8 +4550,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
     return ds.length ? ds[ds.length-1] : null;
   };
   const labsHoy = pacientes.filter(p=>{
+    if ((p.consultas||[]).filter(c=>!c.esSoloCita).length === 0) return false; // sin consultas reales
     const last = getLastLabDate(p);
-    if (!last) return true; // nunca ha tenido labs
+    if (!last) return true; // con consultas pero sin labs nunca
     const dias = Math.floor((hoy.getTime()-new Date(last+"T00:00:00").getTime())/86400000);
     return dias >= 90;
   });
@@ -5086,15 +5090,20 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                         <div className="gft-panel__title" style={{color:"var(--gft-danger)"}}>🚨 Alertas</div>
                         <span className="gft-panel__count" style={{background:"var(--gft-danger-dim)",color:"var(--gft-danger)"}}>{labsHoy.length}</span>
                       </div>
-                      {labsHoy.map((pac,i)=>(
-                        <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                          padding:"8px 0",borderBottom:i<labsHoy.length-1?"1px solid var(--gft-border)":"none",
-                          cursor:"pointer"}} onClick={()=>onVer(pac)}>
-                          <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                            textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,marginRight:8}}>{pac.nombre}</div>
-                          <span className="gft-pill gft-pill--red">+90 días</span>
-                        </div>
-                      ))}
+                      {labsHoy.map((pac,i)=>{
+                        const sinLabs = !getLastLabDate(pac);
+                        return (
+                          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                            padding:"8px 0",borderBottom:i<labsHoy.length-1?"1px solid var(--gft-border)":"none",
+                            cursor:"pointer"}} onClick={()=>onVer(pac)}>
+                            <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                              textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,marginRight:8}}>{pac.nombre}</div>
+                            {sinLabs
+                              ? <span className="gft-pill gft-pill--amber">Sin labs</span>
+                              : <span className="gft-pill gft-pill--red">+90 días</span>}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -5226,11 +5235,12 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               {(()=>{
                 let filt = pacientes.filter(p=>(p.nombre||"").toLowerCase().includes(busq.toLowerCase()));
                 if (labsFilter) {
-                  filt = [...filt].sort((a,b)=>{
-                    const aNeed = estadoLabs(getLastLabDate(a)).nivel==="rojo"?0:1;
-                    const bNeed = estadoLabs(getLastLabDate(b)).nivel==="rojo"?0:1;
-                    return aNeed-bNeed;
-                  });
+                  const labNeed = p => {
+                    if ((p.consultas||[]).filter(c=>!c.esSoloCita).length===0) return 2;
+                    const niv = estadoLabs(getLastLabDate(p)).nivel;
+                    return niv==="rojo"?0:niv==="amarillo"?1:2;
+                  };
+                  filt = [...filt].sort((a,b)=>labNeed(a)-labNeed(b));
                 }
                 if (filt.length===0) return (
                   <div style={{textAlign:"center",padding:"60px 20px",color:"var(--gft-text-muted)"}}>
@@ -5249,7 +5259,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       const uc=(p.composicion||[]).slice(-1)[0];
                       const pc=(p.composicion||[])[0];
                       const perd=uc&&pc&&uc.peso&&pc.peso?(parseFloat(pc.peso)-parseFloat(uc.peso)).toFixed(1):null;
-                      const al=estadoLabs(getLastLabDate(p));
+                      const _hasRC=(p.consultas||[]).filter(c=>!c.esSoloCita).length>0;
+                      const al=_hasRC?estadoLabs(getLastLabDate(p)):{nivel:"none",dias:null,msg:""};
                       const borderColor=al.nivel==="rojo"?"var(--gft-danger)":al.nivel==="amarillo"?"var(--gft-warning)":"var(--gft-border)";
                       return (
                         <div key={p.id} onClick={()=>onVer(p)}
