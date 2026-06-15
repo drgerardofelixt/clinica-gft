@@ -1188,6 +1188,8 @@ const generarYDescargarPDF = async (contentRef, filename) => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    // 500ms después de iniciar la descarga, abrir en Preview (macOS detecta blob PDF)
+    setTimeout(() => window.open(url, "_blank"), 500);
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch(e) {
     console.error("PDF error:", e);
@@ -3091,7 +3093,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     {id:"hc",l:"📁 Expediente"},
   ];
 
-  const waProgreso = () => {
+  // Genera el texto detallado de WhatsApp con todo el resumen de progreso
+  const generarMsgProgreso = () => {
     const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
     const primera = comps[0];
     const ultima  = comps[comps.length-1];
@@ -3114,7 +3117,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const caDif      = difStr(caAct, caIni);
     const pesoChange = difNum(ultima?.peso, primera?.peso);
 
-    // Zona del rango (verde/amarillo/rojo según distancia)
     const zoneRange = (v, min, max) => {
       const nv=parseFloat(v); if(isNaN(nv)) return null;
       if(nv>=min&&nv<=max) return "✅ dentro del rango normal";
@@ -3126,7 +3128,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         : (near?"🟡 ligeramente elevado":"⚠️ por encima del rango normal");
     };
 
-    // Metas personalizadas — estimación de referencia, validar con criterio clínico
     const tallaCm = parseFloat(p.talla)||170;
     const tallam  = tallaCm/100;
     const edad    = parseFloat(p.edad)||40;
@@ -3141,7 +3142,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const musculoAct = ultima?.musculo!=null  ? parseFloat(ultima.musculo)  : null;
     const bmrAct     = ultima?.bmr!=null      ? parseFloat(ultima.bmr)      : null;
 
-    // Segmentos corporales — field names as stored by Tanita parser
     const WA_SEGS = [
       {label:"Tronco",      mKey:"musculoTronco", gKey:"grasaTronco"},
       {label:"Brazo izq.",  mKey:"musculoBI",     gKey:"grasaBI"},
@@ -3160,7 +3160,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const primerNom = (p.nombre||"").split(" ")[0]||"";
     let msg = `Hola ${primerNom}, le comparto su reporte de progreso:\n\n`;
 
-    // Encabezado
     msg += `📊 *REPORTE DE PROGRESO*\n`;
     if (primera && ultima) {
       msg += `${n} medición${n!==1?"es":""}`;
@@ -3168,7 +3167,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       msg += `\n\n`;
     }
 
-    // Métricas hero
     msg += `*📈 Métricas principales*\n`;
     if (ultima?.peso)    msg += `• Peso actual: *${ultima.peso} kg*${pesoDif!=null?` (${pesoDif} kg)`:""}\n`;
     if (ultima?.grasa)   msg += `• Grasa corporal: *${ultima.grasa}%*${grasaDif!=null?` (${grasaDif}%)`:""}\n`;
@@ -3176,7 +3174,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     if (caAct)           msg += `• Circ. abdominal: *${caAct} cm*${caDif!=null?` (${caDif} cm)`:""}\n`;
     msg += `\n`;
 
-    // Rangos saludables
     const imcRange   = ultima?.imc      ? zoneRange(ultima.imc,    18.5, 25)                     : null;
     const grasaRange = ultima?.grasa    ? zoneRange(ultima.grasa,  esMujer?24:11, esMujer?36:21) : null;
     const viscRange  = ultima?.visceral ? zoneRange(ultima.visceral, 1, 12)                       : null;
@@ -3188,7 +3185,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       msg += `\n`;
     }
 
-    // Progreso por segmento
     if (hasSegWA) {
       const segLines = WA_SEGS.map(s=>{
         const md=difNum(ultima[s.mKey],waSegRef[s.mKey]);
@@ -3204,7 +3200,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       }
     }
 
-    // Metas personalizadas
     const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
     if (hasMetas) {
       msg += `*🎯 Metas personalizadas*\n`;
@@ -3217,7 +3212,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       msg += `_Metas estimadas como referencia · criterio médico_\n\n`;
     }
 
-    // Tratamiento
     if (med||proxCita) {
       msg += `*💊 Tratamiento actual*\n`;
       if (med)      msg += `• ${med}${dosis?" — "+dosis:""}\n`;
@@ -3225,7 +3219,6 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       msg += `\n`;
     }
 
-    // Mensaje motivacional expandido
     const musculoChWA = difNum(ultima?.musculo, primera?.musculo);
     const grasaChWA   = difNum(ultima?.grasa,   primera?.grasa);
     const waCambios = [
@@ -3250,18 +3243,17 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     msg += waRec+"\n\n";
 
     msg += `Atentamente,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
-
-    enviarWA(p.telefono, msg);
+    return msg;
   };
 
-  // Descarga PDF + abre WhatsApp Desktop con mensaje corto
+  const waProgreso = () => { enviarWA(p.telefono, generarMsgProgreso()); };
+
+  // Descarga PDF con nombre correcto + abre WhatsApp Desktop con mensaje detallado
   const waProgresoConPDF = (ref, _titulo, done) => {
     const tel = String(p.telefono||"").replace(/\D/g, "");
     if (tel.length >= 10) {
       const num = tel.startsWith("52") ? tel : "52" + tel;
-      const nombre = (p.nombre||"").split(" ")[0];
-      const msg = `Hola ${nombre}, te comparto tu Reporte de Progreso. Adjunto el PDF con tus resultados. ¡Saludos!`;
-      window.open(`whatsapp://send?phone=${num}&text=${encodeURIComponent(msg)}`, "_blank");
+      window.open(`whatsapp://send?phone=${num}&text=${encodeURIComponent(generarMsgProgreso())}`, "_blank");
     } else {
       alert("El paciente no tiene teléfono registrado. Se descargará el PDF solamente.");
     }
