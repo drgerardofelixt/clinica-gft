@@ -627,7 +627,12 @@ const CAMPOS_LABS = [
   // ── TIROIDEO ──
   {k:"tsh",l:"TSH",u:"mUI/L",min:0.4,max:4.0,g:"tiroideo"},
   {k:"t4",l:"T4 Libre",u:"ng/dL",min:0.8,max:1.8,g:"tiroideo"},
+  {k:"t4t",l:"T4 Total",u:"µg/dL",min:5.1,max:14.1,g:"tiroideo"},
   {k:"t3",l:"T3 Libre",u:"pg/mL",min:2.3,max:4.2,g:"tiroideo"},
+  {k:"t3t",l:"T3 Total",u:"ng/dL",min:80,max:200,g:"tiroideo"},
+  {k:"t3captacion",l:"T3 Captación",u:"%",min:25,max:35,g:"tiroideo"},
+  {k:"t7",l:"T7 (Índice T4 libre)",u:"",min:1.2,max:4.9,g:"tiroideo"},
+  {k:"yodoproteico",l:"Yodo Proteico (PBI)",u:"µg/100mL",min:4,max:8,g:"tiroideo"},
   // ── RENAL ──
   {k:"creatinina",l:"Creatinina",u:"mg/dL",min:0.6,max:1.2,g:"general"},
   {k:"bun",l:"BUN",u:"mg/dL",min:7,max:20,g:"general"},
@@ -647,10 +652,17 @@ const CAMPOS_LABS = [
   {k:"monocitos",l:"Monocitos",u:"%",min:2,max:10,g:"bh"},
   {k:"eosinofilos",l:"Eosinófilos",u:"%",min:1,max:4,g:"bh"},
   {k:"basofilos",l:"Basófilos",u:"%",min:0,max:1,g:"bh"},
+  {k:"neutrofilosAbs",l:"Neutrófilos #",u:"10³/µL",min:1.8,max:7.7,g:"bh"},
+  {k:"linfocitosAbs",l:"Linfocitos #",u:"10³/µL",min:1.0,max:4.8,g:"bh"},
+  {k:"monocitosAbs",l:"Monocitos #",u:"10³/µL",min:0.1,max:0.9,g:"bh"},
+  {k:"eosinofilosAbs",l:"Eosinófilos #",u:"10³/µL",min:0.05,max:0.5,g:"bh"},
+  {k:"basofilosAbs",l:"Basófilos #",u:"10³/µL",min:0,max:0.1,g:"bh"},
   {k:"mcv",l:"VCM",u:"fL",min:80,max:100,g:"bh"},
   {k:"mch",l:"HCM",u:"pg",min:27,max:33,g:"bh"},
   {k:"mchc",l:"CHCM",u:"g/dL",min:32,max:36,g:"bh"},
   {k:"rdw",l:"RDW",u:"%",min:11.5,max:14.5,g:"bh"},
+  {k:"pdw",l:"PDW",u:"%",min:9,max:17,g:"bh"},
+  {k:"vpm",l:"VPM",u:"fL",min:7.5,max:12.5,g:"bh"},
   // ── GINECOLÓGICO (solo mujeres) ──
   {k:"fsh",l:"FSH",u:"mUI/mL",min:3.5,max:12.5,g:"gineco",sexo:"F"},
   {k:"lh",l:"LH",u:"mUI/mL",min:2.4,max:12.6,g:"gineco",sexo:"F"},
@@ -1134,13 +1146,13 @@ const parseLabsImagen = async (archivos) => {
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
       model:"claude-haiku-4-5-20251001",
-      max_tokens:1500,
-      system:"Eres un asistente médico especializado en leer resultados de laboratorio clínico. Extrae TODOS los valores numéricos con máxima precisión. Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.",
+      max_tokens:2000,
+      system:"Eres un asistente médico especializado en leer resultados de laboratorio clínico de México. Los reportes pueden venir de distintos laboratorios (Médica Sur, IMSS, ISSSTE, Chopo, Salud Digna, laboratorios privados, etc.) con diferentes formatos, tipografías y ordenamientos. Extrae TODOS los valores numéricos con máxima precisión. Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.",
       messages:[{
         role:"user",
         content:[
           ...imagenBlocks,
-          {type:"text",text:`Extrae todos los resultados de laboratorio de estas imágenes.
+          {type:"text",text:`Extrae todos los resultados de laboratorio de estas imágenes. Los reportes pueden venir de distintos laboratorios mexicanos con formatos muy variados: columnas, tablas, texto plano, con o sin rangos de referencia, en español o inglés, con nombres alternativos para los mismos analitos.
 Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto, sin markdown):
 {
   "laboratorio": "nombre o null",
@@ -1180,6 +1192,9 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto, sin markdown
   "t4t": numero o null,
   "t3": numero o null,
   "t3t": numero o null,
+  "t3captacion": numero o null,
+  "t7": numero o null,
+  "yodoproteico": numero o null,
   "hemoglobina": numero o null,
   "hematocrito": numero o null,
   "eritrocitos": numero o null,
@@ -1190,10 +1205,17 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto, sin markdown
   "monocitos": numero o null,
   "eosinofilos": numero o null,
   "basofilos": numero o null,
+  "neutrofilosAbs": numero o null,
+  "linfocitosAbs": numero o null,
+  "monocitosAbs": numero o null,
+  "eosinofilosAbs": numero o null,
+  "basofilosAbs": numero o null,
   "mcv": numero o null,
   "mch": numero o null,
   "mchc": numero o null,
   "rdw": numero o null,
+  "pdw": numero o null,
+  "vpm": numero o null,
   "fsh": numero o null,
   "lh": numero o null,
   "estradiol": numero o null,
@@ -1206,7 +1228,17 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto, sin markdown
   "hierro": numero o null,
   "pcr": numero o null
 }
-REGLAS: glucosa = ayuno (NO promedio estimado); hemoglobina = NO incluir HbA1c; neutrófilos/linfocitos/etc = preferir % sobre valor absoluto; fecha = toma de muestra o recepción; sé extremadamente preciso — no confundas valores entre filas distintas.`}
+REGLAS:
+- glucosa = ayuno (NO promedio estimado de glucosa)
+- hemoglobina = NO incluir hemoglobina glicosilada/HbA1c
+- neutrofilos/linfocitos/monocitos/eosinofilos/basofilos = preferir % sobre valor absoluto; los valores absolutos van en neutrofilosAbs/linfocitosAbs/monocitosAbs/eosinofilosAbs/basofilosAbs
+- fecha = toma de muestra, recepción o fecha del reporte
+- "Yodo Proteico" o "PBI" → campo "yodoproteico" (NO es proteinasTotales)
+- "T3 Captación" o "T3 Uptake" → campo "t3captacion"
+- "T7" o "Índice T4 libre" o "Free Thyroxine Index" → campo "t7"
+- Extrae ABSOLUTAMENTE TODOS los analitos visibles. Si ves un valor numérico en la imagen, extráelo. NO omitas ningún resultado por no estar en el esquema — si existe el campo úsalo, si no, ignóralo pero NUNCA omitas un campo que sí existe
+- NO renombres ni generalices analitos: preserva la clasificación exacta (ej. "Yodo Proteico" ≠ "Proteínas Totales")
+- sé extremadamente preciso — no confundas valores entre filas distintas`}
         ]
       }]
     })
