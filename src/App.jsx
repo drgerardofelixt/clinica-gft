@@ -2189,10 +2189,21 @@ const TanitaUp = ({nombre, onApply}) => {
 const LabsUp = ({nombre, onApply}) => {
   const [st, setSt] = useState("idle");
   const [data, setData] = useState(null);
+  const [editData, setEditData] = useState(null);
   const [err, setErr] = useState("");
   const [archivosCount, setArchivosCount] = useState(0);
   const [archivosProcesados, setArchivosProcesados] = useState(0);
   const ref = useRef();
+
+  const updateField = (k, v) => setEditData(prev => {
+    const next = {...prev, [k]: v};
+    // Clear suspicion flag once user edits the field
+    if (prev._sospechosos?.[k]) {
+      const {[k]:_, ...rest} = prev._sospechosos;
+      next._sospechosos = Object.keys(rest).length > 0 ? rest : undefined;
+    }
+    return next;
+  });
 
   const procesarArchivo = async (file) => {
     const texto = await archivoATexto(file);
@@ -2278,7 +2289,7 @@ const LabsUp = ({nombre, onApply}) => {
       const r = combinarResultados(resultados);
       const tieneValores = Object.entries(r).some(([k,v])=>v!==null&&k!=="notasAdicionales"&&k!=="laboratorio"&&k!=="paciente"&&k!=="fecha");
       if (!tieneValores) { setSt("error"); setErr("No se encontraron valores de laboratorio."); return; }
-      setData(r); setSt("ok");
+      setData(r); setEditData({...r}); setSt("ok");
     } catch(e) {
       setSt("error");
       const msg = e.message||"desconocido";
@@ -2290,8 +2301,8 @@ const LabsUp = ({nombre, onApply}) => {
   };
 
   const apply = () => {
-    if (data) onApply(data);
-    setSt("idle"); setData(null); setArchivosCount(0); setArchivosProcesados(0);
+    if (editData) onApply(editData);
+    setSt("idle"); setData(null); setEditData(null); setArchivosCount(0); setArchivosProcesados(0);
     if (ref.current) ref.current.value="";
   };
 
@@ -2328,59 +2339,106 @@ const LabsUp = ({nombre, onApply}) => {
           </div>
         </div>
       )}
-      {st==="ok" && data && (
+      {st==="ok" && editData && (
         <div>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+          {/* Header */}
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
             <span>✅</span>
-            <div>
-              <div style={{fontSize:12,fontWeight:800,color:C.verde}}>Labs extraídos</div>
-              {data.laboratorio && (
-                <div style={{fontSize:10,color:C.suave}}>
-                  {data.laboratorio}{data.fecha?" · "+fmtF(data.fecha):""}
-                </div>
-              )}
+            <div style={{flex:1}}>
+              <div style={{fontSize:12,fontWeight:800,color:C.verde}}>
+                Labs extraídos — revisa y corrige si es necesario
+              </div>
+              <div style={{fontSize:9,color:C.suave}}>
+                Haz clic en cualquier valor para editarlo antes de guardar
+              </div>
             </div>
           </div>
-          <div style={{background:"white",borderRadius:8,padding:10,marginBottom:10,
-            display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"6px 12px"}}>
-            {CAMPOS_LABS.filter(c=>data[c.k]!=null).map(c=>{
-              const estado = evaluarLab(c, data[c.k]);
+
+          {/* Banner sospechosos */}
+          {editData._sospechosos && Object.keys(editData._sospechosos).length > 0 && (
+            <div style={{fontSize:10,fontWeight:700,color:"#92400E",padding:"6px 10px",
+              background:"#FEF3C7",borderRadius:6,marginBottom:8,
+              border:"1px solid #F59E0B"}}>
+              ⚠️ {Object.keys(editData._sospechosos).length} valor(es) sospechoso(s) marcados en naranja — verifica en el documento original
+            </div>
+          )}
+
+          {/* Metadata editable */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 8px",marginBottom:8}}>
+            {[
+              {k:"laboratorio",l:"Laboratorio",type:"text"},
+              {k:"fecha",l:"Fecha (DD/MM/AAAA)",type:"text"},
+            ].map(({k,l,type})=>(
+              <div key={k} style={{fontSize:10,padding:"3px 6px",background:"white",borderRadius:5,
+                border:"1px solid #E2E8F0"}}>
+                <div style={{fontSize:8,color:C.suave,fontWeight:700,textTransform:"uppercase"}}>{l}</div>
+                <input type={type} value={editData[k]||""} placeholder="—"
+                  onChange={e=>updateField(k,e.target.value||null)}
+                  style={{width:"100%",border:"none",outline:"none",fontSize:10,fontWeight:600,
+                    color:C.texto,background:"transparent",padding:0}}/>
+              </div>
+            ))}
+          </div>
+
+          {/* Campos numéricos editables */}
+          <div style={{background:"white",borderRadius:8,padding:10,marginBottom:8,
+            display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"4px 10px"}}>
+            {CAMPOS_LABS.filter(c=>editData[c.k]!=null).map(c=>{
+              const sosp = editData._sospechosos?.[c.k];
+              const estado = sosp ? null : evaluarLab(c, editData[c.k]);
               const color = colorLab(estado);
-              const sosp = data._sospechosos?.[c.k];
               return (
                 <div key={c.k} style={{fontSize:10.5,display:"flex",justifyContent:"space-between",
-                  alignItems:"center",padding:"4px 6px",borderRadius:5,
-                  background:sosp?"#FFF3CD":estado==="normal"?"transparent":color+"15",
+                  alignItems:"center",padding:"3px 6px",borderRadius:5,
+                  background:sosp?"#FFF3CD":estado&&estado!=="normal"?color+"15":"transparent",
                   borderLeft:sosp?"3px solid #F59E0B":estado&&estado!=="normal"?"3px solid "+color:"3px solid transparent"}}>
-                  <span style={{color:C.suave,fontWeight:600}}>{c.l}</span>
-                  <span style={{display:"flex",alignItems:"center",gap:4}}>
-                    <span style={{fontWeight:800,color:sosp?"#B45309":color}}>{data[c.k]}</span>
-                    <span style={{fontSize:9,color:C.suave}}>{c.u}</span>
+                  <span style={{color:C.suave,fontWeight:600,fontSize:10,flexShrink:0,marginRight:4}}>
+                    {c.l}
+                  </span>
+                  <span style={{display:"flex",alignItems:"center",gap:2,minWidth:0}}>
+                    <input
+                      type="number" step="any"
+                      value={editData[c.k]??""}
+                      onChange={e=>{
+                        const v=e.target.value;
+                        updateField(c.k, v===""?null:parseFloat(v));
+                      }}
+                      style={{width:54,fontWeight:800,
+                        color:sosp?"#B45309":color||C.texto,
+                        background:"transparent",border:"none",
+                        borderBottom:"1px solid "+(sosp?"#F59E0B":"#E2E8F0"),
+                        outline:"none",fontSize:10.5,padding:"0 2px",textAlign:"right"}}
+                    />
+                    <span style={{fontSize:8,color:C.suave,flexShrink:0}}>{c.u}</span>
                     {sosp
-                      ? <span style={{fontSize:11,marginLeft:2}} title="Valor sospechoso — verificar en documento original">⚠️</span>
-                      : estado && <span style={{fontSize:11,fontWeight:900,color,marginLeft:2}}>{iconoLab(estado)}</span>
+                      ? <span title="Valor sospechoso — verifica en el documento">⚠️</span>
+                      : estado && estado!=="normal" &&
+                        <span style={{fontSize:10,fontWeight:900,color}}>{iconoLab(estado)}</span>
                     }
                   </span>
                 </div>
               );
             })}
           </div>
-          <div style={{fontSize:9,color:C.suave,marginBottom:8,padding:"4px 8px",
+
+          <div style={{fontSize:9,color:C.suave,marginBottom:8,padding:"3px 8px",
             background:C.gris,borderRadius:5,textAlign:"center"}}>
             <span style={{color:C.verde,fontWeight:800}}>✓ Normal</span> ·
             <span style={{color:C.rojo,fontWeight:800,marginLeft:6}}>↑ Elevado</span> ·
-            <span style={{color:C.naranja,fontWeight:800,marginLeft:6}}>↓ Disminuido</span>
+            <span style={{color:C.naranja,fontWeight:800,marginLeft:6}}>↓ Disminuido</span> ·
+            <span style={{fontWeight:800,marginLeft:6}}>⚠️ Sospechoso</span>
           </div>
-          {data.notasAdicionales && (
+
+          {editData.notasAdicionales && (
             <div style={{fontSize:10,color:C.naranja,padding:"6px 8px",
-              background:C.naranjaPale,borderRadius:6,marginBottom:10}}>
-              ⚠️ {data.notasAdicionales}
+              background:C.naranjaPale,borderRadius:6,marginBottom:8}}>
+              ⚠️ {editData.notasAdicionales}
             </div>
           )}
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-            <Btn onClick={()=>{setSt("idle");setData(null);if(ref.current)ref.current.value="";}}
+            <Btn onClick={()=>{setSt("idle");setData(null);setEditData(null);if(ref.current)ref.current.value="";}}
               outline color={C.suave} size="sm">Cancelar</Btn>
-            <Btn onClick={apply} color={C.verde} icon="✓" size="sm">Guardar</Btn>
+            <Btn onClick={apply} color={C.verde} icon="✓" size="sm">Confirmar y guardar</Btn>
           </div>
         </div>
       )}
@@ -2393,7 +2451,7 @@ const LabsUp = ({nombre, onApply}) => {
             background:"#FFF",padding:"6px 8px",borderRadius:6,border:"1px solid "+C.grisMedio}}>
             {err}
           </div>
-          <Btn onClick={()=>{setSt("idle");setRawText("");if(ref.current)ref.current.value="";}}
+          <Btn onClick={()=>{setSt("idle");setErr("");if(ref.current)ref.current.value="";}}
             outline color={C.suave} size="sm">Reintentar</Btn>
         </div>
       )}
