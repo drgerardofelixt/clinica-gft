@@ -603,74 +603,86 @@ const LABS_PRESET = {
 // Cada campo tiene: k=clave, l=label, u=unidad, min/max=rangos normales
 // g=grupo (general, lipidos, hepatico, tiroideo, gineco)
 // sexo=null (ambos) o "M"/"F" (solo ese sexo)
-const CAMPOS_LABS = [
-  // ── METABOLISMO ──
-  {k:"glucosa",l:"Glucosa",u:"mg/dL",min:70,max:99,g:"general"},
-  {k:"hba1c",l:"HbA1c",u:"%",min:4,max:5.6,g:"general"},
-  {k:"insulina",l:"Insulina",u:"μUI/mL",min:2.6,max:24.9,g:"general"},
-  {k:"homa",l:"HOMA-IR",u:"",min:0.5,max:2.5,g:"general"},
-  // ── LÍPIDOS ──
-  {k:"colesterol",l:"Colesterol Total",u:"mg/dL",min:0,max:200,g:"lipidos"},
-  {k:"trigliceridos",l:"Triglicéridos",u:"mg/dL",min:0,max:150,g:"lipidos"},
-  {k:"hdl",l:"HDL",u:"mg/dL",min:40,max:999,g:"lipidos"},
-  {k:"ldl",l:"LDL",u:"mg/dL",min:0,max:100,g:"lipidos"},
-  // ── HEPÁTICO ──
-  {k:"alt",l:"ALT",u:"U/L",min:0,max:40,g:"hepatico"},
-  {k:"ast",l:"AST",u:"U/L",min:0,max:40,g:"hepatico"},
-  {k:"ggt",l:"GGT",u:"U/L",min:0,max:55,g:"hepatico"},
-  {k:"fa",l:"Fosfatasa Alcalina",u:"U/L",min:44,max:147,g:"hepatico"},
-  {k:"bilirrubinaTotal",l:"Bilirrubina Total",u:"mg/dL",min:0.1,max:1.2,g:"hepatico"},
-  {k:"bilirrubinaDirecta",l:"Bilirrubina Directa",u:"mg/dL",min:0,max:0.3,g:"hepatico"},
-  {k:"bilirrubinaIndirecta",l:"Bilirrubina Indirecta",u:"mg/dL",min:0.1,max:1.0,g:"hepatico"},
-  {k:"proteinasTotales",l:"Proteínas Totales",u:"g/dL",min:6,max:8.3,g:"hepatico"},
-  {k:"albumina",l:"Albúmina",u:"g/dL",min:3.5,max:5.0,g:"hepatico"},
-  // ── TIROIDEO ──
-  {k:"tsh",l:"TSH",u:"mUI/L",min:0.4,max:4.0,g:"tiroideo"},
-  {k:"t4",l:"T4 Libre",u:"ng/dL",min:0.8,max:1.8,g:"tiroideo"},
-  {k:"t4t",l:"T4 Total",u:"µg/dL",min:5.1,max:14.1,g:"tiroideo"},
-  {k:"t3",l:"T3 Libre",u:"pg/mL",min:2.3,max:4.2,g:"tiroideo"},
-  {k:"t3t",l:"T3 Total",u:"ng/dL",min:80,max:200,g:"tiroideo"},
-  {k:"t3captacion",l:"T3 Captación",u:"%",min:25,max:35,g:"tiroideo"},
-  {k:"t7",l:"T7 (Índice T4 libre)",u:"",min:1.2,max:4.9,g:"tiroideo"},
-  {k:"yodoproteico",l:"Yodo Proteico (PBI)",u:"µg/100mL",min:4,max:8,g:"tiroideo"},
-  // ── RENAL ──
-  {k:"creatinina",l:"Creatinina",u:"mg/dL",min:0.6,max:1.2,g:"general"},
-  {k:"bun",l:"BUN",u:"mg/dL",min:7,max:20,g:"general"},
-  {k:"acidoUrico",l:"Ácido Úrico",u:"mg/dL",min:3.5,max:7.2,g:"general"},
-  // ── VITAMINAS ──
-  {k:"vitD",l:"Vitamina D",u:"ng/mL",min:30,max:100,g:"general"},
-  {k:"b12",l:"Vitamina B12",u:"pg/mL",min:200,max:900,g:"general"},
-  {k:"ferritina",l:"Ferritina",u:"ng/mL",min:30,max:400,g:"general"},
-  // ── BIOMETRÍA HEMÁTICA ──
-  {k:"hemoglobina",l:"Hemoglobina",u:"g/dL",min:12,max:17.5,g:"bh"},
-  {k:"hematocrito",l:"Hematocrito",u:"%",min:36,max:52,g:"bh"},
-  {k:"eritrocitos",l:"Eritrocitos",u:"10⁶/µL",min:3.5,max:5.9,g:"bh"},
-  {k:"leucocitos",l:"Leucocitos",u:"10³/µL",min:4.5,max:11,g:"bh"},
-  {k:"plaquetas",l:"Plaquetas",u:"10³/µL",min:150,max:400,g:"bh"},
-  {k:"neutrofilos",l:"Neutrófilos",u:"%",min:50,max:70,g:"bh"},
-  {k:"linfocitos",l:"Linfocitos",u:"%",min:20,max:40,g:"bh"},
-  {k:"monocitos",l:"Monocitos",u:"%",min:2,max:10,g:"bh"},
-  {k:"eosinofilos",l:"Eosinófilos",u:"%",min:1,max:4,g:"bh"},
-  {k:"basofilos",l:"Basófilos",u:"%",min:0,max:1,g:"bh"},
-  {k:"neutrofilosAbs",l:"Neutrófilos #",u:"10³/µL",min:1.8,max:7.7,g:"bh"},
-  {k:"linfocitosAbs",l:"Linfocitos #",u:"10³/µL",min:1.0,max:4.8,g:"bh"},
-  {k:"monocitosAbs",l:"Monocitos #",u:"10³/µL",min:0.1,max:0.9,g:"bh"},
-  {k:"eosinofilosAbs",l:"Eosinófilos #",u:"10³/µL",min:0.05,max:0.5,g:"bh"},
-  {k:"basofilosAbs",l:"Basófilos #",u:"10³/µL",min:0,max:0.1,g:"bh"},
-  {k:"mcv",l:"VCM",u:"fL",min:80,max:100,g:"bh"},
-  {k:"mch",l:"HCM",u:"pg",min:27,max:33,g:"bh"},
-  {k:"mchc",l:"CHCM",u:"g/dL",min:32,max:36,g:"bh"},
-  {k:"rdw",l:"RDW",u:"%",min:11.5,max:14.5,g:"bh"},
-  {k:"pdw",l:"PDW",u:"%",min:9,max:17,g:"bh"},
-  {k:"vpm",l:"VPM",u:"fL",min:7.5,max:12.5,g:"bh"},
-  // ── GINECOLÓGICO (solo mujeres) ──
-  {k:"fsh",l:"FSH",u:"mUI/mL",min:3.5,max:12.5,g:"gineco",sexo:"F"},
-  {k:"lh",l:"LH",u:"mUI/mL",min:2.4,max:12.6,g:"gineco",sexo:"F"},
-  {k:"estradiol",l:"Estradiol",u:"pg/mL",min:30,max:400,g:"gineco",sexo:"F"},
-  {k:"progesterona",l:"Progesterona",u:"ng/mL",min:0.2,max:25,g:"gineco",sexo:"F"},
-  {k:"prolactina",l:"Prolactina",u:"ng/mL",min:4.8,max:23.3,g:"gineco",sexo:"F"},
-  {k:"testosterona",l:"Testosterona Total",u:"ng/dL",min:15,max:70,g:"gineco",sexo:"F"},
-];
+// ── Diccionario canónico de analitos ─────────────────────────────────────
+// Fuente única de verdad. Deriva CAMPOS_LABS (display) y RANGO (validación fisiológica).
+// g:null  = analito solo en validación, no se muestra en UI
+// min/max = rango clínico normal (para evaluarLab, coloreado verde/rojo/naranja)
+// fisioMin/fisioMax = rango fisiológico posible (para validateLabResults)
+const ANALITOS = {
+  glucosa:              {k:"glucosa",              l:"Glucosa",               u:"mg/dL",      min:70,    max:99,    g:"general",  fisioMin:20,    fisioMax:600  },
+  hba1c:                {k:"hba1c",                l:"HbA1c",                 u:"%",           min:4,     max:5.6,   g:"general",  fisioMin:3,     fisioMax:20   },
+  insulina:             {k:"insulina",              l:"Insulina",              u:"μUI/mL",     min:2.6,   max:24.9,  g:"general",  fisioMin:0.1,   fisioMax:300  },
+  homa:                 {k:"homa",                 l:"HOMA-IR",               u:"",            min:0.5,   max:2.5,   g:"general",  fisioMin:0.1,   fisioMax:30   },
+  colesterol:           {k:"colesterol",            l:"Colesterol Total",      u:"mg/dL",      min:0,     max:200,   g:"lipidos",  fisioMin:50,    fisioMax:500  },
+  trigliceridos:        {k:"trigliceridos",         l:"Triglicéridos",         u:"mg/dL",      min:0,     max:150,   g:"lipidos",  fisioMin:20,    fisioMax:2000 },
+  hdl:                  {k:"hdl",                  l:"HDL",                   u:"mg/dL",      min:40,    max:999,   g:"lipidos",  fisioMin:5,     fisioMax:150  },
+  ldl:                  {k:"ldl",                  l:"LDL",                   u:"mg/dL",      min:0,     max:100,   g:"lipidos",  fisioMin:10,    fisioMax:400  },
+  vldl:                 {k:"vldl",                 l:"VLDL",                  u:"mg/dL",      min:null,  max:null,  g:null,       fisioMin:1,     fisioMax:200  },
+  alt:                  {k:"alt",                  l:"ALT",                   u:"U/L",         min:0,     max:40,    g:"hepatico", fisioMin:1,     fisioMax:2000 },
+  ast:                  {k:"ast",                  l:"AST",                   u:"U/L",         min:0,     max:40,    g:"hepatico", fisioMin:1,     fisioMax:2000 },
+  ggt:                  {k:"ggt",                  l:"GGT",                   u:"U/L",         min:0,     max:55,    g:"hepatico", fisioMin:1,     fisioMax:1000 },
+  fa:                   {k:"fa",                   l:"Fosfatasa Alcalina",    u:"U/L",         min:44,    max:147,   g:"hepatico", fisioMin:10,    fisioMax:2000 },
+  ldh:                  {k:"ldh",                  l:"LDH",                   u:"U/L",         min:null,  max:null,  g:null,       fisioMin:50,    fisioMax:3000 },
+  bilirrubinaTotal:     {k:"bilirrubinaTotal",      l:"Bilirrubina Total",     u:"mg/dL",      min:0.1,   max:1.2,   g:"hepatico", fisioMin:0.1,   fisioMax:30   },
+  bilirrubinaDirecta:   {k:"bilirrubinaDirecta",    l:"Bilirrubina Directa",   u:"mg/dL",      min:0,     max:0.3,   g:"hepatico", fisioMin:0,     fisioMax:20   },
+  bilirrubinaIndirecta: {k:"bilirrubinaIndirecta",  l:"Bilirrubina Indirecta", u:"mg/dL",      min:0.1,   max:1.0,   g:"hepatico", fisioMin:0,     fisioMax:20   },
+  proteinasTotales:     {k:"proteinasTotales",      l:"Proteínas Totales",     u:"g/dL",       min:6,     max:8.3,   g:"hepatico", fisioMin:3,     fisioMax:10   },
+  albumina:             {k:"albumina",              l:"Albúmina",              u:"g/dL",       min:3.5,   max:5.0,   g:"hepatico", fisioMin:1,     fisioMax:6    },
+  globulinas:           {k:"globulinas",            l:"Globulinas",            u:"g/dL",       min:null,  max:null,  g:null,       fisioMin:1,     fisioMax:7    },
+  tsh:                  {k:"tsh",                  l:"TSH",                   u:"mUI/L",      min:0.4,   max:4.0,   g:"tiroideo", fisioMin:0.001, fisioMax:100  },
+  t4:                   {k:"t4",                   l:"T4 Libre",              u:"ng/dL",      min:0.8,   max:1.8,   g:"tiroideo", fisioMin:0.3,   fisioMax:5    },
+  t4t:                  {k:"t4t",                  l:"T4 Total",              u:"µg/dL",      min:5.1,   max:14.1,  g:"tiroideo", fisioMin:1,     fisioMax:30   },
+  t3:                   {k:"t3",                   l:"T3 Libre",              u:"pg/mL",      min:2.3,   max:4.2,   g:"tiroideo", fisioMin:1,     fisioMax:10   },
+  t3t:                  {k:"t3t",                  l:"T3 Total",              u:"ng/dL",      min:80,    max:200,   g:"tiroideo", fisioMin:20,    fisioMax:400  },
+  t3captacion:          {k:"t3captacion",           l:"T3 Captación",          u:"%",           min:25,    max:35,    g:"tiroideo", fisioMin:5,     fisioMax:60   },
+  t7:                   {k:"t7",                   l:"T7 (Índice T4 libre)",  u:"",            min:1.2,   max:4.9,   g:"tiroideo", fisioMin:0.5,   fisioMax:10   },
+  yodoproteico:         {k:"yodoproteico",          l:"Yodo Proteico (PBI)",   u:"µg/100mL",   min:4,     max:8,     g:"tiroideo", fisioMin:0.5,   fisioMax:15   },
+  creatinina:           {k:"creatinina",            l:"Creatinina",            u:"mg/dL",      min:0.6,   max:1.2,   g:"general",  fisioMin:0.1,   fisioMax:20   },
+  bun:                  {k:"bun",                  l:"BUN",                   u:"mg/dL",      min:7,     max:20,    g:"general",  fisioMin:2,     fisioMax:150  },
+  urea:                 {k:"urea",                 l:"Urea",                  u:"mg/dL",      min:null,  max:null,  g:null,       fisioMin:5,     fisioMax:300  },
+  acidoUrico:           {k:"acidoUrico",            l:"Ácido Úrico",           u:"mg/dL",      min:3.5,   max:7.2,   g:"general",  fisioMin:1,     fisioMax:20   },
+  sodio:                {k:"sodio",                l:"Sodio",                 u:"mEq/L",      min:null,  max:null,  g:null,       fisioMin:100,   fisioMax:170  },
+  potasio:              {k:"potasio",              l:"Potasio",               u:"mEq/L",      min:null,  max:null,  g:null,       fisioMin:2,     fisioMax:8    },
+  cloro:                {k:"cloro",                l:"Cloro",                 u:"mEq/L",      min:null,  max:null,  g:null,       fisioMin:80,    fisioMax:130  },
+  calcio:               {k:"calcio",               l:"Calcio",                u:"mg/dL",      min:null,  max:null,  g:null,       fisioMin:5,     fisioMax:15   },
+  fosforo:              {k:"fosforo",              l:"Fósforo",               u:"mg/dL",      min:null,  max:null,  g:null,       fisioMin:1,     fisioMax:10   },
+  vitD:                 {k:"vitD",                 l:"Vitamina D",            u:"ng/mL",      min:30,    max:100,   g:"general",  fisioMin:1,     fisioMax:200  },
+  b12:                  {k:"b12",                  l:"Vitamina B12",          u:"pg/mL",      min:200,   max:900,   g:"general",  fisioMin:50,    fisioMax:3000 },
+  ferritina:            {k:"ferritina",             l:"Ferritina",             u:"ng/mL",      min:30,    max:400,   g:"general",  fisioMin:1,     fisioMax:5000 },
+  hierro:               {k:"hierro",               l:"Hierro Sérico",         u:"µg/dL",      min:null,  max:null,  g:null,       fisioMin:10,    fisioMax:500  },
+  pcr:                  {k:"pcr",                  l:"PCR",                   u:"mg/L",       min:null,  max:null,  g:null,       fisioMin:0.1,   fisioMax:500  },
+  hemoglobina:          {k:"hemoglobina",           l:"Hemoglobina",           u:"g/dL",       min:12,    max:17.5,  g:"bh",       fisioMin:5,     fisioMax:25   },
+  hematocrito:          {k:"hematocrito",           l:"Hematocrito",           u:"%",           min:36,    max:52,    g:"bh",       fisioMin:10,    fisioMax:70   },
+  eritrocitos:          {k:"eritrocitos",           l:"Eritrocitos",           u:"10⁶/µL",     min:3.5,   max:5.9,   g:"bh",       fisioMin:1,     fisioMax:10   },
+  leucocitos:           {k:"leucocitos",            l:"Leucocitos",            u:"10³/µL",     min:4.5,   max:11,    g:"bh",       fisioMin:0.5,   fisioMax:50   },
+  plaquetas:            {k:"plaquetas",             l:"Plaquetas",             u:"10³/µL",     min:150,   max:400,   g:"bh",       fisioMin:10,    fisioMax:1500 },
+  neutrofilos:          {k:"neutrofilos",           l:"Neutrófilos",           u:"%",           min:50,    max:70,    g:"bh",       fisioMin:1,     fisioMax:99   },
+  linfocitos:           {k:"linfocitos",            l:"Linfocitos",            u:"%",           min:20,    max:40,    g:"bh",       fisioMin:1,     fisioMax:99   },
+  monocitos:            {k:"monocitos",             l:"Monocitos",             u:"%",           min:2,     max:10,    g:"bh",       fisioMin:0,     fisioMax:30   },
+  eosinofilos:          {k:"eosinofilos",           l:"Eosinófilos",           u:"%",           min:1,     max:4,     g:"bh",       fisioMin:0,     fisioMax:50   },
+  basofilos:            {k:"basofilos",             l:"Basófilos",             u:"%",           min:0,     max:1,     g:"bh",       fisioMin:0,     fisioMax:10   },
+  neutrofilosAbs:       {k:"neutrofilosAbs",        l:"Neutrófilos #",         u:"10³/µL",     min:1.8,   max:7.7,   g:"bh",       fisioMin:0.1,   fisioMax:30   },
+  linfocitosAbs:        {k:"linfocitosAbs",         l:"Linfocitos #",          u:"10³/µL",     min:1.0,   max:4.8,   g:"bh",       fisioMin:0.1,   fisioMax:20   },
+  monocitosAbs:         {k:"monocitosAbs",          l:"Monocitos #",           u:"10³/µL",     min:0.1,   max:0.9,   g:"bh",       fisioMin:0,     fisioMax:5    },
+  eosinofilosAbs:       {k:"eosinofilosAbs",        l:"Eosinófilos #",         u:"10³/µL",     min:0.05,  max:0.5,   g:"bh",       fisioMin:0,     fisioMax:5    },
+  basofilosAbs:         {k:"basofilosAbs",          l:"Basófilos #",           u:"10³/µL",     min:0,     max:0.1,   g:"bh",       fisioMin:0,     fisioMax:1    },
+  mcv:                  {k:"mcv",                  l:"VCM",                   u:"fL",          min:80,    max:100,   g:"bh",       fisioMin:50,    fisioMax:130  },
+  mch:                  {k:"mch",                  l:"HCM",                   u:"pg",          min:27,    max:33,    g:"bh",       fisioMin:15,    fisioMax:45   },
+  mchc:                 {k:"mchc",                 l:"CHCM",                  u:"g/dL",       min:32,    max:36,    g:"bh",       fisioMin:25,    fisioMax:40   },
+  rdw:                  {k:"rdw",                  l:"RDW",                   u:"%",           min:11.5,  max:14.5,  g:"bh",       fisioMin:5,     fisioMax:25   },
+  pdw:                  {k:"pdw",                  l:"PDW",                   u:"%",           min:9,     max:17,    g:"bh",       fisioMin:5,     fisioMax:25   },
+  vpm:                  {k:"vpm",                  l:"VPM",                   u:"fL",          min:7.5,   max:12.5,  g:"bh",       fisioMin:4,     fisioMax:20   },
+  fsh:                  {k:"fsh",                  l:"FSH",                   u:"mUI/mL",     min:3.5,   max:12.5,  g:"gineco",   fisioMin:0.5,   fisioMax:200,  sexo:"F"},
+  lh:                   {k:"lh",                   l:"LH",                    u:"mUI/mL",     min:2.4,   max:12.6,  g:"gineco",   fisioMin:0.5,   fisioMax:200,  sexo:"F"},
+  estradiol:            {k:"estradiol",             l:"Estradiol",             u:"pg/mL",      min:30,    max:400,   g:"gineco",   fisioMin:5,     fisioMax:5000, sexo:"F"},
+  progesterona:         {k:"progesterona",          l:"Progesterona",          u:"ng/mL",      min:0.2,   max:25,    g:"gineco",   fisioMin:0.1,   fisioMax:100,  sexo:"F"},
+  prolactina:           {k:"prolactina",            l:"Prolactina",            u:"ng/mL",      min:4.8,   max:23.3,  g:"gineco",   fisioMin:1,     fisioMax:500,  sexo:"F"},
+  testosterona:         {k:"testosterona",          l:"Testosterona Total",    u:"ng/dL",      min:15,    max:70,    g:"gineco",   fisioMin:1,     fisioMax:1500, sexo:"F"},
+};
+
+// Derivadas ───────────────────────────────────────────────────────────────
+// CAMPOS_LABS: analitos con g != null, en el mismo orden que ANALITOS
+const CAMPOS_LABS = Object.values(ANALITOS).filter(a => a.g != null);
 
 // Evalúa estado de un valor: "normal", "alto", "bajo", o null si no hay valor
 const evaluarLab = (campo, valor) => {
@@ -1151,27 +1163,10 @@ const validateLabResults = (raw) => {
     }
   }
 
-  // ── 2. Validación de rangos posibles ─────────────────────────
-  const RANGO = {
-    glucosa:[20,600], insulina:[0.1,300], hba1c:[3,20], homa:[0.1,30],
-    colesterol:[50,500], trigliceridos:[20,2000], hdl:[5,150], ldl:[10,400], vldl:[1,200],
-    alt:[1,2000], ast:[1,2000], ggt:[1,1000], fa:[10,2000], ldh:[50,3000],
-    bilirrubinaTotal:[0.1,30], bilirrubinaDirecta:[0,20], bilirrubinaIndirecta:[0,20],
-    proteinasTotales:[3,10], albumina:[1,6], globulinas:[1,7],
-    creatinina:[0.1,20], bun:[2,150], urea:[5,300], acidoUrico:[1,20],
-    sodio:[100,170], potasio:[2,8], cloro:[80,130], calcio:[5,15], fosforo:[1,10],
-    tsh:[0.001,100], t4:[0.3,5], t4t:[1,30], t3:[1,10], t3t:[20,400],
-    t3captacion:[5,60], t7:[0.5,10], yodoproteico:[0.5,15],
-    hemoglobina:[5,25], hematocrito:[10,70], eritrocitos:[1,10], leucocitos:[0.5,50],
-    plaquetas:[10,1500], neutrofilos:[1,99], linfocitos:[1,99], monocitos:[0,30],
-    eosinofilos:[0,50], basofilos:[0,10],
-    neutrofilosAbs:[0.1,30], linfocitosAbs:[0.1,20], monocitosAbs:[0,5],
-    eosinofilosAbs:[0,5], basofilosAbs:[0,1],
-    mcv:[50,130], mch:[15,45], mchc:[25,40], rdw:[5,25], pdw:[5,25], vpm:[4,20],
-    fsh:[0.5,200], lh:[0.5,200], estradiol:[5,5000], progesterona:[0.1,100],
-    prolactina:[1,500], testosterona:[1,1500],
-    vitD:[1,200], b12:[50,3000], ferritina:[1,5000], hierro:[10,500], pcr:[0.1,500],
-  };
+  // ── 2. Validación de rangos posibles (derivado de ANALITOS) ──────────
+  const RANGO = Object.fromEntries(
+    Object.values(ANALITOS).filter(a => a.fisioMin != null).map(a => [a.k, [a.fisioMin, a.fisioMax]])
+  );
   for (const [key, [min, max]] of Object.entries(RANGO)) {
     const val = r[key];
     if (val != null && (val < min || val > max)) {
