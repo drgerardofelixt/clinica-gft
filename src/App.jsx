@@ -283,6 +283,15 @@ const normDate = (f) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(f)) return f.split("-").reverse().join("/");
   return f;
 };
+// Convierte una fecha clínica (YYYY-MM-DD o DD/MM/YYYY) a timestamp para ordenar cronológicamente
+const parseFechaClinica = (f) => {
+  if (!f) return 0;
+  if (/^\d{4}-\d{2}-\d{2}/.test(f)) return new Date(f.slice(0,10)+"T00:00:00").getTime();
+  const [d,m,y] = f.split("/");
+  return new Date(+y,+(m||1)-1,+(d||1)).getTime();
+};
+// Comparador para .sort() — siempre sobre una copia, nunca mutar el array original
+const porFechaClinica = (a,b) => parseFechaClinica(a.fecha) - parseFechaClinica(b.fecha);
 const fmtFLargo = (f) => {
   if (!f) return "";
   return new Date(f+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
@@ -2497,7 +2506,7 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
 
 // ── Modal Consulta ────────────────────────────────────────────
 const ModalConsulta = ({p, onClose, onSave}) => {
-  const prev = (p.consultas||[]).slice(-1)[0];
+  const prev = [...(p.consultas||[])].sort(porFechaClinica).slice(-1)[0];
   const [confirmarSinCita, setConfirmarSinCita] = useState(false);
   const [f, setF] = useState({
     id:Date.now().toString(), fecha:hoy(), hora:ahora(),
@@ -3151,7 +3160,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     setShowLabs(false);
   };
 
-  const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
+  const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
   const primera = comps[0];
   const ultima = comps[comps.length-1];
   const perdT = primera && ultima && primera.peso && ultima.peso
@@ -3187,14 +3196,14 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
 
   // Genera el texto detallado de WhatsApp con todo el resumen de progreso
   const generarMsgProgreso = () => {
-    const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
+    const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
     const primera = comps[0];
     const ultima  = comps[comps.length-1];
     const n = comps.length;
-    const caConsultas = (p.consultas||[]).filter(c=>c.ca);
+    const caConsultas = (p.consultas||[]).filter(c=>c.ca).sort(porFechaClinica);
     const caIni = caConsultas[0]?.ca;
     const caAct = caConsultas[caConsultas.length-1]?.ca;
-    const proxCita = [...(p.consultas||[])].reverse().find(c=>c.proxCita)?.proxCita;
+    const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
     const med   = p.ci?.glp1 || p.ci?.medicamento || null;
     const dosis = p.ci?.dosis || null;
     const esMujer = /mujer|femenino|f/i.test(p.sexo||"");
@@ -3748,7 +3757,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             </div>
           ) : (
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {[...(p.consultas||[])].reverse().map((c,i,arr)=>{
+              {[...(p.consultas||[])].sort(porFechaClinica).reverse().map((c,i,arr)=>{
                 const iO = arr.length-1-i;
                 return (
                   <Card key={c.id||i}>
@@ -3834,7 +3843,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                 <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:12}}>
                   Resultados en expediente
                 </div>
-                {[...(p.resultadosLabs||[])].reverse().map((r,i)=>(
+                {[...(p.resultadosLabs||[])].sort(porFechaClinica).reverse().map((r,i)=>(
                   <div key={i} style={{marginBottom:14,paddingBottom:14,
                     borderBottom:i<(p.resultadosLabs||[]).length-1?"1px solid "+C.grisMedio:"none"}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
