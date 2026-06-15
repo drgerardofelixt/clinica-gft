@@ -1182,11 +1182,9 @@ const generarYDescargarPDF = async (contentRef, filename) => {
     const pdfBytes = pdf.output("arraybuffer");
     const blob = new Blob([pdfBytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
-    // Sin 'download': macOS delega al OS → Preview. title afecta el nombre en Preview/Share.
     const a = document.createElement("a");
     a.href = url;
-    a.setAttribute("type", "application/pdf");
-    a.setAttribute("title", filename || "documento.pdf");
+    a.download = filename || "documento.pdf";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
