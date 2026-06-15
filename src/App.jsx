@@ -1147,7 +1147,7 @@ const parseLabsImagen = async (archivos) => {
     body: JSON.stringify({
       model:"claude-haiku-4-5-20251001",
       max_tokens:2000,
-      system:"Eres un asistente médico especializado en leer resultados de laboratorio clínico de México. Los reportes pueden venir de distintos laboratorios (Médica Sur, IMSS, ISSSTE, Chopo, Salud Digna, laboratorios privados, etc.) con diferentes formatos, tipografías y ordenamientos. Extrae TODOS los valores numéricos con máxima precisión. Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.",
+      system:"Eres un asistente médico especializado en leer resultados de laboratorio clínico de México. Tienes experiencia con todos los laboratorios mexicanos (Lab San José, Chopo, Médica Sur, Salud Digna, IMSS, ISSSTE, Christus Muguerza, Star Médica, laboratorios privados) y cualquier formato: tablas con columnas Prueba/Resultado/Unidades/Referencia, formatos sin tabla, texto plano, abreviaturas en inglés o español, valores con flechas ↑↓, múltiples páginas, fotos tomadas con iPhone. Extrae TODOS los valores numéricos con máxima precisión. Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.",
       messages:[{
         role:"user",
         content:[
@@ -1228,17 +1228,27 @@ Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto, sin markdown
   "hierro": numero o null,
   "pcr": numero o null
 }
-REGLAS:
+REGLAS GENERALES:
 - glucosa = ayuno (NO promedio estimado de glucosa)
 - hemoglobina = NO incluir hemoglobina glicosilada/HbA1c
-- neutrofilos/linfocitos/monocitos/eosinofilos/basofilos = preferir % sobre valor absoluto; los valores absolutos van en neutrofilosAbs/linfocitosAbs/monocitosAbs/eosinofilosAbs/basofilosAbs
+- neutrofilos/linfocitos/monocitos/eosinofilos/basofilos: % van en esos campos; valores absolutos (#) van en neutrofilosAbs/linfocitosAbs/monocitosAbs/eosinofilosAbs/basofilosAbs
 - fecha = toma de muestra, recepción o fecha del reporte
-- "Yodo Proteico" o "PBI" → campo "yodoproteico" (NO es proteinasTotales)
-- "T3 Captación" o "T3 Uptake" → campo "t3captacion"
-- "T7" o "Índice T4 libre" o "Free Thyroxine Index" → campo "t7"
-- Extrae ABSOLUTAMENTE TODOS los analitos visibles. Si ves un valor numérico en la imagen, extráelo. NO omitas ningún resultado por no estar en el esquema — si existe el campo úsalo, si no, ignóralo pero NUNCA omitas un campo que sí existe
-- NO renombres ni generalices analitos: preserva la clasificación exacta (ej. "Yodo Proteico" ≠ "Proteínas Totales")
-- sé extremadamente preciso — no confundas valores entre filas distintas`}
+- Es inaceptable omitir analitos. Si puedes leer un valor en la imagen, inclúyelo
+- NO renombres ni generalices analitos. Usa la etiqueta exacta del documento para identificar el campo correcto
+- Si ves flechas ↑↓ o marcas H/L junto a un valor, extrae el valor numérico igualmente
+- El documento puede venir en cualquier formato (tabla, texto plano, columnas). Adapta tu lectura al formato del documento
+- Nunca adivines el analito basándote solo en el valor numérico; usa siempre la etiqueta y las unidades
+- Sé extremadamente preciso — no confundas valores entre filas distintas
+
+PERFIL TIROIDEO — Estos analitos son COMPLETAMENTE DISTINTOS entre sí. Lee la etiqueta exacta:
+1. T4 TIROXINA TOTAL (T4 Total, Tiroxina Total, Total T4) → campo "t4t" | µg/dL | rango 4.50-12.50
+2. T3 DE CAPTACIÓN (T3 Uptake, T3 Captación, Captación T3, T3 Cap) → campo "t3captacion" | % | rango 24.0-35.0 | ⚠️ NO ES T3 TOTAL — es porcentaje de captación, no concentración hormonal
+3. ÍNDICE T7 (T7, Free Thyroxine Index, FTI, Índice T4 Libre) → campo "t7" | sin unidad | rango 1.1-4.4 | calculado de T4×T3Captación
+4. TSH (Tirotropina, Thyrotropin) → campo "tsh" | mUI/mL, µIU/mL, mIU/L | rango 0.35-4.94 | ⚠️ valor decimal pequeño como 0.681 — NO confundir con T7
+5. T3 TOTAL TRIYODOTIRONINA (T3 Total, Triyodotironina, Total T3) → campo "t3t" | ng/dL | rango 70-170 | ⚠️ valor en decenas/centenas — NO confundir con T3 Captación
+6. YODO PROTEICO (PBI, Yodo Unido a Proteínas, Protein Bound Iodine) → campo "yodoproteico" | mg/dL o µg/100mL | rango 2.0-6.0 | ⚠️ NO es proteinasTotales
+REGLA CRÍTICA TIROIDEA: Asigna cada valor basándote en la etiqueta exacta Y en las unidades/magnitud. Ej: 'T3 Captación: 29.9%' → t3captacion=29.9; 'T3 Total: 64.1 ng/dL' → t3t=64.1; 'TSH: 0.681' → tsh=0.681.
+Si "Proteínas Totales" en el documento tiene el mismo valor que "Yodo Proteico", poner proteinasTotales=null (es error de mapeo — Yodo Proteico ≠ Proteínas Totales).`}
         ]
       }]
     })
