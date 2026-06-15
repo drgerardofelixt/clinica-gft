@@ -10,7 +10,8 @@
 //   #3 Persistencia token Google Calendar entre sesiones
 //   #4 Si los horarios no aparecen, revisar día de la semana seleccionado
 import { useState, useEffect, useRef, useMemo } from "react";
-import { compartirPDF } from "./pdf.js";
+// pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
+import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -1147,10 +1148,54 @@ const Firma = ({fecha="", hora="", firmaB64}) => (
   </div>
 );
 
+// ── PDF helper: genera PDF y lo abre en ventana ya abierta ────
+// win debe ser abierto SÍNCRONAMENTE antes del async (Safari popup policy)
+const abrirPDFEnVentana = async (contentRef, win, titulo) => {
+  try {
+    const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
+      import("jspdf"), import("html2canvas")
+    ]);
+    const canvas = await html2canvas(contentRef.current, {
+      scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false
+    });
+    const pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
+    const margin = 10;
+    const pdfW = pdf.internal.pageSize.getWidth() - margin * 2;
+    const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
+    const imgData = canvas.toDataURL("image/png", 0.95);
+    const imgH = pdfW * (canvas.height / canvas.width);
+    if (imgH <= pdfH) {
+      pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
+    } else {
+      let y = 0;
+      while (y < imgH) {
+        if (y > 0) pdf.addPage();
+        pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH);
+        y += pdfH;
+      }
+    }
+    const blob = pdf.output("blob");
+    const url = URL.createObjectURL(blob);
+    if (win) {
+      win.location.href = url;
+    } else {
+      // fallback si el popup fue bloqueado
+      const a = document.createElement("a");
+      a.href = url; a.target = "_blank";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+  } catch(e) {
+    console.error("PDF error:", e);
+    win?.close();
+  }
+};
+
 // ── Print Modal ───────────────────────────────────────────────
-const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
+// onWAConPDF(ref, titulo, done) — handler síncrono que abre ventanas,
+//   luego llama abrirPDFEnVentana(ref, win, titulo).finally(done)
+const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader}) => {
   const ref = useRef();
-  const [vistaFullscreen, setVistaFullscreen] = useState(false);
+  const isGenerating = useRef(false);
 
   const print = () => {
     try {
@@ -1165,22 +1210,22 @@ const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
     } catch(e) { alert("Error: "+e.message); }
   };
 
-  const compartirPDF = async () => {
-    try {
-      const { default: html2canvas } = await import("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.min.js");
-      const canvas = await html2canvas(ref.current, {scale:2,useCORS:true});
-      canvas.toBlob(async blob => {
-        if (!blob) return;
-        const file = new File([blob], (titulo||"documento")+".png", {type:"image/png"});
-        if (navigator.share && navigator.canShare({files:[file]})) {
-          await navigator.share({files:[file], title: titulo||"Documento"});
-        } else {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a"); a.href=url; a.download=(titulo||"documento")+".png";
-          a.click(); URL.revokeObjectURL(url);
-        }
-      }, "image/png");
-    } catch(e) { setVistaFullscreen(true); }
+  // Abre ventana síncronamente (Safari), carga PDF async
+  const handleCompartirPDF = () => {
+    if (isGenerating.current) return;
+    isGenerating.current = true;
+    const win = window.open("about:blank", "_blank");
+    abrirPDFEnVentana(ref, win, titulo).finally(() => { isGenerating.current = false; });
+  };
+
+  const handleWA = () => {
+    if (onWAConPDF) {
+      if (isGenerating.current) return;
+      isGenerating.current = true;
+      onWAConPDF(ref, titulo, () => { isGenerating.current = false; });
+    } else {
+      onWA?.();
+    }
   };
 
   return (
@@ -1193,13 +1238,13 @@ const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
           <span style={{fontWeight:800,color:"white",fontSize:13}}>{titulo}</span>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {extraHeader}
-            {onWA && (
-              <button onClick={onWA} style={{padding:"7px 16px",borderRadius:8,border:"none",
+            {(onWA || onWAConPDF) && (
+              <button onClick={handleWA} style={{padding:"7px 16px",borderRadius:8,border:"none",
                 background:"#25D366",color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
                 📱 WhatsApp
               </button>
             )}
-            <button onClick={compartirPDF} style={{padding:"7px 16px",borderRadius:8,border:"none",
+            <button onClick={handleCompartirPDF} style={{padding:"7px 16px",borderRadius:8,border:"none",
               background:C.morado,color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
               📤 Compartir PDF
             </button>
@@ -1218,26 +1263,6 @@ const PrintModal = ({titulo, children, onClose, onWA, extraHeader}) => {
           </div>
         </div>
       </div>
-      {vistaFullscreen && (
-        <div style={{position:"fixed",inset:0,background:"white",zIndex:10000,overflow:"auto"}}>
-          <div style={{position:"sticky",top:0,zIndex:10001,background:C.azul,color:"white",
-            padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-            <div style={{fontSize:11,fontWeight:600,flex:1,lineHeight:1.4}}>
-              📸 <b>Toma screenshot</b> (botón lateral + volumen ↑)<br/>
-              <span style={{opacity:0.8,fontSize:10}}>Luego compártelo por WhatsApp</span>
-            </div>
-            <button onClick={()=>setVistaFullscreen(false)}
-              style={{background:"white",color:C.azul,border:"none",borderRadius:8,
-                padding:"7px 14px",fontWeight:800,cursor:"pointer",fontSize:12}}>
-              ✕ Cerrar
-            </button>
-          </div>
-          <div style={{padding:14,background:"white"}}>
-            <div style={{background:"white",padding:14,maxWidth:680,margin:"0 auto"}}
-              dangerouslySetInnerHTML={{__html: ref.current?ref.current.innerHTML:""}}/>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -3227,6 +3252,21 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     enviarWA(p.telefono, msg);
   };
 
+  // Flujo Mac: abre PDF en tab + abre WhatsApp Desktop — todo síncrono para Safari
+  const waProgresoConPDF = (ref, titulo, done) => {
+    const win = window.open("about:blank", "_blank");
+    const tel = String(p.telefono||"").replace(/\D/g, "");
+    if (tel.length >= 10) {
+      const num = tel.startsWith("52") ? tel : "52" + tel;
+      const nombre = (p.nombre||"").split(" ")[0];
+      const msg = `Hola ${nombre}, te comparto tu Reporte de Progreso. Adjunto el PDF con tus resultados. ¡Saludos!`;
+      window.open(`whatsapp://send?phone=${num}&text=${encodeURIComponent(msg)}`, "_blank");
+    } else {
+      alert("El paciente no tiene teléfono registrado. Se abrirá el PDF solamente.");
+    }
+    abrirPDFEnVentana(ref, win, titulo).finally(done);
+  };
+
   const avatarColor = getAvatarColor(p.nombre||"");
 
   return (
@@ -3922,7 +3962,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         <PrintModal
           titulo={{hc:"Historia Clínica",nota:"Nota de Evolución",receta:"Receta Médica",labs:"Orden de Labs",progreso:"Reporte de Progreso"}[doc.tipo]}
           onClose={()=>{setDoc(null); setConFirmaLabs(false);}}
-          onWA={doc.tipo==="progreso"?waProgreso:null}
+          onWAConPDF={doc.tipo==="progreso"?waProgresoConPDF:null}
           extraHeader={doc.tipo==="labs" && firmaB64 ? (
             <label style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",
               background:conFirmaLabs?"#F0FFF9":C.gris,border:"2px solid "+(conFirmaLabs?C.verde:C.grisMedio),
