@@ -148,6 +148,41 @@ export const crearEventoGCal = async (nombre, telefono, fecha, hora, tipoCita, d
   }
 };
 
+// Mueve/actualiza un evento existente (cambio de fecha/hora/duración) vía PATCH
+export const actualizarEventoGCal = async (eventId, fecha, hora, duracionMin) => {
+  if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return null; }
+  const token = loadSavedToken();
+  window.gapi.client.setToken({ access_token: token });
+
+  const [year, month, day] = fecha.split("-");
+  const [hr, mn] = hora.split(":");
+  const iniISO = `${fecha}T${hora}:00`;
+  const iniDate = new Date(parseInt(year), parseInt(month)-1, parseInt(day), parseInt(hr), parseInt(mn));
+  const finDate = new Date(iniDate.getTime() + (duracionMin||30)*60000);
+  const finISO = `${finDate.getFullYear()}-${String(finDate.getMonth()+1).padStart(2,"0")}-${String(finDate.getDate()).padStart(2,"0")}T${String(finDate.getHours()).padStart(2,"0")}:${String(finDate.getMinutes()).padStart(2,"0")}:00`;
+
+  try {
+    const resp = await window.gapi.client.calendar.events.patch({
+      calendarId: "primary",
+      eventId,
+      resource: {
+        start: { dateTime: iniISO, timeZone: "America/Hermosillo" },
+        end:   { dateTime: finISO, timeZone: "America/Hermosillo" },
+      }
+    });
+    return resp.result;
+  } catch(e) {
+    console.error("Error actualizando evento GCal:", e);
+    if (e.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_EXP_KEY);
+      accessToken = null;
+      window.dispatchEvent(new Event("gcal_revoked"));
+    }
+    return null;
+  }
+};
+
 export const leerEventosGCal = async () => {
   if (!isGoogleAuthorized()) return [];
   const token = loadSavedToken();

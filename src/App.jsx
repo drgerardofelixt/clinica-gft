@@ -12,7 +12,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
-import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal } from "./googleCalendar.js";
+import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -4816,7 +4816,207 @@ const getAvatarColor = (nombre="") => {
   return colors[(nombre.charCodeAt(0)||0)%colors.length];
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida}) => {
+// ── Vista de Calendario completo (mes / semana / día, drag&drop, app + GCal) ──
+const Calendario = ({pacientes, gcalEventos, onVer, onMoverCita}) => {
+  const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const [vista, setVista] = useState("semana");        // mes | semana | dia
+  const [refStr, setRefStr] = useState(() => fmtD(new Date()));
+  const [sel, setSel] = useState(null);                // evento abierto en modal
+  const [editFecha, setEditFecha] = useState("");
+  const [editHora, setEditHora] = useState("");
+  const [drag, setDrag] = useState(null);              // evento arrastrándose
+  const [overKey, setOverKey] = useState(null);
+
+  const ref = new Date(refStr+"T00:00:00");
+  const hoyStr = fmtD(new Date());
+  const COLORS = { app:"#1D9E75", gcal:"#4285F4" };
+  const DIAS_SEM = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  // Slots de 7:00 a 21:00 cada 30min (cubre eventos GCal fuera de horario de consultorio)
+  const HORAS = []; for (let t=7*60; t<21*60; t+=30) HORAS.push(minAHhmm(t));
+  const slotDe = (hora) => minAHhmm(Math.floor(hhmmAMin(hora)/30)*30);
+
+  // ── Eventos unificados (app desde p.consultas con proxCita + gcalEventos) ──
+  const eventos = [
+    ...pacientes.flatMap(p => (p.consultas||[]).filter(c=>c.proxCita).map(c => ({
+      key:`app-${c.id}`, tipo:"app", fecha:c.proxCita, hora:c.proxHora||"09:00",
+      dur:c.proxDuracion||c.duracion||30, nombre:p.nombre||"Paciente", pac:p, consultaId:c.id, gcalId:null,
+    }))),
+    ...(gcalEventos||[]).filter(ev=>ev.start?.dateTime).map(ev => {
+      const fecha = ev.start.dateTime.split("T")[0];
+      const hora = ev.start.dateTime.split("T")[1].slice(0,5);
+      const dur = ev.end?.dateTime ? Math.max(15,Math.round((new Date(ev.end.dateTime)-new Date(ev.start.dateTime))/60000)) : 30;
+      return { key:`gcal-${ev.id}`, tipo:"gcal", fecha, hora, dur, nombre:ev.summary||"Evento", pac:null, consultaId:null, gcalId:ev.id };
+    }),
+  ];
+  const evDe = (fecha) => eventos.filter(e=>e.fecha===fecha).sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
+
+  // ── Navegación ──
+  const navega = (n) => {
+    const d = new Date(refStr+"T00:00:00");
+    if (vista==="mes") d.setMonth(d.getMonth()+n);
+    else if (vista==="semana") d.setDate(d.getDate()+7*n);
+    else d.setDate(d.getDate()+n);
+    setRefStr(fmtD(d));
+  };
+
+  // ── Drag & drop ──
+  const soltar = (fecha, hora) => {
+    const d = drag; setDrag(null); setOverKey(null);
+    if (!d) return;
+    const nuevaHora = hora || d.hora;
+    if (d.fecha===fecha && d.hora===nuevaHora) return;
+    onMoverCita && onMoverCita(d, fecha, nuevaHora);
+  };
+
+  // ── Modal de evento ──
+  const abrir = (e) => { setSel(e); setEditFecha(e.fecha); setEditHora(e.hora||""); };
+  const guardarEdit = () => {
+    if (sel && (editFecha!==sel.fecha || editHora!==sel.hora)) onMoverCita && onMoverCita(sel, editFecha, editHora||sel.hora);
+    setSel(null);
+  };
+
+  const Bloque = ({e, compact}) => (
+    <div draggable
+      onDragStart={()=>setDrag(e)} onDragEnd={()=>{setDrag(null);setOverKey(null);}}
+      onClick={()=>abrir(e)} title={`${e.hora} · ${e.nombre}${e.tipo==="gcal"?" (Google Calendar)":""}`}
+      style={{background:COLORS[e.tipo]+"22", borderLeft:`3px solid ${COLORS[e.tipo]}`, borderRadius:6,
+        padding:compact?"1px 5px":"3px 7px", margin:"2px 0", cursor:"grab", fontSize:compact?9:11,
+        color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
+      {!compact && <b style={{color:COLORS[e.tipo]}}>{e.hora} </b>}{e.nombre}
+    </div>
+  );
+
+  // ── Vista MES ──
+  const renderMes = () => {
+    const primer = new Date(ref.getFullYear(), ref.getMonth(), 1).getDay();
+    const dias = new Date(ref.getFullYear(), ref.getMonth()+1, 0).getDate();
+    return (
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+        {DIAS_SEM.map(d=>(<div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",padding:"4px 0"}}>{d}</div>))}
+        {Array.from({length:primer}).map((_,i)=><div key={"e"+i}/>)}
+        {Array.from({length:dias}).map((_,i)=>{
+          const fechaDia = `${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`;
+          const evs = evDe(fechaDia);
+          const esHoy = fechaDia===hoyStr, over = overKey===fechaDia;
+          return (
+            <div key={i}
+              onDragOver={e=>{e.preventDefault(); setOverKey(fechaDia);}} onDrop={e=>{e.preventDefault(); soltar(fechaDia, null);}}
+              onClick={()=>{ setRefStr(fechaDia); setVista("dia"); }}
+              style={{minHeight:84,border:"1px solid "+(over?"var(--gft-accent)":"var(--gft-border)"),
+                borderRadius:8,padding:5,background:over?"var(--gft-accent-dim)":esHoy?"var(--gft-surface2)":"transparent",cursor:"pointer"}}>
+              <div style={{fontSize:11,fontWeight:esHoy?800:600,color:esHoy?"var(--gft-accent)":"var(--gft-text)",marginBottom:2}}>{i+1}</div>
+              {evs.slice(0,3).map(e=><Bloque key={e.key} e={e} compact/>)}
+              {evs.length>3 && <div style={{fontSize:9,color:"var(--gft-text-muted)",fontWeight:700}}>+{evs.length-3} más</div>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ── Rejilla por horas (compartida por semana y día) ──
+  const renderGrid = (fechas) => (
+    <div style={{display:"grid",gridTemplateColumns:`56px repeat(${fechas.length},1fr)`,border:"1px solid var(--gft-border)",borderRadius:8,overflow:"hidden"}}>
+      <div style={{borderBottom:"1px solid var(--gft-border)",background:"var(--gft-surface2)"}}/>
+      {fechas.map(f=>{
+        const d = new Date(f+"T00:00:00");
+        return (<div key={f} style={{textAlign:"center",padding:"6px 0",fontSize:11,fontWeight:700,
+          color:f===hoyStr?"var(--gft-accent)":"var(--gft-text)",borderBottom:"1px solid var(--gft-border)",
+          borderLeft:"1px solid var(--gft-border)",background:"var(--gft-surface2)"}}>
+          {DIAS_SEM[d.getDay()]} {d.getDate()}</div>);
+      })}
+      {HORAS.flatMap(h=>[
+        <div key={h+"-lbl"} style={{fontSize:9,color:"var(--gft-text-muted)",textAlign:"right",padding:"2px 5px",
+          borderBottom:"1px solid var(--gft-border)",minHeight:30}}>{h.endsWith(":00")?h:""}</div>,
+        ...fechas.map(f=>{
+          const k = f+"|"+h, over = overKey===k;
+          const evs = evDe(f).filter(e=>slotDe(e.hora)===h);
+          return (
+            <div key={k}
+              onDragOver={e=>{e.preventDefault(); setOverKey(k);}} onDrop={e=>{e.preventDefault(); soltar(f, h);}}
+              style={{borderBottom:"1px solid var(--gft-border)",borderLeft:"1px solid var(--gft-border)",
+                minHeight:30,padding:"1px 2px",background:over?"var(--gft-accent-dim)":"transparent"}}>
+              {evs.map(e=><Bloque key={e.key} e={e}/>)}
+            </div>
+          );
+        })
+      ])}
+    </div>
+  );
+
+  const renderSemana = () => {
+    const ini = new Date(ref); ini.setDate(ref.getDate() - ((ref.getDay()+6)%7)); // Lunes
+    return renderGrid(Array.from({length:7}).map((_,i)=>{ const d=new Date(ini); d.setDate(ini.getDate()+i); return fmtD(d); }));
+  };
+  const renderDia = () => renderGrid([refStr]);
+
+  const tituloRango = vista==="mes" ? `${MESES[ref.getMonth()]} ${ref.getFullYear()}`
+    : vista==="dia" ? new Date(refStr+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})
+    : (()=>{ const ini=new Date(ref); ini.setDate(ref.getDate()-((ref.getDay()+6)%7)); const fin=new Date(ini); fin.setDate(ini.getDate()+6);
+        return `${ini.getDate()} ${MESES[ini.getMonth()].slice(0,3)} – ${fin.getDate()} ${MESES[fin.getMonth()].slice(0,3)}`; })();
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:4}}>
+          {["mes","semana","dia"].map(v=>(
+            <button key={v} onClick={()=>setVista(v)} className="gft-btn gft-btn--sm"
+              style={{textTransform:"capitalize",background:vista===v?"var(--gft-accent)":"var(--gft-surface2)",
+                color:vista===v?"white":"var(--gft-text)",border:"none"}}>{v}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <button onClick={()=>navega(-1)} className="gft-btn gft-btn--sm gft-btn--secondary">◀</button>
+          <button onClick={()=>setRefStr(hoyStr)} className="gft-btn gft-btn--sm gft-btn--secondary">Hoy</button>
+          <button onClick={()=>navega(1)} className="gft-btn gft-btn--sm gft-btn--secondary">▶</button>
+        </div>
+        <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)",textTransform:"capitalize"}}>{tituloRango}</div>
+        <div style={{marginLeft:"auto",display:"flex",gap:12,fontSize:11,color:"var(--gft-text-muted)"}}>
+          <span><span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:COLORS.app,marginRight:4}}/>App</span>
+          <span><span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:COLORS.gcal,marginRight:4}}/>Google</span>
+        </div>
+      </div>
+
+      <div style={{maxHeight:"calc(100vh - 220px)",overflowY:"auto"}}>
+        {vista==="mes" ? renderMes() : vista==="semana" ? renderSemana() : renderDia()}
+      </div>
+
+      {sel && (
+        <div onClick={()=>setSel(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:3000,
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"var(--gft-surface)",borderRadius:14,width:"100%",maxWidth:380,
+            padding:20,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)"}}>{sel.nombre}</div>
+              <button onClick={()=>setSel(null)} style={{background:"none",border:"none",color:"var(--gft-text-muted)",fontSize:18,cursor:"pointer"}}>✕</button>
+            </div>
+            <div style={{fontSize:11,color:COLORS[sel.tipo],fontWeight:700,marginBottom:12}}>
+              {sel.tipo==="gcal"?"📅 Google Calendar":"🏥 Cita en la app"} · {sel.dur} min
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              <div style={{flex:1}}>
+                <label style={{fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",display:"block",marginBottom:4}}>Fecha</label>
+                <input type="date" value={editFecha} onChange={e=>setEditFecha(e.target.value)} className="gft-input"/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",display:"block",marginBottom:4}}>Hora</label>
+                <input type="time" value={editHora} onChange={e=>setEditHora(e.target.value)} className="gft-input"/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={guardarEdit} className="gft-btn gft-btn--primary gft-btn--sm" style={{flex:1}}>💾 Guardar cambios</button>
+              {sel.pac && <button onClick={()=>{const p=sel.pac; setSel(null); onVer&&onVer(p);}} className="gft-btn gft-btn--secondary gft-btn--sm">Ver expediente</button>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
   const [showImport, setShowImport] = useState(false);
@@ -5062,6 +5262,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
   const topbarTitle = contentView==="dash"?"Buenos días, Dr. Félix":
                       contentView==="agenda"?"Agenda":
+                      contentView==="calendario"?"Calendario":
                       contentView==="pacientes"?"Pacientes":
                       contentView==="citas"?"Modificar cita":"Dashboard";
 
@@ -5075,7 +5276,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
         </div>
         <nav className="gft-sidebar__nav">
           <div className="gft-sidebar__section">HOY</div>
-          {[["dash","🏠","Dashboard"],["agenda","📅","Agenda"]].map(([v,ic,lb])=>(
+          {[["dash","🏠","Dashboard"],["agenda","📅","Agenda"],["calendario","🗓️","Calendario"]].map(([v,ic,lb])=>(
             <button key={v} className={"gft-sidebar__item"+(contentView===v?" gft-sidebar__item--active":"")}
               onClick={()=>setContentView(v)}>
               <span className="gft-sidebar__icon">{ic}</span>{lb}
@@ -5492,6 +5693,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           )}
 
           {/* ── VISTA AGENDA ─────────────────────────────────── */}
+          {contentView==="calendario" && (
+            <Calendario pacientes={pacientes} gcalEventos={gcalEventos} onVer={onVer} onMoverCita={onMoverCita}/>
+          )}
+
           {contentView==="agenda" && (
             <>
               {/* GCal status */}
@@ -5923,6 +6128,23 @@ export default function App() {
       await cargarPacientes();
     } catch(e) { console.error("Error cancelando cita:", e); }
   };
+  // Mueve una cita (app o GCal) a otra fecha/hora desde la vista de calendario
+  const moverCita = async (evento, nuevaFecha, nuevaHora) => {
+    try {
+      if (evento.tipo === "app") {
+        const pac = pacientes.find(x => x.id === evento.pac?.id) || evento.pac;
+        if (!pac) return;
+        const consultas = (pac.consultas||[]).map(c =>
+          c.id === evento.consultaId ? {...c, proxCita:nuevaFecha, proxHora:nuevaHora} : c);
+        await savePaciente({...pac, consultas});
+        await cargarPacientes();
+      } else if (evento.tipo === "gcal" && evento.gcalId) {
+        const ok = await actualizarEventoGCal(evento.gcalId, nuevaFecha, nuevaHora, evento.dur||30);
+        if (ok) { const evs = await leerEventosGCal(); setGcalEventos(evs); }
+        else alert("⚠️ No se pudo mover el evento en Google Calendar — verifica la conexión.");
+      }
+    } catch(e) { console.error("Error moviendo cita:", e); }
+  };
 
   const importarPacientesGCal = async (candidatos) => {
     let importados = 0;
@@ -6028,6 +6250,7 @@ export default function App() {
         onAjustes={()=>setShowConfig(true)}
         onRecetaRapida={p=>setRapidaRecetaPac(p)}
         onLabsRapida={p=>setRapidaLabsPac(p)}
+        onMoverCita={moverCita}
       />
       {rapidaRecetaPac&&<ModalReceta p={rapidaRecetaPac} firmaB64={firmaB64} onClose={()=>setRapidaRecetaPac(null)}
         onSave={async r=>{await updPac({...rapidaRecetaPac,recetas:[...(rapidaRecetaPac.recetas||[]),r]});setRapidaRecetaPac(null);}}/>}
