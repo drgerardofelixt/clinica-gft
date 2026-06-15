@@ -789,44 +789,45 @@ const parseTanita = async (texto) => {
   }
 
   // ── Pre-extracción: campos corporales totales ──────────────────────────────
-  const grasaMatch    = texto.match(/Fat\s*%[\s\S]*?(\d+\.\d+)\s*%/);
-  const bmrMatch      = texto.match(/(\d+)\s*kcal/);
-  const visceralMatch = texto.match(/Visceral\s*Fat\s*Rating\s*(\d+\.?\d*)/i);
-  const edadMetMatch  = texto.match(/Metabolic\s*Age\s*(\d+\.?\d*)/i);
-  const grasaPreExtracted    = grasaMatch    ? parseFloat(grasaMatch[1])    : null;
-  const bmrPreExtracted      = bmrMatch      ? parseFloat(bmrMatch[1])      : null;
-  const visceralPreExtracted = visceralMatch ? parseFloat(visceralMatch[1]) : null;
-  const edadMetPreExtracted  = edadMetMatch  ? parseFloat(edadMetMatch[1])  : null;
+  // Patrones robustos: \s* entre palabras, [:\-]? opcional, case-insensitive
+  const rx = (pat) => { const m=texto.match(pat); return m ? parseFloat(m[1]) : null; };
+  const pesoPreExtracted       = rx(/Weight\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const imcPreExtracted        = rx(/BMI\s*[:\-]?\s*(\d+\.?\d*)/i);
+  const grasaPreExtracted      = rx(/Fat\s*%\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
+  const grasaKgPreExtracted    = rx(/Fat\s*Mass\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const musculoPreExtracted    = rx(/Muscle\s*Mass\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const aguaPreExtracted       = rx(/Total\s*Body\s*Water\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
+  const masaOseaPreExtracted   = rx(/Bone\s*Mass\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const visceralPreExtracted   = rx(/Visceral\s*Fat\s*Rating\s*[:\-]?\s*(\d+\.?\d*)/i);
+  const edadMetPreExtracted    = rx(/Metabolic\s*Age\s*[:\-]?\s*(\d+\.?\d*)/i);
+  // BMR: la línea muestra "kJ" primero y luego "kcal" — capturar el valor kcal
+  const bmrPreExtracted        = rx(/BMR[\s\S]*?(\d+)\s*kcal/i);
 
   // ── Pre-extracción: segmentos músculo (kg) ─────────────────────────────────
   // Sufijo "kg" distingue la sección de músculo de la sección de grasa
   const segKg = (pat) => { const m=texto.match(pat); return m ? parseFloat(m[1]) : null; };
-  const musculoTroncoP  = segKg(/Trunk[^\d\n]*(\d+\.?\d*)\s*kg/i);
-  const musculoBrazoIP  = segKg(/Left\s*Arm[^\d\n]*(\d+\.?\d*)\s*kg/i);
-  const musculoBrazoDP  = segKg(/Right\s*Arm[^\d\n]*(\d+\.?\d*)\s*kg/i);
-  const musculoPiernaIP = segKg(/Left\s*Leg[^\d\n]*(\d+\.?\d*)\s*kg/i);
-  const musculoPiernaDP = segKg(/Right\s*Leg[^\d\n]*(\d+\.?\d*)\s*kg/i);
+  const musculoTroncoP  = segKg(/Trunk\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const musculoBrazoIP  = segKg(/Left\s*Arm\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const musculoBrazoDP  = segKg(/Right\s*Arm\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const musculoPiernaIP = segKg(/Left\s*Leg\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
+  const musculoPiernaDP = segKg(/Right\s*Leg\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
 
   // ── Pre-extracción: segmentos grasa (%) ───────────────────────────────────
   // Sufijo "%" distingue la sección de grasa de la sección de músculo
   const segPct = (pat) => { const m=texto.match(pat); return m ? parseFloat(m[1]) : null; };
-  const grasaTroncoP  = segPct(/Trunk[^\d\n]*(\d+\.?\d*)\s*%/i);
-  const grasaBrazoIP  = segPct(/Left\s*Arm[^\d\n]*(\d+\.?\d*)\s*%/i);
-  const grasaBrazoDP  = segPct(/Right\s*Arm[^\d\n]*(\d+\.?\d*)\s*%/i);
-  const grasaPiernaIP = segPct(/Left\s*Leg[^\d\n]*(\d+\.?\d*)\s*%/i);
-  const grasaPiernaDP = segPct(/Right\s*Leg[^\d\n]*(\d+\.?\d*)\s*%/i);
+  const grasaTroncoP  = segPct(/Trunk\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
+  const grasaBrazoIP  = segPct(/Left\s*Arm\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
+  const grasaBrazoDP  = segPct(/Right\s*Arm\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
+  const grasaPiernaIP = segPct(/Left\s*Leg\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
+  const grasaPiernaDP = segPct(/Right\s*Leg\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
 
   console.log('TANITA PRE-EXTRACT:', {
-    grasa: grasaPreExtracted, bmr: bmrPreExtracted,
-    visceral: visceralPreExtracted, edadMet: edadMetPreExtracted,
-    seg_musculo: {
-      Tronco:musculoTroncoP, BrazoI:musculoBrazoIP, BrazoD:musculoBrazoDP,
-      PiernaI:musculoPiernaIP, PiernaD:musculoPiernaDP,
-    },
-    seg_grasa: {
-      Tronco:grasaTroncoP, BrazoI:grasaBrazoIP, BrazoD:grasaBrazoDP,
-      PiernaI:grasaPiernaIP, PiernaD:grasaPiernaDP,
-    },
+    peso:pesoPreExtracted, imc:imcPreExtracted, grasa:grasaPreExtracted,
+    grasaKg:grasaKgPreExtracted, musculo:musculoPreExtracted, agua:aguaPreExtracted,
+    masaOsea:masaOseaPreExtracted, visceral:visceralPreExtracted,
+    edadMet:edadMetPreExtracted, bmr:bmrPreExtracted,
+    seg_musculo:{Tronco:musculoTroncoP,BrazoI:musculoBrazoIP,BrazoD:musculoBrazoDP,PiernaI:musculoPiernaIP,PiernaD:musculoPiernaDP},
+    seg_grasa:{Tronco:grasaTroncoP,BrazoI:grasaBrazoIP,BrazoD:grasaBrazoDP,PiernaI:grasaPiernaIP,PiernaD:grasaPiernaDP},
   });
 
   const response = await fetch("/api/claude", {
@@ -918,12 +919,18 @@ ${texto}`,
   try {
     const data = JSON.parse(raw);
     if (data.fecha && data.fecha.includes('undefined')) data.fecha = null;
-    // Sobrescribir con pre-extracciones (más confiables que Claude para valores numéricos)
-    if (fechaPreExtracted)         data.fecha            = fechaPreExtracted;
-    if (grasaPreExtracted)         data.grasaCorporal    = grasaPreExtracted;
-    if (bmrPreExtracted)           data.metabolismoBasal = bmrPreExtracted;
-    if (visceralPreExtracted!=null) data.grasaVisceral   = visceralPreExtracted;
-    if (edadMetPreExtracted!=null)  data.edadMetabolica  = edadMetPreExtracted;
+    // Sobrescribir con pre-extracciones regex (fuente de verdad para valores numéricos)
+    if (fechaPreExtracted)           data.fecha            = fechaPreExtracted;
+    if (pesoPreExtracted!=null)      data.peso             = pesoPreExtracted;
+    if (imcPreExtracted!=null)       data.imc              = imcPreExtracted;
+    if (grasaPreExtracted!=null)     data.grasaCorporal    = grasaPreExtracted;
+    if (grasaKgPreExtracted!=null)   data.grasaCorporalKg  = grasaKgPreExtracted;
+    if (musculoPreExtracted!=null)   data.masaMuscular     = musculoPreExtracted;
+    if (aguaPreExtracted!=null)      data.aguaCorporal     = aguaPreExtracted;
+    if (masaOseaPreExtracted!=null)  data.masaOsea         = masaOseaPreExtracted;
+    if (visceralPreExtracted!=null)  data.grasaVisceral    = visceralPreExtracted;
+    if (edadMetPreExtracted!=null)   data.edadMetabolica   = edadMetPreExtracted;
+    if (bmrPreExtracted!=null)       data.metabolismoBasal = bmrPreExtracted;
     // Segmentos: sobrescribir si el regex encontró el valor
     if (musculoTroncoP!=null)  data.musculoTronco  = musculoTroncoP;
     if (musculoBrazoIP!=null)  data.musculoBrazoI  = musculoBrazoIP;
@@ -1106,7 +1113,113 @@ ${texto}`,
   try { return JSON.parse(raw); } catch(e) { console.error('JSON.parse error:', e, 'raw:', raw); return {}; }
 };
 
+// ── Parser de labs con Claude Vision para imágenes ────────────
+// Lee múltiples páginas/fotos en un solo llamado → sin errores de Tesseract
+const fileToBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result.split(",")[1]);
+  reader.onerror = reject;
+  reader.readAsDataURL(file);
+});
 
+const parseLabsImagen = async (archivos) => {
+  const imagenBlocks = await Promise.all(archivos.map(async (file) => {
+    const data = await fileToBase64(file);
+    const mediaType = (file.type||"image/jpeg").replace("image/jpg","image/jpeg");
+    return { type:"image", source:{ type:"base64", media_type:mediaType, data } };
+  }));
+
+  const response = await fetch("/api/claude", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      model:"claude-haiku-4-5-20251001",
+      max_tokens:1500,
+      system:"Eres un asistente médico especializado en leer resultados de laboratorio clínico. Extrae TODOS los valores numéricos con máxima precisión. Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.",
+      messages:[{
+        role:"user",
+        content:[
+          ...imagenBlocks,
+          {type:"text",text:`Extrae todos los resultados de laboratorio de estas imágenes.
+Devuelve ÚNICAMENTE un JSON con esta estructura exacta (sin texto, sin markdown):
+{
+  "laboratorio": "nombre o null",
+  "fecha": "DD/MM/YYYY o null",
+  "paciente": "nombre o null",
+  "glucosa": numero o null,
+  "hba1c": numero o null,
+  "insulina": numero o null,
+  "homa": numero o null,
+  "colesterol": numero o null,
+  "trigliceridos": numero o null,
+  "hdl": numero o null,
+  "ldl": numero o null,
+  "vldl": numero o null,
+  "alt": numero o null,
+  "ast": numero o null,
+  "ggt": numero o null,
+  "fa": numero o null,
+  "ldh": numero o null,
+  "bilirrubinaTotal": numero o null,
+  "bilirrubinaDirecta": numero o null,
+  "bilirrubinaIndirecta": numero o null,
+  "proteinasTotales": numero o null,
+  "albumina": numero o null,
+  "globulinas": numero o null,
+  "creatinina": numero o null,
+  "bun": numero o null,
+  "urea": numero o null,
+  "acidoUrico": numero o null,
+  "sodio": numero o null,
+  "potasio": numero o null,
+  "cloro": numero o null,
+  "calcio": numero o null,
+  "fosforo": numero o null,
+  "tsh": numero o null,
+  "t4": numero o null,
+  "t4t": numero o null,
+  "t3": numero o null,
+  "t3t": numero o null,
+  "hemoglobina": numero o null,
+  "hematocrito": numero o null,
+  "eritrocitos": numero o null,
+  "leucocitos": numero o null,
+  "plaquetas": numero o null,
+  "neutrofilos": numero o null,
+  "linfocitos": numero o null,
+  "monocitos": numero o null,
+  "eosinofilos": numero o null,
+  "basofilos": numero o null,
+  "mcv": numero o null,
+  "mch": numero o null,
+  "mchc": numero o null,
+  "rdw": numero o null,
+  "fsh": numero o null,
+  "lh": numero o null,
+  "estradiol": numero o null,
+  "progesterona": numero o null,
+  "prolactina": numero o null,
+  "testosterona": numero o null,
+  "vitD": numero o null,
+  "b12": numero o null,
+  "ferritina": numero o null,
+  "hierro": numero o null,
+  "pcr": numero o null
+}
+REGLAS: glucosa = ayuno (NO promedio estimado); hemoglobina = NO incluir HbA1c; neutrófilos/linfocitos/etc = preferir % sobre valor absoluto; fecha = toma de muestra o recepción; sé extremadamente preciso — no confundas valores entre filas distintas.`}
+        ]
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Anthropic Vision API error ${response.status}: ${errBody}`);
+  }
+  const apiData = await response.json();
+  const raw = apiData.content[0].text.replace(/^```json\s*/,"").replace(/\s*```$/,"");
+  try { return JSON.parse(raw); } catch(e) { console.error("JSON parse error Vision:", e, raw); return {}; }
+};
 
 // ── Helpers de documentos ─────────────────────────────────────
 const CF = ({l, v, span=1}) => (
@@ -2004,6 +2117,11 @@ const LabsUp = ({nombre, onApply}) => {
     return combinado;
   };
 
+  const esImagen = (f) => {
+    const t=(f.type||"").toLowerCase(), n=(f.name||"").toLowerCase();
+    return t.includes("image") || /\.(jpg|jpeg|png|heic|heif|webp|bmp)$/.test(n);
+  };
+
   const run = async (files) => {
     if (!files || files.length===0) return;
     const arr = Array.from(files);
@@ -2012,15 +2130,38 @@ const LabsUp = ({nombre, onApply}) => {
     setSt("loading"); setErr(""); setData(null);
     try {
       const resultados = [];
-      for (let i=0; i<arr.length; i++) {
+      const imagenes = arr.filter(esImagen);
+      const pdfs = arr.filter(f => !esImagen(f));
+
+      // Imágenes: todas juntas en un solo llamado a Claude Vision
+      if (imagenes.length > 0) {
         try {
-          const r = await procesarArchivo(arr[i]);
-          resultados.push(r);
+          const r = await parseLabsImagen(imagenes);
+          if (r) resultados.push(r);
         } catch(e) {
-          console.warn(`Error en archivo ${arr[i].name}:`, e);
+          console.warn("Claude Vision falló, usando OCR local como fallback:", e);
+          for (const img of imagenes) {
+            try {
+              const texto = await imageToText(img);
+              if (texto && texto.trim().length >= 20) {
+                const r = await parseLabs(texto);
+                if (r) resultados.push(r);
+              }
+            } catch(e2) { console.warn("OCR fallback falló:", e2); }
+          }
         }
-        setArchivosProcesados(i+1);
+        setArchivosProcesados(imagenes.length);
       }
+
+      // PDFs: flujo existente (texto → Claude API)
+      for (let i=0; i<pdfs.length; i++) {
+        try {
+          const r = await procesarArchivo(pdfs[i]);
+          resultados.push(r);
+        } catch(e) { console.warn(`Error en PDF ${pdfs[i].name}:`, e); }
+        setArchivosProcesados(imagenes.length + i + 1);
+      }
+
       if (resultados.length === 0) {
         setSt("error"); setErr("No se pudo extraer información de ningún archivo."); return;
       }
@@ -2059,7 +2200,7 @@ const LabsUp = ({nombre, onApply}) => {
             Importar resultados de laboratorio
           </div>
           <div style={{fontSize:10,color:C.suave,marginBottom:10}}>
-            Puedes subir <b>PDFs o fotos</b> · varios archivos a la vez · OCR automático en imágenes
+            Puedes subir <b>PDFs o fotos</b> · varios archivos a la vez · Claude Vision para imágenes
           </div>
           <Btn onClick={()=>ref.current&&ref.current.click()} color={C.morado} icon="📎" size="sm">
             Subir PDFs / imágenes de labs
@@ -2073,7 +2214,7 @@ const LabsUp = ({nombre, onApply}) => {
             Analizando con IA{archivosCount>1?` (${archivosProcesados}/${archivosCount})`:""}…
           </div>
           <div style={{fontSize:9,color:C.suave,marginTop:3}}>
-            Imágenes pueden tardar 10-30 segundos (OCR local)
+            Imágenes procesadas con Claude Vision · PDFs con extracción de texto
           </div>
         </div>
       )}
