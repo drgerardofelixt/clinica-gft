@@ -1134,6 +1134,74 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
+const validateLabResults = (raw) => {
+  if (!raw || typeof raw !== 'object') return raw;
+  const r = { ...raw };
+  const sospechosos = {};
+
+  // ── 1. Duplicados por valor ───────────────────────────────────
+  const DUPLICATE_PAIRS = [
+    ['yodoproteico', 'proteinasTotales'],
+  ];
+  for (const [specific, generic] of DUPLICATE_PAIRS) {
+    const vSpec = r[specific], vGen = r[generic];
+    if (vSpec != null && vGen != null && Math.abs(vSpec - vGen) < 0.01) {
+      console.warn('LAB CORRECTION:', generic, 'valor original:', vGen, 'razón: duplicado de', specific, '— eliminado');
+      r[generic] = null;
+    }
+  }
+
+  // ── 2. Validación de rangos posibles ─────────────────────────
+  const RANGO = {
+    glucosa:[20,600], insulina:[0.1,300], hba1c:[3,20], homa:[0.1,30],
+    colesterol:[50,500], trigliceridos:[20,2000], hdl:[5,150], ldl:[10,400], vldl:[1,200],
+    alt:[1,2000], ast:[1,2000], ggt:[1,1000], fa:[10,2000], ldh:[50,3000],
+    bilirrubinaTotal:[0.1,30], bilirrubinaDirecta:[0,20], bilirrubinaIndirecta:[0,20],
+    proteinasTotales:[3,10], albumina:[1,6], globulinas:[1,7],
+    creatinina:[0.1,20], bun:[2,150], urea:[5,300], acidoUrico:[1,20],
+    sodio:[100,170], potasio:[2,8], cloro:[80,130], calcio:[5,15], fosforo:[1,10],
+    tsh:[0.001,100], t4:[0.3,5], t4t:[1,30], t3:[1,10], t3t:[20,400],
+    t3captacion:[5,60], t7:[0.5,10], yodoproteico:[0.5,15],
+    hemoglobina:[5,25], hematocrito:[10,70], eritrocitos:[1,10], leucocitos:[0.5,50],
+    plaquetas:[10,1500], neutrofilos:[1,99], linfocitos:[1,99], monocitos:[0,30],
+    eosinofilos:[0,50], basofilos:[0,10],
+    neutrofilosAbs:[0.1,30], linfocitosAbs:[0.1,20], monocitosAbs:[0,5],
+    eosinofilosAbs:[0,5], basofilosAbs:[0,1],
+    mcv:[50,130], mch:[15,45], mchc:[25,40], rdw:[5,25], pdw:[5,25], vpm:[4,20],
+    fsh:[0.5,200], lh:[0.5,200], estradiol:[5,5000], progesterona:[0.1,100],
+    prolactina:[1,500], testosterona:[1,1500],
+    vitD:[1,200], b12:[50,3000], ferritina:[1,5000], hierro:[10,500], pcr:[0.1,500],
+  };
+  for (const [key, [min, max]] of Object.entries(RANGO)) {
+    const val = r[key];
+    if (val != null && (val < min || val > max)) {
+      console.warn('LAB CORRECTION:', key, 'valor original:', val, `razón: fuera de rango posible [${min}-${max}]`);
+      sospechosos[key] = true;
+    }
+  }
+
+  // ── 3. Confusiones conocidas ──────────────────────────────────
+  if (r.t7 != null && (r.t7 < 0.1 || r.t7 > 20)) {
+    console.warn('LAB CORRECTION: t7', 'valor original:', r.t7, 'razón: fuera de rango T7 (0.5-10) — posible confusión con TSH');
+    sospechosos.t7 = true;
+  }
+  if (r.t3t != null && r.t3t < 10) {
+    console.warn('LAB CORRECTION: t3t', 'valor original:', r.t3t, 'razón: valor < 10 sospechoso para T3 Total ng/dL — posible confusión con T3 Captación');
+    sospechosos.t3t = true;
+  }
+  if (r.tsh != null && r.t7 != null && r.tsh > 10 && Math.abs(r.tsh - r.t7) < 1) {
+    console.warn('LAB CORRECTION: tsh/t7', 'tsh:', r.tsh, 't7:', r.t7, 'razón: valores similares y TSH>10 — posible intercambio');
+    sospechosos.tsh = true; sospechosos.t7 = true;
+  }
+  if (r.bun != null && r.bun > 100) {
+    console.warn('LAB CORRECTION: bun', 'valor original:', r.bun, 'razón: >100 — posible confusión con urea mg/dL o creatinina×100');
+    sospechosos.bun = true;
+  }
+
+  if (Object.keys(sospechosos).length > 0) r._sospechosos = sospechosos;
+  return r;
+};
+
 const parseLabsImagen = async (archivos) => {
   const imagenBlocks = await Promise.all(archivos.map(async (file) => {
     const data = await fileToBase64(file);
@@ -1260,7 +1328,7 @@ Si "Proteínas Totales" en el documento tiene el mismo valor que "Yodo Proteico"
   }
   const apiData = await response.json();
   const raw = apiData.content[0].text.replace(/^```json\s*/,"").replace(/\s*```$/,"");
-  try { return JSON.parse(raw); } catch(e) { console.error("JSON parse error Vision:", e, raw); return {}; }
+  try { return validateLabResults(JSON.parse(raw)); } catch(e) { console.error("JSON parse error Vision:", e, raw); return {}; }
 };
 
 // ── Helpers de documentos ─────────────────────────────────────
@@ -2278,18 +2346,20 @@ const LabsUp = ({nombre, onApply}) => {
             {CAMPOS_LABS.filter(c=>data[c.k]!=null).map(c=>{
               const estado = evaluarLab(c, data[c.k]);
               const color = colorLab(estado);
+              const sosp = data._sospechosos?.[c.k];
               return (
                 <div key={c.k} style={{fontSize:10.5,display:"flex",justifyContent:"space-between",
                   alignItems:"center",padding:"4px 6px",borderRadius:5,
-                  background:estado==="normal"?"transparent":color+"15",
-                  borderLeft:estado&&estado!=="normal"?"3px solid "+color:"3px solid transparent"}}>
+                  background:sosp?"#FFF3CD":estado==="normal"?"transparent":color+"15",
+                  borderLeft:sosp?"3px solid #F59E0B":estado&&estado!=="normal"?"3px solid "+color:"3px solid transparent"}}>
                   <span style={{color:C.suave,fontWeight:600}}>{c.l}</span>
                   <span style={{display:"flex",alignItems:"center",gap:4}}>
-                    <span style={{fontWeight:800,color}}>{data[c.k]}</span>
+                    <span style={{fontWeight:800,color:sosp?"#B45309":color}}>{data[c.k]}</span>
                     <span style={{fontSize:9,color:C.suave}}>{c.u}</span>
-                    {estado && <span style={{fontSize:11,fontWeight:900,color,marginLeft:2}}>
-                      {iconoLab(estado)}
-                    </span>}
+                    {sosp
+                      ? <span style={{fontSize:11,marginLeft:2}} title="Valor sospechoso — verificar en documento original">⚠️</span>
+                      : estado && <span style={{fontSize:11,fontWeight:900,color,marginLeft:2}}>{iconoLab(estado)}</span>
+                    }
                   </span>
                 </div>
               );
@@ -3944,16 +4014,18 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                       {CAMPOS_LABS.filter(c=>r[c.k]!=null).map(c=>{
                         const estado = evaluarLab(c, r[c.k]);
                         const color = colorLab(estado);
+                        const sosp = r._sospechosos?.[c.k];
                         return (
                           <div key={c.k} style={{fontSize:11,padding:"4px 8px",
-                            background:estado==="normal"?C.gris:color+"15",borderRadius:6,
-                            borderLeft:estado&&estado!=="normal"?"3px solid "+color:"3px solid transparent"}}>
+                            background:sosp?"#FFF3CD":estado==="normal"?C.gris:color+"15",borderRadius:6,
+                            borderLeft:sosp?"3px solid #F59E0B":estado&&estado!=="normal"?"3px solid "+color:"3px solid transparent"}}>
                             <div style={{color:C.suave,fontSize:9,fontWeight:700}}>{c.l}</div>
-                            <div style={{fontWeight:800,color,display:"flex",alignItems:"center",gap:3}}>
+                            <div style={{fontWeight:800,color:sosp?"#B45309":color,display:"flex",alignItems:"center",gap:3}}>
                               {r[c.k]} <span style={{fontSize:9,fontWeight:400,color:C.suave}}>{c.u}</span>
-                              {estado && <span style={{fontSize:11,fontWeight:900,marginLeft:2}}>
-                                {iconoLab(estado)}
-                              </span>}
+                              {sosp
+                                ? <span style={{fontSize:11,marginLeft:2}} title="Valor sospechoso — verificar en documento original">⚠️</span>
+                                : estado && <span style={{fontSize:11,fontWeight:900,marginLeft:2}}>{iconoLab(estado)}</span>
+                              }
                             </div>
                           </div>
                         );
