@@ -2505,23 +2505,29 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
 };
 
 // ── Modal Consulta ────────────────────────────────────────────
-const ModalConsulta = ({p, onClose, onSave}) => {
+const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false}) => {
   const prev = [...(p.consultas||[])].sort(porFechaClinica).slice(-1)[0];
   const [confirmarSinCita, setConfirmarSinCita] = useState(false);
-  const [f, setF] = useState({
-    id:Date.now().toString(), fecha:hoy(), hora:ahora(),
-    peso:"", ca:"", ta:"", fc:"", spo2:"", glucosaCapilar:"",
-    subjetivo:"", efectos:"Negados", respuesta:"Adecuada",
-    plan:"", cambioDosis:"Continúa esquema actual",
-    medicamento:(p.ci&&p.ci.glp1)||"", dosis:"", proxCita:"",
-    comp:{peso:"",grasa:"",musculo:"",agua:"",osea:"",visceral:"",bmr:"",edadMet:"",imc:""},
+  const [f, setF] = useState(() => {
+    const base = {
+      id:Date.now().toString(), fecha:hoy(), hora:ahora(),
+      peso:"", ca:"", ta:"", fc:"", spo2:"", glucosaCapilar:"",
+      subjetivo:"", efectos:"Negados", respuesta:"Adecuada",
+      plan:"", cambioDosis:"Continúa esquema actual",
+      medicamento:(p.ci&&p.ci.glp1)||"", dosis:"", proxCita:"",
+      comp:{peso:"",grasa:"",musculo:"",agua:"",osea:"",visceral:"",bmr:"",edadMet:"",imc:""},
+    };
+    if (!consultaExistente) return base;
+    // Modo edición: parte de los defaults y sobrescribe con la consulta existente (conserva su id)
+    return { ...base, ...consultaExistente, comp:{...base.comp, ...(consultaExistente.comp||{})} };
   });
   const u = (k,v) => setF(x=>({...x,[k]:v}));
   const uc = (k,v) => setF(x=>({...x,comp:{...x.comp,[k]:v}}));
 
   const guardarConsulta = () => {
     onSave(f);
-    if (f.proxCita && p.telefono) {
+    // En modo edición no se reenvía la confirmación de cita por WhatsApp
+    if (!modoEdicion && f.proxCita && p.telefono) {
       const fechaMx = new Date(f.proxCita+"T00:00:00").toLocaleDateString("es-MX",{
         weekday:"long",day:"numeric",month:"long",year:"numeric"
       });
@@ -2564,7 +2570,7 @@ const ModalConsulta = ({p, onClose, onSave}) => {
         <div style={{background:C.verde,padding:"14px 22px",display:"flex",
           justifyContent:"space-between",alignItems:"center"}}>
           <div style={{color:"white",fontWeight:800,fontSize:14}}>
-            Nueva consulta — {p.nombre}
+            {modoEdicion ? "Editar consulta" : "Nueva consulta"} — {p.nombre}
           </div>
           <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",
             color:"white",fontSize:20,cursor:"pointer",borderRadius:8,padding:"2px 10px"}}>×</button>
@@ -2695,7 +2701,7 @@ const ModalConsulta = ({p, onClose, onSave}) => {
             }
             // Guardar y enviar confirmación WhatsApp
             guardarConsulta();
-          }} color={C.verde} icon="✓">Guardar consulta</Btn>
+          }} color={C.verde} icon="✓">{modoEdicion ? "Guardar cambios" : "Guardar consulta"}</Btn>
         </div>
       </div>
 
@@ -3138,6 +3144,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [showEditPac, setShowEditPac] = useState(false);
   const [doc, setDoc] = useState(null);
   const [conFirmaLabs, setConFirmaLabs] = useState(false);
+  const [consultaAEditar, setConsultaAEditar] = useState(null);
 
   const addConsulta = (d) => {
     // Asegurar que comp.peso usa el peso principal si comp.peso está vacío
@@ -3152,6 +3159,33 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       composicion:[...(p.composicion||[]),comp],
     });
     setShowC(false);
+  };
+  // Reemplaza una consulta existente (modo edición) y sincroniza p.composicion por id/fecha
+  const editConsulta = (d) => {
+    const comp = {
+      ...(d.comp||{}),
+      peso: (d.comp&&d.comp.peso) || d.peso || "",
+      fecha: d.fecha,
+      id: d.id,
+    };
+    const tieneComp = comp.peso || comp.grasa || comp.musculo;
+    const sameComp = c => (c.id!=null ? c.id===d.id : c.fecha===d.fecha);
+    const yaExiste = (p.composicion||[]).some(sameComp);
+    const composicion = yaExiste
+      ? (p.composicion||[]).map(c => sameComp(c) ? comp : c)
+      : (tieneComp ? [...(p.composicion||[]), comp] : (p.composicion||[]));
+    onUpdate({...p,
+      consultas:(p.consultas||[]).map(c => c.id===d.id ? d : c),
+      composicion,
+    });
+    setConsultaAEditar(null);
+  };
+  const eliminarConsulta = (consultaId) => {
+    if (!confirm('¿Eliminar esta consulta? Esta acción no se puede deshacer.')) return;
+    onUpdate({...p,
+      consultas:(p.consultas||[]).filter(c => c.id !== consultaId),
+      composicion:(p.composicion||[]).filter(c => c.id !== consultaId),
+    });
   };
   const addReceta = (r) => { onUpdate({...p,recetas:[...(p.recetas||[]),r]}); setShowR(false); };
   const addLabs = (l) => { onUpdate({...p,laboratorios:[...(p.laboratorios||[]),l]}); setShowL(false); };
@@ -3785,8 +3819,14 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           </div>
                         )}
                       </div>
-                      <Btn onClick={()=>setDoc({tipo:"nota",consulta:c})}
-                        outline color={C.azul} size="sm" icon="🖨️">Ver nota</Btn>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        <Btn onClick={()=>setDoc({tipo:"nota",consulta:c})}
+                          outline color={C.azul} size="sm" icon="🖨️">Ver nota</Btn>
+                        <Btn onClick={()=>setConsultaAEditar(c)}
+                          outline color={C.verde} size="sm" icon="✏️">Editar</Btn>
+                        <Btn onClick={()=>eliminarConsulta(c.id)}
+                          outline color={C.rojo} size="sm" icon="🗑️">Eliminar</Btn>
+                      </div>
                     </div>
                   </Card>
                 );
@@ -3988,6 +4028,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         )}
       </div>
       {showC && <ModalConsulta p={p} onClose={()=>setShowC(false)} onSave={addConsulta}/>}
+      {consultaAEditar && <ModalConsulta p={p} consultaExistente={consultaAEditar} modoEdicion
+        onClose={()=>setConsultaAEditar(null)} onSave={editConsulta}/>}
       {showR && <ModalReceta p={p} firmaB64={firmaB64} onClose={()=>setShowR(false)} onSave={addReceta}/>}
       {showL && <ModalLabs p={p} onClose={()=>setShowL(false)} onSave={addLabs}/>}
       {showAgenda && (
