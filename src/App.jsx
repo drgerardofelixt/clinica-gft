@@ -1485,7 +1485,7 @@ const DocProgreso = ({p}) => {
   const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
   const med   = p.ci?.glp1 || p.ci?.medicamento || null;
   const dosis = p.ci?.dosis || null;
-  const esMujer = /femenino/i.test(p.sexo||"");
+  const esMujer = /mujer|femenino|^f$/i.test(p.sexo||"");
 
   const pesoDif    = difStr(ultima?.peso, primera?.peso);
   const grasaDif   = difStr(ultima?.grasa, primera?.grasa);
@@ -3273,7 +3273,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
     const med   = p.ci?.glp1 || p.ci?.medicamento || null;
     const dosis = p.ci?.dosis || null;
-    const esMujer = /femenino/i.test(p.sexo||"");
+    const esMujer = /mujer|femenino|^f$/i.test(p.sexo||"");
 
     const difNum = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")
       ? parseFloat((parseFloat(a)-parseFloat(b)).toFixed(2)) : null;
