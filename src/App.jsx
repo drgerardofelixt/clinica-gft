@@ -14,7 +14,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
-import { pdfToText, parseTanita } from "./parsers/tanita-rd545";
+import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
 
@@ -1842,12 +1842,10 @@ const TanitaUp = ({nombre, onApply}) => {
 
   const run = async (file) => {
     if (!file) return;
-    setSt("loading"); setErr(""); setData(null); setRawText("");
+    setSt("loading"); setErr(""); setData(null);
     try {
-      const texto = await pdfToText(file);
-      setRawText(texto);
-      const r = await parseTanita(texto);
-      if (r.peso==null && r.grasa==null) {
+      const r = await parsearBascula(file);
+      if (r.peso==null && r.grasaCorporal==null) {
         setSt("error");
         setErr("No se encontraron datos de composición corporal.");
         return;
@@ -1871,7 +1869,7 @@ const TanitaUp = ({nombre, onApply}) => {
   return (
     <div style={{marginBottom:12,padding:14,borderRadius:10,
       border:"2px dashed "+border,background:bg,transition:"all 0.2s"}}>
-      <input ref={ref} type="file" accept=".pdf" style={{display:"none"}}
+      <input ref={ref} type="file" accept=".pdf,.jpg,.jpeg,.png" style={{display:"none"}}
         onChange={e=>run(e.target.files&&e.target.files[0])}/>
       {st==="idle" && (
         <div style={{textAlign:"center"}}>
