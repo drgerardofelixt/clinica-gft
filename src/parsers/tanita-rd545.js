@@ -72,16 +72,11 @@ export const parseTanita = async (texto) => {
   const grasaKgPreExtracted    = rx(/Fat\s*Mass\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
   const musculoPreExtracted    = rx(/Muscle\s*Mass\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
   const aguaPreExtracted       = rx(/Total\s*Body\s*Water\s*[:\-]?\s*(\d+\.?\d*)\s*%/i);
-  const masaOseaPreExtracted   = rx(/Bone\s*Mass[\s\S]{1,40}?(\d+\.?\d*)\s*kg/i);
+  const masaOseaPreExtracted   = rx(/Bone\s*Mass\s*[:\-]?\s*(\d+\.?\d*)\s*kg/i);
   const visceralPreExtracted   = rx(/Visceral\s*Fat\s*Rating\s*[:\-]?\s*(\d+\.?\d*)/i);
-  // edadMetabolica: "Metabolic Age" no queda adyacente al valor en el texto extraído;
-  // 56 aparece inmediatamente después del IMC (23.6x). Fallback: primer nº de 2 dígitos tras kcal.
-  const edadMetPreExtracted    = rx(/23\.6\d*\s+(\d+(?:\.\d+)?)/)
-                              ?? rx(/1257\s*kcal[\s\S]{1,50}?(\d{2})\b/);
+  const edadMetPreExtracted    = rx(/Metabolic\s*Age\s*[:\-]?\s*(\d+\.?\d*)/i);
   // BMR: la línea muestra "kJ" primero y luego "kcal" — capturar el valor kcal
   const bmrPreExtracted        = rx(/BMR[\s\S]*?(\d+)\s*kcal/i);
-  // proteina: sin regex anterior caía a Claude que confundía con Trunk Muscle (20.9)
-  const proteinaPreExtracted   = rx(/Protein[\s\S]{1,40}?(\d+\.?\d*)\s*kg/i);
 
   // ── Pre-extracción: segmentos músculo (kg) ─────────────────────────────────
   // Sufijo "kg" distingue la sección de músculo de la sección de grasa
@@ -211,7 +206,6 @@ ${texto}`,
     if (visceralPreExtracted!=null)  data.grasaVisceral    = visceralPreExtracted;
     if (edadMetPreExtracted!=null)   data.edadMetabolica   = edadMetPreExtracted;
     if (bmrPreExtracted!=null)       data.metabolismoBasal = bmrPreExtracted;
-    if (proteinaPreExtracted!=null)  data.proteina         = proteinaPreExtracted;
     // Segmentos: sobrescribir si el regex encontró el valor
     if (musculoTroncoP!=null)  data.musculoTronco  = musculoTroncoP;
     if (musculoBrazoIP!=null)  data.musculoBrazoI  = musculoBrazoIP;
