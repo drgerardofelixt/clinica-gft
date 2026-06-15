@@ -1148,9 +1148,8 @@ const Firma = ({fecha="", hora="", firmaB64}) => (
   </div>
 );
 
-// ── PDF helper: genera PDF y lo abre en ventana ya abierta ────
-// win debe ser abierto SÍNCRONAMENTE antes del async (Safari popup policy)
-const abrirPDFEnVentana = async (contentRef, win, titulo) => {
+// ── PDF helper: genera PDF real y lo descarga (macOS lo abre en Preview) ──
+const generarYDescargarPDF = async (contentRef, filename) => {
   try {
     const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
       import("jspdf"), import("html2canvas")
@@ -1168,7 +1167,8 @@ const abrirPDFEnVentana = async (contentRef, win, titulo) => {
       pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
     } else {
       let y = 0;
-      while (y < imgH) {
+      // tolerancia 0.5 mm evita página en blanco por error de punto flotante
+      while (y < imgH - 0.5) {
         if (y > 0) pdf.addPage();
         pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH);
         y += pdfH;
@@ -1176,23 +1176,20 @@ const abrirPDFEnVentana = async (contentRef, win, titulo) => {
     }
     const blob = pdf.output("blob");
     const url = URL.createObjectURL(blob);
-    if (win) {
-      win.location.href = url;
-    } else {
-      // fallback si el popup fue bloqueado
-      const a = document.createElement("a");
-      a.href = url; a.target = "_blank";
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    }
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "documento.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   } catch(e) {
     console.error("PDF error:", e);
-    win?.close();
   }
 };
 
 // ── Print Modal ───────────────────────────────────────────────
-// onWAConPDF(ref, titulo, done) — handler síncrono que abre ventanas,
-//   luego llama abrirPDFEnVentana(ref, win, titulo).finally(done)
+// onWAConPDF(ref, titulo, done) — descarga PDF + abre WhatsApp Desktop
 const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader}) => {
   const ref = useRef();
   const isGenerating = useRef(false);
@@ -1210,12 +1207,11 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader}) 
     } catch(e) { alert("Error: "+e.message); }
   };
 
-  // Abre ventana síncronamente (Safari), carga PDF async
   const handleCompartirPDF = () => {
     if (isGenerating.current) return;
     isGenerating.current = true;
-    const win = window.open("about:blank", "_blank");
-    abrirPDFEnVentana(ref, win, titulo).finally(() => { isGenerating.current = false; });
+    const fname = (titulo||"Documento").replace(/\s+/g, "_") + ".pdf";
+    generarYDescargarPDF(ref, fname).finally(() => { isGenerating.current = false; });
   };
 
   const handleWA = () => {
@@ -1257,7 +1253,7 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader}) 
           </div>
         </div>
         <div style={{overflow:"auto",flex:1,padding:20}}>
-          <div ref={ref} style={{background:"white",padding:28,maxWidth:660,
+          <div ref={ref} style={{background:"white",padding:"16px 24px 24px",maxWidth:660,
             margin:"0 auto",border:"1px solid "+C.grisMedio,borderRadius:8}}>
             {children}
           </div>
@@ -1658,7 +1654,7 @@ const DocProgreso = ({p}) => {
   return (
     <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
       {/* 1. Header — logo original con Céd./Reg. SSA ya integrados */}
-      <div style={{marginBottom:12,paddingBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
+      <div style={{marginBottom:4,paddingBottom:6,borderBottom:"2px solid #1B3F8B20"}}>
         <img src={IMG_LOGO_CED} alt="Logo" style={{maxWidth:260,width:"100%",height:"auto",display:"block"}}/>
       </div>
 
@@ -3252,9 +3248,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     enviarWA(p.telefono, msg);
   };
 
-  // Flujo Mac: abre PDF en tab + abre WhatsApp Desktop — todo síncrono para Safari
-  const waProgresoConPDF = (ref, titulo, done) => {
-    const win = window.open("about:blank", "_blank");
+  // Descarga PDF + abre WhatsApp Desktop con mensaje corto
+  const waProgresoConPDF = (ref, _titulo, done) => {
     const tel = String(p.telefono||"").replace(/\D/g, "");
     if (tel.length >= 10) {
       const num = tel.startsWith("52") ? tel : "52" + tel;
@@ -3262,9 +3257,12 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       const msg = `Hola ${nombre}, te comparto tu Reporte de Progreso. Adjunto el PDF con tus resultados. ¡Saludos!`;
       window.open(`whatsapp://send?phone=${num}&text=${encodeURIComponent(msg)}`, "_blank");
     } else {
-      alert("El paciente no tiene teléfono registrado. Se abrirá el PDF solamente.");
+      alert("El paciente no tiene teléfono registrado. Se descargará el PDF solamente.");
     }
-    abrirPDFEnVentana(ref, win, titulo).finally(done);
+    const fecha = new Date().toLocaleDateString("es-MX",
+      {year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"-");
+    const fname = `Reporte_${(p.nombre||"Paciente").replace(/\s+/g,"_")}_${fecha}.pdf`;
+    generarYDescargarPDF(ref, fname).finally(done);
   };
 
   const avatarColor = getAvatarColor(p.nombre||"");
