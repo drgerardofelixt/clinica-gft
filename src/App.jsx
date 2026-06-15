@@ -1583,7 +1583,12 @@ const DocProgreso = ({p}) => {
   const tallam  = tallaCm/100;
   const edad    = parseFloat(p.edad)||40;
   const pesoObj = parseFloat((22*tallam*tallam).toFixed(1));
-  const grasaObjKg = parseFloat((pesoObj*(esMujer?0.30:0.16)).toFixed(1));
+  // Meta de masa grasa: preserva la masa magra actual y lleva la grasa al inicio del rango "Aceptable" ACE
+  const metaGrasaPct = esMujer ? 31 : 24;
+  const masaMagraAct = (ultima?.peso!=null && ultima?.grasa!=null)
+    ? parseFloat(ultima.peso)*(1 - parseFloat(ultima.grasa)/100) : null;
+  const grasaObjKg = masaMagraAct!=null
+    ? parseFloat((masaMagraAct/(1 - metaGrasaPct/100)*(metaGrasaPct/100)).toFixed(1)) : null;
   const bmrObj  = Math.round(esMujer
     ? (10*pesoObj)+(6.25*tallaCm)-(5*edad)-161
     : (10*pesoObj)+(6.25*tallaCm)-(5*edad)+5);
@@ -1643,30 +1648,14 @@ const DocProgreso = ({p}) => {
     {label:"Pierna izq.", mKey:"musculoPI",     gKey:"grasaPI"},
     {label:"Pierna der.", mKey:"musculoPD",     gKey:"grasaPD"},
   ];
-  // First entry that has ANY segmental data (Tanita may not have been used from day 1)
-  const segRef = comps.find(c=>
-    c.musculoTronco!=null||c.musculoBI!=null||c.musculoBD!=null||
-    c.musculoPI!=null||c.musculoPD!=null||
-    c.grasaTronco!=null||c.grasaBI!=null||c.grasaBD!=null||
-    c.grasaPI!=null||c.grasaPD!=null
-  );
-  const hasSegmental = segRef!=null&&ultima!=null&&segRef!==ultima;
-  console.log('SEGMENTAL DEBUG — todas las mediciones:', comps.map((c,i)=>({
-    i, fecha:c.fecha,
-    musculoTronco:c.musculoTronco, musculoBI:c.musculoBI, musculoBD:c.musculoBD,
-    musculoPI:c.musculoPI, musculoPD:c.musculoPD,
-    grasaTronco:c.grasaTronco, grasaBI:c.grasaBI, grasaBD:c.grasaBD,
-  })));
-  console.log('SEGMENTAL DEBUG — segRef vs ultima:', {
-    hasSegmental,
-    segRef_fecha:segRef?.fecha, ultima_fecha:ultima?.fecha,
-    segRef_musculoBI:segRef?.musculoBI, ultima_musculoBI:ultima?.musculoBI,
-    segRef_musculoBD:segRef?.musculoBD, ultima_musculoBD:ultima?.musculoBD,
-    difBI:difNum(ultima?.musculoBI, segRef?.musculoBI),
-    difBD:difNum(ultima?.musculoBD, segRef?.musculoBD),
-    segRef_grasaBI:segRef?.grasaBI, ultima_grasaBI:ultima?.grasaBI,
-    segRef_grasaBD:segRef?.grasaBD, ultima_grasaBD:ultima?.grasaBD,
-  });
+  // ¿La medición tiene algún dato segmental real? (no-nulo Y no-vacío — los ausentes se guardan como "")
+  const tieneSeg = c => [
+    c.musculoTronco, c.musculoBI, c.musculoBD, c.musculoPI, c.musculoPD,
+    c.grasaTronco, c.grasaBI, c.grasaBD, c.grasaPI, c.grasaPD,
+  ].some(v => v!=null && v!=="");
+  const segRef = comps.find(tieneSeg);                  // primera medición con datos reales
+  const segAct = [...comps].reverse().find(tieneSeg);   // última medición con datos reales
+  const hasSegmental = segRef && segAct && segRef!==segAct;
   // val = difNum result (number or null); null = dato ausente → "—"; 0 = sin cambio → "= X"
   const SegCell = ({val, rawAct, positiveGood, unit}) => {
     if(val==null) return <span style={{color:C.suave,fontSize:10}}>—</span>;
@@ -1807,8 +1796,8 @@ const DocProgreso = ({p}) => {
               <span style={{fontSize:9,fontWeight:700,color:C.suave,textAlign:"right"}}>Grasa</span>
             </div>
             {SEGS.map((s,i)=>{
-              const md=difNum(ultima[s.mKey],segRef[s.mKey]);
-              const gd=difNum(ultima[s.gKey],segRef[s.gKey]);
+              const md=difNum(segAct[s.mKey],segRef[s.mKey]);
+              const gd=difNum(segAct[s.gKey],segRef[s.gKey]);
               if(md==null&&gd==null) return null;
               return (
                 <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
@@ -1816,10 +1805,10 @@ const DocProgreso = ({p}) => {
                   alignItems:"center"}}>
                   <span style={{fontSize:10,color:C.suave}}>{s.label}</span>
                   <span style={{textAlign:"center"}}>
-                    <SegCell val={md} rawAct={ultima[s.mKey]} positiveGood={true} unit="kg"/>
+                    <SegCell val={md} rawAct={segAct[s.mKey]} positiveGood={true} unit="kg"/>
                   </span>
                   <span style={{textAlign:"right"}}>
-                    <SegCell val={gd} rawAct={ultima[s.gKey]} positiveGood={false} unit="%"/>
+                    <SegCell val={gd} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/>
                   </span>
                 </div>
               );
@@ -3300,7 +3289,12 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const tallam  = tallaCm/100;
     const edad    = parseFloat(p.edad)||40;
     const pesoObj = parseFloat((22*tallam*tallam).toFixed(1));
-    const grasaObjKg = parseFloat((pesoObj*(esMujer?0.30:0.16)).toFixed(1));
+    // Meta de masa grasa: preserva la masa magra actual y lleva la grasa al inicio del rango "Aceptable" ACE
+    const metaGrasaPct = esMujer ? 31 : 24;
+    const masaMagraAct = (ultima?.peso!=null && ultima?.grasa!=null)
+      ? parseFloat(ultima.peso)*(1 - parseFloat(ultima.grasa)/100) : null;
+    const grasaObjKg = masaMagraAct!=null
+      ? parseFloat((masaMagraAct/(1 - metaGrasaPct/100)*(metaGrasaPct/100)).toFixed(1)) : null;
     const bmrObj  = Math.round(esMujer
       ? (10*pesoObj)+(6.25*tallaCm)-(5*edad)-161
       : (10*pesoObj)+(6.25*tallaCm)-(5*edad)+5);
@@ -3317,13 +3311,14 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       {label:"Pierna izq.", mKey:"musculoPI",     gKey:"grasaPI"},
       {label:"Pierna der.", mKey:"musculoPD",     gKey:"grasaPD"},
     ];
-    const waSegRef = comps.find(c=>
-      c.musculoTronco!=null||c.musculoBI!=null||c.musculoBD!=null||
-      c.musculoPI!=null||c.musculoPD!=null||
-      c.grasaTronco!=null||c.grasaBI!=null||c.grasaBD!=null||
-      c.grasaPI!=null||c.grasaPD!=null
-    );
-    const hasSegWA = waSegRef!=null&&ultima!=null&&waSegRef!==ultima;
+    // Datos segmentales reales: no-nulo Y no-vacío (los ausentes se guardan como "")
+    const tieneSegWA = c => [
+      c.musculoTronco, c.musculoBI, c.musculoBD, c.musculoPI, c.musculoPD,
+      c.grasaTronco, c.grasaBI, c.grasaBD, c.grasaPI, c.grasaPD,
+    ].some(v => v!=null && v!=="");
+    const waSegRef = comps.find(tieneSegWA);                  // primera con datos reales
+    const waSegAct = [...comps].reverse().find(tieneSegWA);   // última con datos reales
+    const hasSegWA = waSegRef && waSegAct && waSegRef!==waSegAct;
 
     const primerNom = (p.nombre||"").split(" ")[0]||"";
     let msg = `Hola ${primerNom}, le comparto su reporte de progreso:\n\n`;
@@ -3371,11 +3366,11 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
 
     if (hasSegWA) {
       const segLines = WA_SEGS.map(s=>{
-        const md=difNum(ultima[s.mKey],waSegRef[s.mKey]);
-        const gd=difNum(ultima[s.gKey],waSegRef[s.gKey]);
+        const md=difNum(waSegAct[s.mKey],waSegRef[s.mKey]);
+        const gd=difNum(waSegAct[s.gKey],waSegRef[s.gKey]);
         if(md==null&&gd==null) return null;
-        const mTxt=md==null?"":md===0?` músculo: ${parseFloat(ultima[s.mKey]).toFixed(1)} kg`:` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
-        const gTxt=gd==null?"":gd===0?` grasa: ${parseFloat(ultima[s.gKey]).toFixed(1)}%`:" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
+        const mTxt=md==null?"":md===0?` músculo: ${parseFloat(waSegAct[s.mKey]).toFixed(1)} kg`:` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
+        const gTxt=gd==null?"":gd===0?` grasa: ${parseFloat(waSegAct[s.gKey]).toFixed(1)}%`:" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
         return `• ${s.label}:${mTxt}${gTxt}`;
       }).filter(Boolean);
       if (segLines.length) {
