@@ -1148,7 +1148,12 @@ const Firma = ({fecha="", hora="", firmaB64}) => (
   </div>
 );
 
-// ── PDF helper: genera PDF real y lo descarga (macOS lo abre en Preview) ──
+// Elimina acentos y reemplaza espacios/caracteres especiales con guión bajo
+const sanitizeFilename = (str) =>
+  (str||"").normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .replace(/[^a-zA-Z0-9\-]/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"");
+
+// ── PDF helper: genera PDF real y lo abre en macOS Preview sin diálogo ──
 const generarYDescargarPDF = async (contentRef, filename) => {
   try {
     const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
@@ -1174,21 +1179,17 @@ const generarYDescargarPDF = async (contentRef, filename) => {
         y += pdfH;
       }
     }
-    // Blob explícito type:'application/pdf' → macOS lo abre en Preview, no pregunta dónde guardar
     const pdfBytes = pdf.output("arraybuffer");
     const blob = new Blob([pdfBytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
-    // Sin atributo 'download': el OS delega a Preview
-    const opened = window.open(url, "_blank");
-    if (!opened) {
-      // Fallback si el popup fue bloqueado
-      const a = document.createElement("a");
-      a.href = url;
-      a.setAttribute("type", "application/pdf");
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    }
+    // Sin 'download': macOS delega al OS → Preview. title afecta el nombre en Preview/Share.
+    const a = document.createElement("a");
+    a.href = url;
+    a.setAttribute("type", "application/pdf");
+    a.setAttribute("title", filename || "documento.pdf");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch(e) {
     console.error("PDF error:", e);
@@ -1197,7 +1198,7 @@ const generarYDescargarPDF = async (contentRef, filename) => {
 
 // ── Print Modal ───────────────────────────────────────────────
 // onWAConPDF(ref, titulo, done) — descarga PDF + abre WhatsApp Desktop
-const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader}) => {
+const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, pdfFilename}) => {
   const ref = useRef();
   const isGenerating = useRef(false);
 
@@ -1217,7 +1218,7 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader}) 
   const handleCompartirPDF = () => {
     if (isGenerating.current) return;
     isGenerating.current = true;
-    const fname = (titulo||"Documento").replace(/\s+/g, "_") + ".pdf";
+    const fname = pdfFilename || (sanitizeFilename(titulo||"Documento") + ".pdf");
     generarYDescargarPDF(ref, fname).finally(() => { isGenerating.current = false; });
   };
 
@@ -3268,7 +3269,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     }
     const fecha = new Date().toLocaleDateString("es-MX",
       {year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"-");
-    const fname = `Reporte_${(p.nombre||"Paciente").replace(/\s+/g,"_")}_${fecha}.pdf`;
+    const fname = `Reporte_${sanitizeFilename(p.nombre||"Paciente")}_${fecha}.pdf`;
     generarYDescargarPDF(ref, fname).finally(done);
   };
 
@@ -3968,6 +3969,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           titulo={{hc:"Historia Clínica",nota:"Nota de Evolución",receta:"Receta Médica",labs:"Orden de Labs",progreso:"Reporte de Progreso"}[doc.tipo]}
           onClose={()=>{setDoc(null); setConFirmaLabs(false);}}
           onWAConPDF={doc.tipo==="progreso"?waProgresoConPDF:null}
+          pdfFilename={doc.tipo==="progreso"?`Reporte_${sanitizeFilename(p.nombre||"Paciente")}_${new Date().toLocaleDateString("es-MX",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"-")}.pdf`:undefined}
           extraHeader={doc.tipo==="labs" && firmaB64 ? (
             <label style={{display:"flex",alignItems:"center",gap:6,padding:"6px 12px",
               background:conFirmaLabs?"#F0FFF9":C.gris,border:"2px solid "+(conFirmaLabs?C.verde:C.grisMedio),
