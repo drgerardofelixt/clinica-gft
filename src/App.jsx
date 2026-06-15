@@ -5032,6 +5032,12 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [hovStat, setHovStat] = useState(null);
   const [quickAction, setQuickAction] = useState(null); // null | "receta" | "labs"
   const [quickBusq, setQuickBusq] = useState("");
+  // Lanza receta/labs rápida con un paciente existente o con un objeto de nombre libre {nombre,_libre}
+  const lanzarRapida = (accion, objetivo) => {
+    if (!objetivo || !objetivo.nombre) return;
+    setQuickAction(null); setQuickBusq("");
+    accion==="receta" ? onRecetaRapida && onRecetaRapida(objetivo) : onLabsRapida && onLabsRapida(objetivo);
+  };
   const hoy = new Date(); hoy.setHours(0,0,0,0);
 
   // Sanitizar pacientes: asegurar que sea array y filtrar inválidos
@@ -5401,18 +5407,23 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       <button onClick={()=>setQuickAction(null)}
                         style={{background:"none",border:"none",color:"var(--gft-text-muted)",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
                     </div>
-                    <input className="gft-input" autoFocus placeholder="Buscar paciente…"
+                    <input className="gft-input" autoFocus placeholder="Buscar paciente o escribir nombre…"
                       value={quickBusq} onChange={e=>setQuickBusq(e.target.value)}
+                      onKeyDown={e=>{
+                        if(e.key==="Enter" && quickBusq.trim()){
+                          const txt=quickBusq.trim();
+                          const exact=pacientes.find(p=>(p.nombre||"").toLowerCase()===txt.toLowerCase());
+                          lanzarRapida(quickAction, exact || {nombre:txt, _libre:true});
+                        }
+                      }}
                       style={{marginBottom:12}}/>
                     <div style={{overflowY:"auto",flex:1}}>
                       {pacientes
                         .filter(p=>(p.nombre||"").toLowerCase().includes(quickBusq.toLowerCase()))
                         .slice(0,20)
                         .map(p=>(
-                          <div key={p.id} onClick={()=>{
-                            setQuickAction(null);
-                            quickAction==="receta" ? onRecetaRapida&&onRecetaRapida(p) : onLabsRapida&&onLabsRapida(p);
-                          }} style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",
+                          <div key={p.id} onClick={()=>lanzarRapida(quickAction, p)}
+                            style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",
                             display:"flex",alignItems:"center",gap:10,
                             borderBottom:"1px solid var(--gft-border)"}}
                             onMouseEnter={e=>e.currentTarget.style.background="var(--gft-surface2)"}
@@ -5427,8 +5438,18 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                             </div>
                           </div>
                         ))}
-                      {pacientes.filter(p=>(p.nombre||"").toLowerCase().includes(quickBusq.toLowerCase())).length===0&&(
-                        <div style={{textAlign:"center",padding:20,color:"var(--gft-text-muted)",fontSize:13}}>Sin resultados</div>
+                      {/* Nombre libre: aparece si hay texto y no coincide exactamente con un paciente existente */}
+                      {quickBusq.trim() && !pacientes.some(p=>(p.nombre||"").toLowerCase()===quickBusq.trim().toLowerCase()) && (
+                        <div onClick={()=>lanzarRapida(quickAction, {nombre:quickBusq.trim(), _libre:true})}
+                          style={{padding:"10px 12px",borderRadius:10,cursor:"pointer",display:"flex",alignItems:"center",
+                            gap:10,marginTop:6,border:"1px dashed var(--gft-accent)",background:"var(--gft-accent-dim)"}}>
+                          <div style={{fontSize:18}}>➕</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,fontSize:13,color:"var(--gft-text)",
+                              overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Usar “{quickBusq.trim()}”</div>
+                            <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>Nombre libre · sin expediente</div>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -6256,9 +6277,9 @@ export default function App() {
         onMoverCita={moverCita}
       />
       {rapidaRecetaPac&&<ModalReceta p={rapidaRecetaPac} firmaB64={firmaB64} onClose={()=>setRapidaRecetaPac(null)}
-        onSave={async r=>{await updPac({...rapidaRecetaPac,recetas:[...(rapidaRecetaPac.recetas||[]),r]});setRapidaRecetaPac(null);}}/>}
+        onSave={async r=>{ if(!rapidaRecetaPac._libre) await updPac({...rapidaRecetaPac,recetas:[...(rapidaRecetaPac.recetas||[]),r]}); setRapidaRecetaPac(null);}}/>}
       {rapidaLabsPac&&<ModalLabs p={rapidaLabsPac} onClose={()=>setRapidaLabsPac(null)}
-        onSave={async l=>{await updPac({...rapidaLabsPac,laboratorios:[...(rapidaLabsPac.laboratorios||[]),l]});setRapidaLabsPac(null);}}/>}
+        onSave={async l=>{ if(!rapidaLabsPac._libre) await updPac({...rapidaLabsPac,laboratorios:[...(rapidaLabsPac.laboratorios||[]),l]}); setRapidaLabsPac(null);}}/>}
       {mNuevo && <ModalPaciente onClose={()=>setMNuevo(false)} onSave={savePac}/>}
       {showConfig && (
         <ModalConfig firmaB64={firmaB64} onSave={saveFirma} onClose={()=>setShowConfig(false)}/>
