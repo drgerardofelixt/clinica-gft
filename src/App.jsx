@@ -4823,6 +4823,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [contentView, setContentView] = useState("dash");
   const [busq, setBusq] = useState("");
   const [labsFilter, setLabsFilter] = useState(false);
+  // Tick periódico para recalcular "paciente actual" conforme avanza el reloj
+  const [, setTick] = useState(0);
+  useEffect(() => { const id = setInterval(() => setTick(t => t+1), 60000); return () => clearInterval(id); }, []);
   const [hovStat, setHovStat] = useState(null);
   const [quickAction, setQuickAction] = useState(null); // null | "receta" | "labs"
   const [quickBusq, setQuickBusq] = useState("");
@@ -5237,24 +5240,20 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                   {(()=>{
                     const ahora = new Date();
                     const minAhora = ahora.getHours()*60 + ahora.getMinutes();
+                    // rango: 0=en curso (0-60min), 1=futura, 2=pasada (>60min); d=minutos desde la hora de la cita
+                    const rank = (hora) => {
+                      const [h,m] = (hora||"00:00").split(":").map(Number);
+                      const d = minAhora - (h*60+m);
+                      return { r: (d>=0&&d<=60) ? 0 : (d<0 ? 1 : 2), d };
+                    };
                     const citaHoy = citasHoy
-                      .filter(c => c.tipo==="app" && c.pac)
+                      .filter(c => (c.tipo==="app"||c.tipo==="gcal") && c.pac)
                       .reduce((mejor, c) => {
-                        const [h,m] = (c.hora||"00:00").split(":").map(Number);
-                        const minCita = h*60 + m;
-                        const diff = minAhora - minCita;
-                        // Preferir cita en curso (0-60min pasados) o la más próxima futura
-                        if (diff >= 0 && diff <= 60) return c;        // en curso
                         if (!mejor) return c;
-                        const [bh,bm] = (mejor.hora||"00:00").split(":").map(Number);
-                        const minMejor = bh*60 + bm;
-                        const diffMejor = minAhora - minMejor;
-                        if (diffMejor >= 0 && diffMejor <= 60) return mejor; // mejor ya en curso
-                        // entre dos futuras, la más próxima
-                        if (diff < 0 && diffMejor < 0) return Math.abs(diff) < Math.abs(diffMejor) ? c : mejor;
-                        // entre futura y pasada, preferir futura
-                        if (diff < 0) return c;
-                        return mejor;
+                        const a = rank(c.hora), b = rank(mejor.hora);
+                        if (a.r !== b.r) return a.r < b.r ? c : mejor;       // prioridad: en curso > futura > pasada
+                        if (a.r === 1) return a.d > b.d ? c : mejor;         // futuras: la más próxima (menos negativa)
+                        return Math.abs(a.d) < Math.abs(b.d) ? c : mejor;    // en curso/pasada: la más cercana a ahora
                       }, null);
                     const pac = citaHoy?.pac || null;
 
