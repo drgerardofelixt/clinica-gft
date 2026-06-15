@@ -1485,7 +1485,7 @@ const DocProgreso = ({p}) => {
   const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
   const med   = p.ci?.glp1 || p.ci?.medicamento || null;
   const dosis = p.ci?.dosis || null;
-  const esMujer = /mujer|femenino|f/i.test(p.sexo||"");
+  const esMujer = /femenino/i.test(p.sexo||"");
 
   const pesoDif    = difStr(ultima?.peso, primera?.peso);
   const grasaDif   = difStr(ultima?.grasa, primera?.grasa);
@@ -1535,29 +1535,44 @@ const DocProgreso = ({p}) => {
   const lineD = pts.length>1?pts.map((pt,i)=>(i===0?"M":" L")+pt.x+","+pt.y).join(""):null;
   const areaD = lineD?lineD+` L${pts[pts.length-1].x},${CH-14} L${pts[0].x},${CH-14} Z`:null;
 
-  // RangeBar — dot color driven by zone (same gradient logic as track)
-  const RangeBar = ({label, value, min, max, unit=""}) => {
+  // RangeBar — 3 zonas de evidencia (ACE/ACSM/OMS). zones=[{label,color,min,max}], última con max:null
+  const RangeBar = ({label, value, unit="", zones}) => {
     const v=parseFloat(value);
     if(isNaN(v)) return null;
-    const lo=min*0.7, hi=max*1.35;
-    const pct=Math.min(Math.max((v-lo)/(hi-lo)*100,2),98);
-    const ok=v>=min&&v<=max;
-    // zone: green if in range, yellow if slightly outside, red if far
-    const dotCol = ok?"#1D9E75":(pct>20&&pct<80?"#FAC775":"#D85A30");
+    // Zona activa: la última no tiene tope superior
+    const zonaActiva = zones.find((z,i)=>{
+      if(i===zones.length-1) return v>=z.min;
+      return v>=z.min && v<=z.max;
+    }) || zones[zones.length-1];
+    // Escala del track: desde el min de la 1ª zona hasta 1.5× el min de la última
+    const totalMin = zones[0].min;
+    const totalMax = zones[zones.length-1].min*1.5;
+    const pct = Math.min(Math.max((v-totalMin)/(totalMax-totalMin)*100,2),98);
+    const fmtRange = (z,i) => i===zones.length-1 ? `≥${z.min}${unit}` : `${z.min}–${z.max}${unit}`;
     return (
       <div style={{marginBottom:14}}>
+        {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
           <span style={{fontSize:10,fontWeight:700}}>{label}</span>
-          <span style={{fontSize:10,fontWeight:800,color:dotCol}}>{value} {unit}</span>
+          <span style={{fontSize:10,fontWeight:800,color:zonaActiva.color}}>{value} {unit}</span>
         </div>
-        <div style={{position:"relative",height:8,borderRadius:4,
-          background:"linear-gradient(to right,#F0997B 0%,#FAC775 30%,#5DCAA5 50%,#FAC775 75%,#F0997B 100%)"}}>
+        {/* Track: 3 segmentos de igual ancho, uno por zona */}
+        <div style={{position:"relative",height:8,borderRadius:4,overflow:"hidden",display:"flex"}}>
+          {zones.map((z,i)=>(
+            <div key={i} style={{flex:1,background:z.color}}/>
+          ))}
           <div style={{position:"absolute",top:-3,left:pct+"%",transform:"translateX(-50%)",
-            width:14,height:14,borderRadius:"50%",background:dotCol,
+            width:14,height:14,borderRadius:"50%",background:zonaActiva.color,
             border:"2px solid white",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:8,color:C.suave}}>
-          <span>Bajo</span><span>Normal: {min}–{max} {unit}</span><span>Alto</span>
+        {/* Footer: 3 columnas (nombre + rango), color por zona */}
+        <div style={{display:"flex",marginTop:6}}>
+          {zones.map((z,i)=>(
+            <div key={i} style={{width:"33.33%",textAlign:"center"}}>
+              <div style={{fontSize:8,fontWeight:700,color:z.color}}>{z.label}</div>
+              <div style={{fontSize:8,color:z.color}}>{fmtRange(z,i)}</div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -1752,10 +1767,28 @@ const DocProgreso = ({p}) => {
       <div style={{marginBottom:14}}>
         <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Rangos saludables</div>
         <div style={{background:"#F4F6FB",borderRadius:10,padding:"14px 16px"}}>
-          <RangeBar label="IMC" value={ultima?.imc} min={18.5} max={25}/>
-          <RangeBar label="Grasa corporal" value={ultima?.grasa}
-            min={esMujer?24:11} max={esMujer?36:21} unit="%"/>
-          <RangeBar label="Grasa visceral" value={ultima?.visceral} min={1} max={12}/>
+          <RangeBar label="IMC" value={ultima?.imc} unit=""
+            zones={[
+              {label:"Saludable", color:"#1D9E75", min:18.5, max:24.9},
+              {label:"Sobrepeso", color:"#FAC775", min:25,   max:29.9},
+              {label:"Obesidad",  color:"#D85A30", min:30,   max:null},
+            ]}/>
+          <RangeBar label="Grasa corporal" value={ultima?.grasa} unit="%"
+            zones={esMujer ? [
+              {label:"Fitness",   color:"#1D9E75", min:14, max:24},
+              {label:"Aceptable", color:"#FAC775", min:25, max:31},
+              {label:"Elevada",   color:"#D85A30", min:32, max:null},
+            ] : [
+              {label:"Fitness",   color:"#1D9E75", min:6,  max:17},
+              {label:"Aceptable", color:"#FAC775", min:18, max:24},
+              {label:"Elevada",   color:"#D85A30", min:25, max:null},
+            ]}/>
+          <RangeBar label="Grasa visceral" value={ultima?.visceral} unit=""
+            zones={[
+              {label:"Excelente", color:"#1D9E75", min:1,  max:9},
+              {label:"Moderada",  color:"#FAC775", min:10, max:14},
+              {label:"Elevada",   color:"#D85A30", min:15, max:null},
+            ]}/>
         </div>
       </div>
 
@@ -3240,7 +3273,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
     const med   = p.ci?.glp1 || p.ci?.medicamento || null;
     const dosis = p.ci?.dosis || null;
-    const esMujer = /mujer|femenino|f/i.test(p.sexo||"");
+    const esMujer = /femenino/i.test(p.sexo||"");
 
     const difNum = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")
       ? parseFloat((parseFloat(a)-parseFloat(b)).toFixed(2)) : null;
@@ -3309,9 +3342,25 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     if (caAct)           msg += `• Circ. abdominal: *${caAct} cm*${caDif!=null?` (${caDif} cm)`:""}\n`;
     msg += `\n`;
 
-    const imcRange   = ultima?.imc      ? zoneRange(ultima.imc,    18.5, 25)                     : null;
-    const grasaRange = ultima?.grasa    ? zoneRange(ultima.grasa,  esMujer?24:11, esMujer?36:21) : null;
-    const viscRange  = ultima?.visceral ? zoneRange(ultima.visceral, 1, 12)                       : null;
+    const imcRange   = ultima?.imc      ? zoneRange(ultima.imc, 18.5, 25) : null;
+    // Grasa corporal — rangos por sexo (ACE)
+    let grasaRange = null;
+    if (ultima?.grasa) {
+      const grasa = parseFloat(ultima.grasa);
+      const grasaLabel = esMujer
+        ? (grasa <= 24 ? "en rango fitness" : grasa <= 31 ? "aceptable" : "elevada")
+        : (grasa <= 17 ? "en rango fitness" : grasa <= 24 ? "aceptable" : "elevada");
+      const grasaIcon = grasaLabel==="en rango fitness" ? "✅" : grasaLabel==="aceptable" ? "🟡" : "⚠️";
+      grasaRange = `${grasaIcon} ${grasaLabel}`;
+    }
+    // Grasa visceral — índice Tanita
+    let viscRange = null;
+    if (ultima?.visceral) {
+      const visceral = parseFloat(ultima.visceral);
+      const viscLabel = visceral <= 9 ? "excelente" : visceral <= 14 ? "moderada" : "elevada";
+      const viscIcon = viscLabel==="excelente" ? "✅" : viscLabel==="moderada" ? "🟡" : "⚠️";
+      viscRange = `${viscIcon} ${viscLabel}`;
+    }
     if (imcRange||grasaRange||viscRange) {
       msg += `*📐 Rangos saludables*\n`;
       if (imcRange)   msg += `• IMC ${ultima.imc}: ${imcRange}\n`;
