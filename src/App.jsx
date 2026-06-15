@@ -1465,7 +1465,7 @@ const DocLabs = ({p, labs={}, firmaB64}) => (
 );
 
 const DocProgreso = ({p}) => {
-  const comps = (p.composicion||[]).filter(c=>c.peso||c.grasa);
+  const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
   const primera = comps[0];
   const ultima  = comps[comps.length-1];
   const n = comps.length;
@@ -1479,10 +1479,10 @@ const DocProgreso = ({p}) => {
     return pos?(v>0?"#1D9E75":"#D85A30"):(v<0?"#1D9E75":"#D85A30");
   };
 
-  const caConsultas = (p.consultas||[]).filter(c=>c.ca);
+  const caConsultas = (p.consultas||[]).filter(c=>c.ca).sort(porFechaClinica);
   const caIni = caConsultas[0]?.ca;
   const caAct = caConsultas[caConsultas.length-1]?.ca;
-  const proxCita = [...(p.consultas||[])].reverse().find(c=>c.proxCita)?.proxCita;
+  const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
   const med   = p.ci?.glp1 || p.ci?.medicamento || null;
   const dosis = p.ci?.dosis || null;
   const esMujer = /mujer|femenino|f/i.test(p.sexo||"");
