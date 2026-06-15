@@ -292,6 +292,28 @@ const parseFechaClinica = (f) => {
 };
 // Comparador para .sort() — siempre sobre una copia, nunca mutar el array original
 const porFechaClinica = (a,b) => parseFechaClinica(a.fecha) - parseFechaClinica(b.fecha);
+// Helpers de horario (compartidos por ModalAgenda y ModalConsulta)
+const hhmmAMin = (s) => { const [h,m]=(s||"0:0").split(":").map(Number); return (h||0)*60+(m||0); };
+const minAHhmm = (n) => `${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
+// Horarios de consultorio: L-V 9-13 y 15-18, Sáb 10-13, Dom cerrado (slots cada 30min que quepan según duración)
+const generarHorariosClinica = (fechaStr, duracionMin=30) => {
+  if (!fechaStr) return [];
+  const dow = new Date(fechaStr+"T00:00:00").getDay();
+  if (dow === 0) return [];
+  const bloques = dow === 6 ? [[10*60,13*60]] : [[9*60,13*60],[15*60,18*60]];
+  const horas = [];
+  bloques.forEach(([ini,fin]) => { for (let t=ini; t+duracionMin<=fin; t+=30) horas.push(minAHhmm(t)); });
+  return horas;
+};
+// Slots de GCal ocupados en una fecha dada (reusa el array gcalEventos ya cargado a nivel App)
+const gcalOcupadasEnFecha = (gcalEventos, fechaSel) => (gcalEventos||[]).flatMap(ev => {
+  const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+  if (f !== fechaSel || !ev.start?.dateTime) return [];
+  const h = ev.start.dateTime.split("T")[1]?.slice(0,5)||"";
+  if (!h) return [];
+  const durMs = ev.end?.dateTime ? new Date(ev.end.dateTime)-new Date(ev.start.dateTime) : 30*60000;
+  return [{ ini: hhmmAMin(h), fin: hhmmAMin(h)+Math.max(15,Math.round(durMs/60000)), pac: ev.summary||"GCal", hora: h }];
+});
 const fmtFLargo = (f) => {
   if (!f) return "";
   return new Date(f+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
@@ -2527,7 +2549,7 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
 };
 
 // ── Modal Consulta ────────────────────────────────────────────
-const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false}) => {
+const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false, gcalEventos=[]}) => {
   const prev = [...(p.consultas||[])].sort(porFechaClinica).slice(-1)[0];
   const [confirmarSinCita, setConfirmarSinCita] = useState(false);
   const [f, setF] = useState(() => {
@@ -2536,7 +2558,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
       peso:"", ca:"", ta:"", fc:"", spo2:"", glucosaCapilar:"",
       subjetivo:"", efectos:"Negados", respuesta:"Adecuada",
       plan:"", cambioDosis:"Continúa esquema actual",
-      medicamento:(p.ci&&p.ci.glp1)||"", dosis:"", proxCita:"",
+      medicamento:(p.ci&&p.ci.glp1)||"", dosis:"", proxCita:"", proxHora:"", proxDuracion:30,
       comp:{peso:"",grasa:"",musculo:"",agua:"",osea:"",visceral:"",bmr:"",edadMet:"",imc:""},
     };
     if (!consultaExistente) return base;
@@ -2700,8 +2722,45 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
             <Row cols={3}>
               <Inp label="Próxima cita" value={f.proxCita} onChange={v=>u("proxCita",v)} tipo="date"/>
               <Inp label="Hora" value={f.proxHora} onChange={v=>u("proxHora",v)} tipo="time"/>
-              <div/>
+              <Sel label="Duración" value={String(f.proxDuracion||30)}
+                onChange={v=>u("proxDuracion",parseInt(v)||30)} opts={["30","45","60"]}/>
             </Row>
+            {/* Horarios disponibles del día — solo si GCal está conectado */}
+            {isGoogleAuthorized() && f.proxCita && (()=>{
+              const dur = f.proxDuracion||30;
+              const slots = generarHorariosClinica(f.proxCita, dur);
+              const ocupadas = gcalOcupadasEnFecha(gcalEventos, f.proxCita);
+              const evDe = h => { const ini=hhmmAMin(h), fin=ini+dur; return ocupadas.find(o=>ini<o.fin&&fin>o.ini)||null; };
+              return (
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.suave,marginBottom:6}}>
+                    Horarios disponibles · {new Date(f.proxCita+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}
+                  </div>
+                  {slots.length===0 ? (
+                    <div style={{fontSize:11,color:C.suave}}>Sin horario de consultorio ese día (domingo cerrado).</div>
+                  ) : (
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {slots.map(h=>{
+                        const ev = evDe(h);
+                        const sel = f.proxHora===h;
+                        return (
+                          <button key={h} type="button" disabled={!!ev}
+                            onClick={()=>!ev&&u("proxHora",h)}
+                            title={ev?`Ocupado: ${ev.pac}`:"Disponible"}
+                            style={{fontSize:11,fontWeight:700,padding:"5px 9px",borderRadius:7,cursor:ev?"not-allowed":"pointer",
+                              border:sel?"2px solid "+C.verde:"1px solid "+(ev?C.rojo+"40":C.verde+"40"),
+                              background:ev?C.rojo+"15":sel?C.verde:C.verde+"12",
+                              color:ev?C.rojo:sel?"white":C.verde,
+                              textDecoration:ev?"line-through":"none"}}>
+                            {h}{ev?` · ${ev.pac.slice(0,10)}`:""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {f.proxCita && p.telefono && (
               <div style={{background:C.verdePale,border:"1px solid "+C.verde+"30",
                 borderRadius:8,padding:"8px 12px",marginTop:10,fontSize:11,color:C.verde,
@@ -3156,7 +3215,7 @@ const ModalConfig = ({firmaB64, onSave, onClose}) => {
 };
 
 // ── Vista Paciente ────────────────────────────────────────────
-const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onCitaAgendada}) => {
+const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onCitaAgendada, gcalEventos}) => {
   const [tab, setTab] = useState("progreso");
   const [showC, setShowC] = useState(false);
   const [showR, setShowR] = useState(false);
@@ -3180,6 +3239,12 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       consultas:[...(p.consultas||[]),d],
       composicion:[...(p.composicion||[]),comp],
     });
+    // Si la consulta agendó próxima cita, ofrecer agregarla a Google Calendar (toast con botón)
+    if (d.proxCita) {
+      try { onCitaAgendada && onCitaAgendada({nombre:p.nombre, telefono:p.telefono,
+        fecha:d.proxCita, hora:d.proxHora||"", tipoCita:"seguimiento", duracion:d.proxDuracion||30}); }
+      catch(e) { console.warn("onCitaAgendada falló:", e); }
+    }
     setShowC(false);
   };
   // Reemplaza una consulta existente (modo edición) y sincroniza p.composicion por id/fecha
@@ -4071,8 +4136,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           </Card>
         )}
       </div>
-      {showC && <ModalConsulta p={p} onClose={()=>setShowC(false)} onSave={addConsulta}/>}
-      {consultaAEditar && <ModalConsulta p={p} consultaExistente={consultaAEditar} modoEdicion
+      {showC && <ModalConsulta p={p} gcalEventos={gcalEventos} onClose={()=>setShowC(false)} onSave={addConsulta}/>}
+      {consultaAEditar && <ModalConsulta p={p} gcalEventos={gcalEventos} consultaExistente={consultaAEditar} modoEdicion
         onClose={()=>setConsultaAEditar(null)} onSave={editConsulta}/>}
       {showR && <ModalReceta p={p} firmaB64={firmaB64} onClose={()=>setShowR(false)} onSave={addReceta}/>}
       {showL && <ModalLabs p={p} onClose={()=>setShowL(false)} onSave={addLabs}/>}
@@ -5942,6 +6007,7 @@ export default function App() {
         onUpdate={updPac}
         onBack={()=>setActivo(null)}
         onCitaAgendada={setUltimaCita}
+        gcalEventos={gcalEventos}
       />
     );
   }
