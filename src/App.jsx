@@ -1174,15 +1174,22 @@ const generarYDescargarPDF = async (contentRef, filename) => {
         y += pdfH;
       }
     }
-    const blob = pdf.output("blob");
+    // Blob explícito type:'application/pdf' → macOS lo abre en Preview, no pregunta dónde guardar
+    const pdfBytes = pdf.output("arraybuffer");
+    const blob = new Blob([pdfBytes], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "documento.pdf";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    // Sin atributo 'download': el OS delega a Preview
+    const opened = window.open(url, "_blank");
+    if (!opened) {
+      // Fallback si el popup fue bloqueado
+      const a = document.createElement("a");
+      a.href = url;
+      a.setAttribute("type", "application/pdf");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch(e) {
     console.error("PDF error:", e);
   }
