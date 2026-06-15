@@ -53,6 +53,8 @@ export const pdfToText = async (file) => {
 // pero toma segmental RAW (sin dedup) para soportar valores iguales entre segmentos.
 export const parseTanita = async (texto) => {
   console.log('TANITA TEXTO COMPLETO:', texto);
+  // DEBUG TEMPORAL — líneas numeradas para identificar posiciones exactas
+  texto.split('\n').forEach((l, i) => console.log(i, JSON.stringify(l)));
 
   // ── Pre-extracción: fecha ──────────────────────────────────────────────────
   const fechaMatch = texto.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
