@@ -3146,7 +3146,10 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
           <Btn onClick={()=>setStep(s=>Math.max(0,s-1))} color={C.suave} outline icon="←">Anterior</Btn>
           {step<PASOS.length-1
             ? <Btn onClick={()=>setStep(s=>Math.min(PASOS.length-1,s+1))} icon="→">Siguiente</Btn>
-            : <Btn onClick={()=>onSave(f)} color={C.verde} icon="✓">Guardar paciente</Btn>}
+            : <Btn onClick={()=>{
+                if (!f.sexo) { alert("Selecciona el sexo del paciente antes de guardar (paso Identificación)."); setStep(0); return; }
+                onSave(f);
+              }} color={C.verde} icon="✓">Guardar paciente</Btn>}
         </div>
       </div>
     </div>
