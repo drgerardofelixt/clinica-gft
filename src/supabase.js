@@ -18,7 +18,7 @@ const pacienteToRow = (p) => ({
 const rowToPaciente = (row) => {
   try {
     const datos = row.datos_clinicos ? JSON.parse(row.datos_clinicos) : {}
-    return { ...datos, id: row.id, nombre: row.nombre, telefono: row.telefono, sexo: row.sexo }
+    return { ...datos, id: row.id, nombre: row.nombre, telefono: row.telefono, sexo: row.sexo || datos.sexo || '' }
   } catch {
     return { id: row.id, nombre: row.nombre || '', telefono: row.telefono || '', sexo: row.sexo || '' }
   }

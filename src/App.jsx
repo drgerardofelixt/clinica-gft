@@ -5168,9 +5168,29 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
                 {/* ── Columna izquierda ── */}
                 <div>
-                  {/* Paciente actual — usa el primer paciente con cita HOY (app, no GCal) */}
+                  {/* Paciente actual — cita en curso (0-60min) o la más próxima según la hora actual */}
                   {(()=>{
-                    const citaHoy = citasHoy.find(c=>c.tipo==="app" && c.pac);
+                    const ahora = new Date();
+                    const minAhora = ahora.getHours()*60 + ahora.getMinutes();
+                    const citaHoy = citasHoy
+                      .filter(c => c.tipo==="app" && c.pac)
+                      .reduce((mejor, c) => {
+                        const [h,m] = (c.hora||"00:00").split(":").map(Number);
+                        const minCita = h*60 + m;
+                        const diff = minAhora - minCita;
+                        // Preferir cita en curso (0-60min pasados) o la más próxima futura
+                        if (diff >= 0 && diff <= 60) return c;        // en curso
+                        if (!mejor) return c;
+                        const [bh,bm] = (mejor.hora||"00:00").split(":").map(Number);
+                        const minMejor = bh*60 + bm;
+                        const diffMejor = minAhora - minMejor;
+                        if (diffMejor >= 0 && diffMejor <= 60) return mejor; // mejor ya en curso
+                        // entre dos futuras, la más próxima
+                        if (diff < 0 && diffMejor < 0) return Math.abs(diff) < Math.abs(diffMejor) ? c : mejor;
+                        // entre futura y pasada, preferir futura
+                        if (diff < 0) return c;
+                        return mejor;
+                      }, null);
                     const pac = citaHoy?.pac || null;
 
                     if (!pac) {
