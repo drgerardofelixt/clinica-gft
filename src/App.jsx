@@ -5681,7 +5681,7 @@ export default function App() {
             style={{height:100,width:"auto",objectFit:"contain",marginBottom:16}}/>
           <div style={{color:C.azul,fontWeight:800,fontSize:15}}>Cargando sistema clínico…</div>
           <div style={{color:C.suave,fontSize:11,marginTop:4}}>
-            CERA Clínica de Salud · Hermosillo, Sonora
+            Medicina Integral · Hermosillo, Sonora
           </div>
         </div>
       </div>
