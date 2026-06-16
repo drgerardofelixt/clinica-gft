@@ -984,3 +984,9 @@ select.gft-input {
   /* iPhone SE / mini: ocultar texto del botón "Nuevo paciente", dejar solo "+" */
   .gft-topbar .gft-btn--primary span.label-full { display: none; }
 }
+
+/* Impresión de receta — sin márgenes extra, padding mínimo para caber en 1 página */
+@media print {
+  @page { margin: 8mm; }
+  .doc-receta { padding: 8px 12px !important; }
+}

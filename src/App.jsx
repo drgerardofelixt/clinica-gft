@@ -1448,23 +1448,27 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
   const isLibre = rec.tipo==="libre";
   const items = (rec.items||[]).filter(m=>m.ok!==false);
   return (
-    <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-      <LogoDoc conCedula={true}/>
-      <SepDoc/>
+    <div className="doc-receta" style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,
+      lineHeight:1.4,padding:"20px 24px",boxSizing:"border-box"}}>
+      {/* Header compacto — logo acotado en altura */}
+      <div style={{paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
+        <img src={IMG_LOGO} alt="Logo" style={{maxHeight:110,maxWidth:"100%",height:"auto",display:"block"}}/>
+      </div>
       <G4>
         <CF l="Paciente" v={p.nombre} span={2}/>
         <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
         <CF l="Fecha" v={fmtFecha(rec.fecha)}/>
       </G4>
-      <SepDoc/>
+      <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#5BC4A0)",
+        margin:"8px 0 12px",borderRadius:1}}/>
       {isGlp1&&(
-        <div style={{marginBottom:12}}>
-          <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>1. {rec.med||"—"}</div>
+        <div style={{marginBottom:8}}>
+          <div style={{fontWeight:700,fontSize:12,marginBottom:3}}>1. {rec.med||"—"}</div>
           {(rec.instr||[]).slice(0,1).map((s,i)=>(
-            <div key={i} style={{marginLeft:16,marginBottom:12}}>{s}</div>
+            <div key={i} style={{marginLeft:16,marginBottom:6}}>{s}</div>
           ))}
           {(rec.instr||[]).slice(1).map((s,i)=>(
-            <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
+            <div key={i} style={{display:"flex",gap:8,marginBottom:4,alignItems:"flex-start"}}>
               <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span><span>{s}</span>
             </div>
           ))}
@@ -1473,7 +1477,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
       {(isList||isLibre)&&(
         <div>
           {items.map((m,i)=>(
-            <div key={i} style={{marginBottom:13}}>
+            <div key={i} style={{marginBottom:7}}>
               <div style={{fontWeight:700,fontSize:12}}>
                 {isList?`${i+1}. `:""}{m.n}
               </div>
@@ -1481,24 +1485,39 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
             </div>
           ))}
           {rec.notaPie&&(
-            <div style={{marginTop:14,whiteSpace:"pre-line",fontWeight:700,fontSize:11}}>
+            <div style={{marginTop:10,whiteSpace:"pre-line",fontWeight:700,fontSize:11}}>
               {rec.notaPie}
             </div>
           )}
         </div>
       )}
       {rec.notasExtra&&(
-        <div style={{marginTop:10,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
+        <div style={{marginTop:8,padding:"6px 9px",background:C.gris,borderRadius:5,fontSize:10.5}}>
           {rec.notasExtra}
         </div>
       )}
       {rec.proxCita&&(
-        <div style={{marginTop:12,fontSize:10.5,color:C.suave}}>
+        <div style={{marginTop:8,fontSize:10.5,color:C.suave}}>
           <b>Próxima cita:</b> {rec.proxCita}
         </div>
       )}
-      <Firma firmaB64={rec.conFirma?firmaB64:null}/>
-      <FooterDoc/>
+      {/* Firma compacta — imagen acotada a 70px */}
+      <div style={{marginTop:18,display:"flex",justifyContent:"center"}}>
+        <div style={{textAlign:"center",minWidth:200}}>
+          {rec.conFirma&&firmaB64 && <img src={firmaB64} alt="Firma"
+            style={{maxHeight:70,marginBottom:4,display:"block",margin:"0 auto 4px"}}/>}
+          <div style={{borderTop:"1px solid #1A2332",paddingTop:5,fontSize:10,color:"#1A2332"}}>
+            <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
+            <div style={{fontSize:9,color:"#64748B"}}>Céd. Prof. 15131213 · Reg. SSA: 10361/16</div>
+          </div>
+        </div>
+      </div>
+      {/* Footer compacto */}
+      <div style={{marginTop:10,paddingTop:6,borderTop:"1px solid #E2E8F0",
+        textAlign:"center",fontSize:9,color:"#94A3B8"}}>
+        <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
+        <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+      </div>
       <OlasDoc/>
     </div>
   );
@@ -2410,9 +2429,10 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
             </Btn>
           </div>
         </div>
-        <div style={{flex:1,overflow:"auto",padding:20,display:"flex",justifyContent:"center"}}>
+        <div style={{flex:1,overflow:"auto",padding:20,display:"flex",justifyContent:"center",alignItems:"flex-start"}}>
+          {/* Sin minHeight forzado: el PDF captura la altura real → la receta cabe en 1 página */}
           <div ref={docRef} style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)",
-            width:"21cm",minHeight:"27.9cm",position:"relative"}}>
+            width:"21cm",position:"relative"}}>
             <DocReceta p={p} rec={{...rec,conFirma}} firmaB64={firmaB64}/>
           </div>
         </div>
