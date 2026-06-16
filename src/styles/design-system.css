@@ -796,6 +796,20 @@ select.gft-input {
 
 .gft-topbar__info { flex: 1; min-width: 0; }
 
+/* Botón hamburguesa — oculto en desktop, visible solo en móvil */
+.gft-hamburger {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--gft-text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
 .gft-topbar__title {
   font-family: var(--gft-font-display);
   font-size: 14px;
@@ -925,7 +939,27 @@ select.gft-input {
 }
 
 @media (max-width: 768px) {
-  .gft-sidebar { display: none; }
+  /* Sidebar como drawer deslizable desde la izquierda */
+  .gft-sidebar {
+    display: flex;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: 260px;
+    z-index: 5000;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+  }
+  .gft-sidebar--open { transform: translateX(0); }
+  .gft-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 4999;
+    border: none;
+  }
+  .gft-hamburger { display: inline-flex; }
+
   .gft-content { padding: 12px; }
   .gft-topbar  { padding: 0 12px; gap: 8px; }
 

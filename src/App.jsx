@@ -100,11 +100,18 @@ const Tag = ({children, color=C.azul, style={}}) => (
   </span>
 );
 
-const Txt = ({label, value, style={}}) => (
+const Txt = ({label, value, onChange, rows=2, placeholder="", style={}, inputStyle={}}) => (
   <div style={{marginBottom:6,...style}}>
     {label && <div style={{fontSize:10,color:C.suave,fontWeight:700,textTransform:"uppercase",
       letterSpacing:0.5,marginBottom:2}}>{label}</div>}
-    <div style={{fontSize:13,color:C.texto}}>{value||"—"}</div>
+    {onChange ? (
+      <textarea value={value||""} onChange={e=>onChange(e.target.value)} rows={rows}
+        placeholder={placeholder} inputMode="text"
+        style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.grisMedio,
+          fontSize:16,fontFamily:"inherit",color:C.texto,boxSizing:"border-box",resize:"vertical",...inputStyle}}/>
+    ) : (
+      <div style={{fontSize:13,color:C.texto}}>{value||"—"}</div>
+    )}
   </div>
 );
 
@@ -1233,6 +1240,48 @@ const generarYDescargarPDF = async (contentRef, filename) => {
   }
 };
 
+// ── PDF helper: genera un blob PDF desde un ref renderizado (para compartir en móvil) ──
+const generarPDFBlob = async (contentRef, filename) => {
+  try {
+    const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
+      import("jspdf"), import("html2canvas")
+    ]);
+    const canvas = await html2canvas(contentRef.current, {
+      scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false
+    });
+    const pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
+    const margin = 10;
+    const pdfW = pdf.internal.pageSize.getWidth() - margin * 2;
+    const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
+    const imgData = canvas.toDataURL("image/png", 0.95);
+    const imgH = pdfW * (canvas.height / canvas.width);
+    if (imgH <= pdfH) {
+      pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
+    } else {
+      let y = 0;
+      while (y < imgH - 0.5) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH); y += pdfH; }
+    }
+    const blob = new Blob([pdf.output("arraybuffer")], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const file = new File([blob], filename || "documento.pdf", { type: "application/pdf" });
+    return { blob, url, file };
+  } catch(e) { console.error("PDF blob error:", e); return null; }
+};
+
+// Comparte/abre un PDF YA preparado. iOS-safe: Web Share API si se puede, si no abre el blob en pestaña vía <a>.
+// Nunca usa window.open() en setTimeout (bloqueado por iOS Safari).
+const compartirOAbrirPDF = async ({file, url, filename}) => {
+  try {
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename || "Documento" });
+      return;
+    }
+  } catch(e) { /* usuario canceló o no soportado → fallback a abrir */ }
+  const a = document.createElement("a");
+  a.href = url; a.target = "_blank"; a.rel = "noopener"; a.download = filename || "documento.pdf";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+};
+
 // ── Print Modal ───────────────────────────────────────────────
 // onWAConPDF(ref, titulo, done) — descarga PDF + abre WhatsApp Desktop
 const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, pdfFilename}) => {
@@ -2299,6 +2348,17 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
   const [rec, setRec] = useState(null);
   const [preview, setPreview] = useState(false);
   const [conFirma, setConFirma] = useState(true);
+  const docRef = useRef();
+  const [pdf, setPdf] = useState(null);   // {url,file} preparado de antemano para compartir en móvil
+
+  // Pre-genera el PDF al entrar a la vista previa (para que el botón Compartir funcione en iOS sin async en el tap)
+  useEffect(() => {
+    if (!(preview && rec)) { setPdf(null); return; }
+    let vivo = true; setPdf(null);
+    const fn = `Receta_${sanitizeFilename(p.nombre||"Paciente")}.pdf`;
+    const t = setTimeout(() => { generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); }); }, 300);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [preview, rec, conFirma]);
 
   const GRUPOS = [
     {label:"Síntomas",   ids:["sintomas"],                        color:C.verde},
@@ -2341,13 +2401,17 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
             <Btn onClick={()=>setPreview(false)} color="rgba(255,255,255,0.2)" size="sm" icon="←">
               Editar
             </Btn>
+            <Btn onClick={()=>pdf && compartirOAbrirPDF({...pdf, filename:`Receta_${sanitizeFilename(p.nombre||"Paciente")}.pdf`})}
+              color={pdf?"#0EA5E9":"rgba(255,255,255,0.2)"} size="sm" icon="📄" disabled={!pdf}>
+              {pdf ? "Ver / Compartir" : "Generando…"}
+            </Btn>
             <Btn onClick={()=>onSave({...rec,conFirma})} color={C.verde} size="sm" icon="✓">
               Guardar
             </Btn>
           </div>
         </div>
         <div style={{flex:1,overflow:"auto",padding:20,display:"flex",justifyContent:"center"}}>
-          <div style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)",
+          <div ref={docRef} style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)",
             width:"21cm",minHeight:"27.9cm",position:"relative"}}>
             <DocReceta p={p} rec={{...rec,conFirma}} firmaB64={firmaB64}/>
           </div>
@@ -2483,8 +2547,9 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
                         Nota al pie
                       </label>
                       <textarea value={rec.notaPie} onChange={e=>upd("notaPie",e.target.value)} rows={2}
+                        inputMode="text"
                         style={{width:"100%",padding:"8px 10px",borderRadius:8,
-                          border:"1px solid "+C.grisMedio,fontSize:12,boxSizing:"border-box"}}/>
+                          border:"1px solid "+C.grisMedio,fontSize:16,boxSizing:"border-box"}}/>
                     </div>
                   )}
                 </div>
@@ -2494,9 +2559,9 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
                   Notas adicionales (opcional)
                 </label>
                 <textarea value={rec.notasExtra} onChange={e=>upd("notasExtra",e.target.value)} rows={2}
-                  placeholder="Indicaciones especiales..."
+                  placeholder="Indicaciones especiales..." inputMode="text"
                   style={{width:"100%",padding:"8px 10px",borderRadius:8,
-                    border:"1px solid "+C.grisMedio,fontSize:12,boxSizing:"border-box"}}/>
+                    border:"1px solid "+C.grisMedio,fontSize:16,boxSizing:"border-box"}}/>
               </div>
               <div style={{padding:"12px 14px",borderRadius:10,
                 background:conFirma?"#F0FFF9":"#F7F8FA",
@@ -2826,11 +2891,49 @@ const ModalLabs = ({p, onClose, onSave}) => {
     id:Date.now().toString(), fecha:hoy(), tipo:"seguimiento",
     estudios:[...LABS_PRESET.seguimiento], notas:"",
   });
+  const [preview, setPreview] = useState(false);
+  const docRef = useRef();
+  const [pdf, setPdf] = useState(null);
   const u = (k,v) => setF(x=>({...x,[k]:v}));
   const tog = (e) => setF(x=>({...x,
     estudios:x.estudios.includes(e)?x.estudios.filter(s=>s!==e):[...x.estudios,e]
   }));
   const cambiaTipo = (v) => setF(x=>({...x,tipo:v,estudios:v==="personalizado"?[]:(LABS_PRESET[v]||[])}));
+
+  // Pre-genera el PDF al entrar a vista previa (Compartir iOS-safe)
+  useEffect(() => {
+    if (!preview) { setPdf(null); return; }
+    let vivo = true; setPdf(null);
+    const fn = `Labs_${sanitizeFilename(p.nombre||"Paciente")}.pdf`;
+    const t = setTimeout(() => { generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); }); }, 300);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [preview]);
+
+  if (preview) {
+    return (
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:3100,
+        display:"flex",flexDirection:"column"}}>
+        <div style={{background:C.morado,padding:"10px 20px",display:"flex",
+          justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+          <span style={{color:"white",fontWeight:800,fontSize:13}}>Vista previa — Orden de laboratorios</span>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setPreview(false)} color="rgba(255,255,255,0.2)" size="sm" icon="←">Editar</Btn>
+            <Btn onClick={()=>pdf && compartirOAbrirPDF({...pdf, filename:`Labs_${sanitizeFilename(p.nombre||"Paciente")}.pdf`})}
+              color={pdf?"#0EA5E9":"rgba(255,255,255,0.2)"} size="sm" icon="📄" disabled={!pdf}>
+              {pdf ? "Ver / Compartir" : "Generando…"}
+            </Btn>
+            <Btn onClick={()=>onSave(f)} color={C.verde} size="sm" icon="✓">Guardar</Btn>
+          </div>
+        </div>
+        <div style={{flex:1,overflow:"auto",padding:20,display:"flex",justifyContent:"center"}}>
+          <div ref={docRef} style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)",
+            width:"21cm",minHeight:"27.9cm",position:"relative"}}>
+            <DocLabs p={p} labs={f} firmaB64={null}/>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
@@ -2868,6 +2971,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
         <div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"14px 22px",
           borderTop:"1px solid "+C.grisMedio,background:C.gris}}>
           <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
+          <Btn onClick={()=>setPreview(true)} outline color={C.azul} icon="📄">Vista previa / PDF</Btn>
           <Btn onClick={()=>onSave(f)} color={C.morado} icon="🧪">Guardar solicitud</Btn>
         </div>
       </div>
@@ -5022,6 +5126,7 @@ const Calendario = ({pacientes, gcalEventos, onVer, onMoverCita}) => {
 const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false); // menú lateral en móvil
   const [showImport, setShowImport] = useState(false);
   const [contentView, setContentView] = useState("dash");
   const [busq, setBusq] = useState("");
@@ -5278,8 +5383,12 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   return (
     <div className="gft-layout">
 
+      {/* Overlay oscuro detrás del drawer (solo móvil cuando está abierto) */}
+      {drawerOpen && <div className="gft-sidebar-overlay" onClick={()=>setDrawerOpen(false)}/>}
+
       {/* ── SIDEBAR ─────────────────────────────────────────── */}
-      <aside className="gft-sidebar">
+      <aside className={"gft-sidebar"+(drawerOpen?" gft-sidebar--open":"")}
+        onClick={e=>{ if(e.target.closest(".gft-sidebar__item")) setDrawerOpen(false); }}>
         <div className="gft-sidebar__logo">
           <img src={logoNavbar} alt="Logo GFT" className="gft-sidebar__logo-img"/>
         </div>
@@ -5336,6 +5445,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
         {/* Top bar */}
         <header className="gft-topbar">
+          <button className="gft-hamburger" aria-label="Menú" onClick={()=>setDrawerOpen(true)}>☰</button>
           <div className="gft-topbar__info">
             <div className="gft-topbar__title">{topbarTitle}</div>
             <div className="gft-topbar__date">{fechaHoy}</div>
