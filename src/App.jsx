@@ -1241,7 +1241,8 @@ const generarYDescargarPDF = async (contentRef, filename) => {
 };
 
 // ── PDF helper: genera un blob PDF desde un ref renderizado (para compartir en móvil) ──
-const generarPDFBlob = async (contentRef, filename) => {
+// singlePage=true → escala toda la imagen para que quepa en UNA sola página (docs de página fija: receta/labs)
+const generarPDFBlob = async (contentRef, filename, {singlePage=false}={}) => {
   try {
     const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
       import("jspdf"), import("html2canvas")
@@ -1255,7 +1256,11 @@ const generarPDFBlob = async (contentRef, filename) => {
     const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
     const imgData = canvas.toDataURL("image/png", 0.95);
     const imgH = pdfW * (canvas.height / canvas.width);
-    if (imgH <= pdfH) {
+    if (singlePage && imgH > pdfH) {
+      // Escalar por altura para que entre completa en una página, centrada horizontalmente
+      const h = pdfH, w = h * (canvas.width / canvas.height);
+      pdf.addImage(imgData, "PNG", margin + (pdfW - w) / 2, margin, w, h);
+    } else if (imgH <= pdfH) {
       pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
     } else {
       let y = 0;
@@ -1449,9 +1454,10 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
   const isLibre = rec.tipo==="libre";
   const items = (rec.items||[]).filter(m=>m.ok!==false);
   return (
-    <div className="doc-receta" style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,
-      lineHeight:1.4,padding:"20px 24px",boxSizing:"border-box"}}>
-      {/* Header compacto — logo acotado en altura */}
+    <div className="doc-receta" style={{display:"flex",flexDirection:"column",position:"relative",
+      width:"750px",height:"1050px",padding:"48px 56px",boxSizing:"border-box",
+      fontFamily:"Arial,sans-serif",fontSize:12,color:C.texto,lineHeight:1.4}}>
+      {/* Header — logo acotado en altura */}
       <div style={{paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
         <img src={IMG_LOGO} alt="Logo" style={{maxHeight:110,maxWidth:"100%",height:"auto",display:"block"}}/>
       </div>
@@ -1461,66 +1467,72 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
         <CF l="Fecha" v={fmtFecha(rec.fecha)}/>
       </G4>
       <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#5BC4A0)",
-        margin:"8px 0 12px",borderRadius:1}}/>
-      {isGlp1&&(
-        <div style={{marginBottom:8}}>
-          <div style={{fontWeight:700,fontSize:12,marginBottom:3}}>1. {rec.med||"—"}</div>
-          {(rec.instr||[]).slice(0,1).map((s,i)=>(
-            <div key={i} style={{marginLeft:16,marginBottom:6}}>{s}</div>
-          ))}
-          {(rec.instr||[]).slice(1).map((s,i)=>(
-            <div key={i} style={{display:"flex",gap:8,marginBottom:4,alignItems:"flex-start"}}>
-              <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span><span>{s}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {(isList||isLibre)&&(
-        <div>
-          {items.map((m,i)=>(
-            <div key={i} style={{marginBottom:7}}>
-              <div style={{fontWeight:700,fontSize:12}}>
-                {isList?`${i+1}. `:""}{m.n}
+        margin:"8px 0 14px",borderRadius:1}}/>
+
+      {/* Contenido — ocupa el espacio disponible entre header y firma */}
+      <div style={{flex:1}}>
+        {isGlp1&&(
+          <div style={{marginBottom:8}}>
+            <div style={{fontWeight:700,fontSize:13,marginBottom:3}}>1. {rec.med||"—"}</div>
+            {(rec.instr||[]).slice(0,1).map((s,i)=>(
+              <div key={i} style={{marginLeft:16,marginBottom:6}}>{s}</div>
+            ))}
+            {(rec.instr||[]).slice(1).map((s,i)=>(
+              <div key={i} style={{display:"flex",gap:8,marginBottom:4,alignItems:"flex-start"}}>
+                <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span><span>{s}</span>
               </div>
-              {m.i&&<div style={{marginLeft:isList?16:0,color:C.texto}}>{m.i}</div>}
-            </div>
-          ))}
-          {rec.notaPie&&(
-            <div style={{marginTop:10,whiteSpace:"pre-line",fontWeight:700,fontSize:11}}>
-              {rec.notaPie}
-            </div>
-          )}
-        </div>
-      )}
-      {rec.notasExtra&&(
-        <div style={{marginTop:8,padding:"6px 9px",background:C.gris,borderRadius:5,fontSize:10.5}}>
-          {rec.notasExtra}
-        </div>
-      )}
-      {rec.proxCita&&(
-        <div style={{marginTop:8,fontSize:10.5,color:C.suave}}>
-          <b>Próxima cita:</b> {rec.proxCita}
-        </div>
-      )}
-      {/* Firma — posicionada ~66% de la página (clase CSS); estática al imprimir */}
-      <div className="doc-receta__firma" style={{display:"flex",justifyContent:"center"}}>
-        <div style={{textAlign:"center",minWidth:200}}>
+            ))}
+          </div>
+        )}
+        {(isList||isLibre)&&(
+          <div>
+            {items.map((m,i)=>(
+              <div key={i} style={{marginBottom:9}}>
+                <div style={{fontWeight:700,fontSize:13}}>
+                  {isList?`${i+1}. `:""}{m.n}
+                </div>
+                {m.i&&<div style={{marginLeft:isList?16:0,color:C.texto}}>{m.i}</div>}
+              </div>
+            ))}
+            {rec.notaPie&&(
+              <div style={{marginTop:12,whiteSpace:"pre-line",fontWeight:700,fontSize:12}}>
+                {rec.notaPie}
+              </div>
+            )}
+          </div>
+        )}
+        {rec.notasExtra&&(
+          <div style={{marginTop:10,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:11}}>
+            {rec.notasExtra}
+          </div>
+        )}
+        {rec.proxCita&&(
+          <div style={{marginTop:10,fontSize:11,color:C.suave}}>
+            <b>Próxima cita:</b> {rec.proxCita}
+          </div>
+        )}
+      </div>
+
+      {/* Firma — empujada hacia abajo con marginTop:auto (sin position:absolute) */}
+      <div style={{marginTop:"auto",paddingTop:16,display:"flex",justifyContent:"center"}}>
+        <div style={{textAlign:"center",minWidth:220}}>
           {rec.conFirma&&firmaB64 && <img src={firmaB64} alt="Firma"
-            style={{maxHeight:70,marginBottom:4,display:"block",margin:"0 auto 4px"}}/>}
-          <div style={{borderTop:"1px solid #1A2332",paddingTop:5,fontSize:10,color:"#1A2332"}}>
+            style={{maxHeight:72,marginBottom:4,display:"block",margin:"0 auto 4px"}}/>}
+          <div style={{borderTop:"1px solid #1A2332",paddingTop:5,fontSize:11,color:"#1A2332"}}>
             <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
             <div style={{fontSize:9,color:"#64748B"}}>Céd. Prof. 15131213 · Reg. SSA: 10361/16</div>
           </div>
         </div>
       </div>
-      {/* Footer + olas — anclado al fondo de la página (clase CSS); estático al imprimir */}
-      <div className="doc-receta__footer">
-        <div style={{paddingTop:6,margin:"0 24px",borderTop:"1px solid #E2E8F0",
+
+      {/* Footer — altura natural al final */}
+      <div style={{marginTop:12}}>
+        <div style={{paddingTop:6,borderTop:"1px solid #E2E8F0",
           textAlign:"center",fontSize:9,color:"#94A3B8"}}>
           <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
           <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
         </div>
-        <OlasDoc/>
+        <div style={{maxHeight:40,overflow:"hidden",marginTop:6}}><OlasDoc/></div>
       </div>
     </div>
   );
@@ -2379,7 +2391,7 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
     let vivo = true; setPdf(null);
     const fn = `Receta_${sanitizeFilename(p.nombre||"Paciente")}.pdf`;
     const t = setTimeout(() => {
-      generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); });
+      generarPDFBlob(docRef, fn, {singlePage:true}).then(d => { if (vivo) setPdf(d); });
     }, 300);
     return () => { vivo = false; clearTimeout(t); };
   }, [preview, conFirma]);
@@ -2435,9 +2447,8 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
           </div>
         </div>
         <div style={{flex:1,overflow:"auto",padding:20,display:"flex",justifyContent:"center",alignItems:"flex-start"}}>
-          {/* Sin minHeight forzado: el PDF captura la altura real → la receta cabe en 1 página */}
-          <div ref={docRef} style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)",
-            width:"21cm",position:"relative"}}>
+          {/* Ancho fijo 750px = el del contenedor de DocReceta → captura limpia en 1 página */}
+          <div ref={docRef} style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)"}}>
             <DocReceta p={p} rec={{...rec,conFirma}} firmaB64={firmaB64}/>
           </div>
         </div>
@@ -2930,7 +2941,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
     if (!preview) { setPdf(null); return; }
     let vivo = true; setPdf(null);
     const fn = `Labs_${sanitizeFilename(p.nombre||"Paciente")}.pdf`;
-    const t = setTimeout(() => { generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); }); }, 300);
+    const t = setTimeout(() => { generarPDFBlob(docRef, fn, {singlePage:true}).then(d => { if (vivo) setPdf(d); }); }, 300);
     return () => { vivo = false; clearTimeout(t); };
   }, [preview]);
 

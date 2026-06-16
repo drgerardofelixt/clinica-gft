@@ -985,16 +985,13 @@ select.gft-input {
   .gft-topbar .gft-btn--primary span.label-full { display: none; }
 }
 
-/* Receta — layout de página completa carta (pantalla + PDF generado vía html2canvas) */
-.doc-receta { position: relative; min-height: 277mm; }
-.doc-receta__firma  { position: absolute; left: 0; top: 66%; width: 100%; }
-.doc-receta__footer { position: absolute; left: 0; bottom: 0; width: 100%; }
-
-/* Impresión directa — flujo natural (1 página), sin posicionamiento absoluto ni altura forzada */
+/* Impresión directa de la receta — el contenedor fijo (750×1050px) se adapta a flujo natural en 1 página */
 @media print {
   @page { margin: 8mm; }
-  .doc-receta { min-height: auto; padding: 8px 12px !important; }
-  .doc-receta__firma  { position: static; top: auto; width: auto; margin-top: 28px; }
-  .doc-receta__footer { position: static; margin-top: 16px; }
+  .doc-receta {
+    width: auto !important;
+    height: auto !important;
+    padding: 16px 20px !important;
+  }
   .doc-receta, .doc-receta * { page-break-inside: avoid; }
 }
