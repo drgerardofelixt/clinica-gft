@@ -1271,12 +1271,13 @@ const generarPDFBlob = async (contentRef, filename) => {
 // Comparte/abre un PDF YA preparado. iOS-safe: Web Share API si se puede, si no abre el blob en pestaña vía <a>.
 // Nunca usa window.open() en setTimeout (bloqueado por iOS Safari).
 const compartirOAbrirPDF = async ({file, url, filename}) => {
-  try {
-    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: filename || "Documento" });
-      return;
-    }
-  } catch(e) { /* usuario canceló o no soportado → fallback a abrir */ }
+  // Si Web Share con archivos está disponible, usarlo y NO hacer fallback (evita doble apertura/envío)
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: filename || "Documento" }); }
+    catch(e) { /* cancelado o fallo de share → no abrir además */ }
+    return;
+  }
+  // Solo si Web Share no está disponible: abrir el blob en pestaña / descargar
   const a = document.createElement("a");
   a.href = url; a.target = "_blank"; a.rel = "noopener"; a.download = filename || "documento.pdf";
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -1501,8 +1502,8 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
           <b>Próxima cita:</b> {rec.proxCita}
         </div>
       )}
-      {/* Firma compacta — imagen acotada a 70px */}
-      <div style={{marginTop:18,display:"flex",justifyContent:"center"}}>
+      {/* Firma — posicionada ~66% de la página (clase CSS); estática al imprimir */}
+      <div className="doc-receta__firma" style={{display:"flex",justifyContent:"center"}}>
         <div style={{textAlign:"center",minWidth:200}}>
           {rec.conFirma&&firmaB64 && <img src={firmaB64} alt="Firma"
             style={{maxHeight:70,marginBottom:4,display:"block",margin:"0 auto 4px"}}/>}
@@ -1512,13 +1513,15 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
           </div>
         </div>
       </div>
-      {/* Footer compacto */}
-      <div style={{marginTop:10,paddingTop:6,borderTop:"1px solid #E2E8F0",
-        textAlign:"center",fontSize:9,color:"#94A3B8"}}>
-        <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-        <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+      {/* Footer + olas — anclado al fondo de la página (clase CSS); estático al imprimir */}
+      <div className="doc-receta__footer">
+        <div style={{paddingTop:6,margin:"0 24px",borderTop:"1px solid #E2E8F0",
+          textAlign:"center",fontSize:9,color:"#94A3B8"}}>
+          <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
+          <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+        </div>
+        <OlasDoc/>
       </div>
-      <OlasDoc/>
     </div>
   );
 };
@@ -2368,16 +2371,18 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
   const [preview, setPreview] = useState(false);
   const [conFirma, setConFirma] = useState(true);
   const docRef = useRef();
-  const [pdf, setPdf] = useState(null);   // {url,file} preparado de antemano para compartir en móvil
+  const [pdf, setPdf] = useState(null);   // {url,file} preparado de antemano — el botón Compartir lo reutiliza, no regenera
 
-  // Pre-genera el PDF al entrar a la vista previa (para que el botón Compartir funcione en iOS sin async en el tap)
+  // Pre-genera el PDF UNA sola vez al entrar a la vista previa (o al cambiar la firma)
   useEffect(() => {
     if (!(preview && rec)) { setPdf(null); return; }
     let vivo = true; setPdf(null);
     const fn = `Receta_${sanitizeFilename(p.nombre||"Paciente")}.pdf`;
-    const t = setTimeout(() => { generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); }); }, 300);
+    const t = setTimeout(() => {
+      generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); });
+    }, 300);
     return () => { vivo = false; clearTimeout(t); };
-  }, [preview, rec, conFirma]);
+  }, [preview, conFirma]);
 
   const GRUPOS = [
     {label:"Síntomas",   ids:["sintomas"],                        color:C.verde},
