@@ -1250,21 +1250,28 @@ const generarPDFBlob = async (contentRef, filename, {singlePage=false}={}) => {
     const canvas = await html2canvas(contentRef.current, {
       scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false
     });
-    const pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
-    const margin = 10;
-    const pdfW = pdf.internal.pageSize.getWidth() - margin * 2;
-    const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
     const imgData = canvas.toDataURL("image/png", 0.95);
-    const imgH = pdfW * (canvas.height / canvas.width);
-    if (singlePage && imgH > pdfH) {
-      // Escalar por altura para que entre completa en una página, centrada horizontalmente
-      const h = pdfH, w = h * (canvas.width / canvas.height);
-      pdf.addImage(imgData, "PNG", margin + (pdfW - w) / 2, margin, w, h);
-    } else if (imgH <= pdfH) {
-      pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
+    let pdf;
+    if (singlePage) {
+      // Página dimensionada al contenedor fijo de la receta (816×1056px = carta a 96dpi).
+      // La captura mapea 1:1 a una sola página, sin escalado variable.
+      const imgWidth = 816;
+      pdf = new jsPDF({orientation: "portrait", unit: "px", format: [imgWidth, imgWidth * (1056/816)]});
+      const PW = pdf.internal.pageSize.getWidth();
+      const PH = pdf.internal.pageSize.getHeight();
+      pdf.addImage(imgData, "PNG", 0, 0, PW, PH);
     } else {
-      let y = 0;
-      while (y < imgH - 0.5) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH); y += pdfH; }
+      pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
+      const margin = 10;
+      const pdfW = pdf.internal.pageSize.getWidth() - margin * 2;
+      const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
+      const imgH = pdfW * (canvas.height / canvas.width);
+      if (imgH <= pdfH) {
+        pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
+      } else {
+        let y = 0;
+        while (y < imgH - 0.5) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH); y += pdfH; }
+      }
     }
     const blob = new Blob([pdf.output("arraybuffer")], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
@@ -1455,7 +1462,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
   const items = (rec.items||[]).filter(m=>m.ok!==false);
   return (
     <div className="doc-receta" style={{display:"flex",flexDirection:"column",position:"relative",
-      width:"750px",height:"1050px",padding:"48px 56px",boxSizing:"border-box",
+      width:"816px",height:"1056px",padding:"72px 80px",boxSizing:"border-box",
       fontFamily:"Arial,sans-serif",fontSize:12,color:C.texto,lineHeight:1.4}}>
       {/* Header — logo acotado en altura */}
       <div style={{paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
@@ -1683,6 +1690,43 @@ const DocProgreso = ({p}) => {
     );
   };
 
+  // RangeBarSimple — mismo estilo visual que GoalBar (gradiente + dot), dot coloreado por zona activa.
+  // Gradiente verde→amarillo→rojo (zona saludable a la izquierda) acorde a las etiquetas del footer.
+  const RangeBarSimple = ({label, value, unit="", zones}) => {
+    const v=parseFloat(value);
+    if(isNaN(v)) return null;
+    const zonaActiva = zones.find((z,i)=>{
+      if(i===zones.length-1) return v>=z.min;
+      return v>=z.min && v<=z.max;
+    }) || zones[zones.length-1];
+    const totalMin = zones[0].min;
+    const totalMax = zones[zones.length-1].min*1.5;
+    const pct = Math.min(Math.max((v-totalMin)/(totalMax-totalMin)*100,2),98);
+    const z0 = zones[0], zMid = zones[1]||zones[0], zN = zones[zones.length-1];
+    return (
+      <div style={{marginBottom:14}}>
+        {/* Header: label izq · valor coloreado por zona der */}
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+          <span style={{fontSize:10,fontWeight:700}}>{label}</span>
+          <span style={{fontSize:10,fontWeight:800,color:zonaActiva.color}}>{value} {unit}</span>
+        </div>
+        {/* Track gradiente con dot indicador (mismo look que Metas personalizadas) */}
+        <div style={{position:"relative",height:8,borderRadius:4,
+          background:`linear-gradient(to right, ${z0.color} 0%, ${zMid.color} 50%, ${zN.color} 100%)`}}>
+          <div style={{position:"absolute",top:-3,left:pct+"%",transform:"translateX(-50%)",
+            width:14,height:14,borderRadius:"50%",background:zonaActiva.color,
+            border:"2px solid white",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
+        </div>
+        {/* Footer: zona izq · rango saludable central · zona der */}
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:8}}>
+          <span style={{color:z0.color,fontWeight:700}}>{z0.label}</span>
+          <span style={{color:C.suave}}>{z0.min}–{z0.max}{unit}</span>
+          <span style={{color:zN.color,fontWeight:700}}>{zN.label}</span>
+        </div>
+      </div>
+    );
+  };
+
   // Metas personalizadas — estimación de referencia, validar con criterio clínico
   const tallaCm = parseFloat(p.talla)||170;
   const tallam  = tallaCm/100;
@@ -1861,13 +1905,13 @@ const DocProgreso = ({p}) => {
       <div style={{marginBottom:14}}>
         <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Rangos saludables</div>
         <div style={{background:"#F4F6FB",borderRadius:10,padding:"14px 16px"}}>
-          <RangeBar label="IMC" value={ultima?.imc} unit=""
+          <RangeBarSimple label="IMC" value={ultima?.imc} unit=""
             zones={[
               {label:"Saludable", color:"#1D9E75", min:18.5, max:24.9},
               {label:"Sobrepeso", color:"#FAC775", min:25,   max:29.9},
               {label:"Obesidad",  color:"#D85A30", min:30,   max:null},
             ]}/>
-          <RangeBar label="Grasa corporal" value={ultima?.grasa} unit="%"
+          <RangeBarSimple label="Grasa corporal" value={ultima?.grasa} unit="%"
             zones={esMujer ? [
               {label:"Fitness",   color:"#1D9E75", min:14, max:24},
               {label:"Aceptable", color:"#FAC775", min:25, max:31},
@@ -1877,7 +1921,7 @@ const DocProgreso = ({p}) => {
               {label:"Aceptable", color:"#FAC775", min:18, max:24},
               {label:"Elevada",   color:"#D85A30", min:25, max:null},
             ]}/>
-          <RangeBar label="Grasa visceral" value={ultima?.visceral} unit=""
+          <RangeBarSimple label="Grasa visceral" value={ultima?.visceral} unit=""
             zones={[
               {label:"Excelente", color:"#1D9E75", min:1,  max:9},
               {label:"Moderada",  color:"#FAC775", min:10, max:14},
@@ -2941,7 +2985,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
     if (!preview) { setPdf(null); return; }
     let vivo = true; setPdf(null);
     const fn = `Labs_${sanitizeFilename(p.nombre||"Paciente")}.pdf`;
-    const t = setTimeout(() => { generarPDFBlob(docRef, fn, {singlePage:true}).then(d => { if (vivo) setPdf(d); }); }, 300);
+    const t = setTimeout(() => { generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); }); }, 300);
     return () => { vivo = false; clearTimeout(t); };
   }, [preview]);
 
@@ -2963,7 +3007,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
         </div>
         <div style={{flex:1,overflow:"auto",padding:20,display:"flex",justifyContent:"center"}}>
           <div ref={docRef} style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)",
-            width:"21cm",minHeight:"27.9cm",position:"relative"}}>
+            width:"21cm",position:"relative"}}>
             <DocLabs p={p} labs={f} firmaB64={null}/>
           </div>
         </div>
