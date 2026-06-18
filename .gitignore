@@ -5,3 +5,7 @@ dist
 .DS_Store
 *.local
 .vercel
+
+# Datos sensibles de pacientes (no versionar)
+sexo-revision.csv
+src/assets/docs-referencia/
