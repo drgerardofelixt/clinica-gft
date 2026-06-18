@@ -1946,7 +1946,11 @@ const DocProgreso = ({p}) => {
         </div>
       </div>
 
-      {/* 4. Progreso por segmento */}
+    </div>
+
+    {/* ── PÁGINA 2 ── */}
+    <div className="pdf-page" style={{...pageStyle, display:"flex", flexDirection:"column"}}>
+      {/* Progreso por segmento — movido a página 2 para que las 5 zonas no se corten */}
       {hasSegmental&&(
         <div style={{marginBottom:14}}>
           <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:2}}>Progreso por segmento</div>
@@ -1981,11 +1985,6 @@ const DocProgreso = ({p}) => {
           </div>
         </div>
       )}
-
-    </div>
-
-    {/* ── PÁGINA 2 ── */}
-    <div className="pdf-page" style={{...pageStyle, display:"flex", flexDirection:"column"}}>
       {/* Metas personalizadas */}
       {hasMetas&&(
         <div style={{marginBottom:14}}>
@@ -2719,10 +2718,11 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
 
 // ── Modal Consulta ────────────────────────────────────────────
 const ORIGEN_ABREV = { Farmacia:"FARM", Consultorio:"CON" };
-const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false, gcalEventos=[], onReporteWA}) => {
+const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false, gcalEventos=[], onReporte}) => {
   const prev = [...(p.consultas||[])].sort(porFechaClinica).slice(-1)[0];
   const [confirmarSinCita, setConfirmarSinCita] = useState(false);
-  const [paso, setPaso] = useState("form");        // form | reporte | cita
+  const [paso, setPaso] = useState("form");        // form | cita
+  const [guardado, setGuardado] = useState(false); // ¿ya se persistió la consulta?
   const [gcalTexto, setGcalTexto] = useState("");
   const [gcalMsg, setGcalMsg] = useState("");
   const [creando, setCreando] = useState(false);
@@ -2742,12 +2742,19 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   const u = (k,v) => setF(x=>({...x,[k]:v}));
   const uc = (k,v) => setF(x=>({...x,comp:{...x.comp,[k]:v}}));
 
-  // Guardar: en edición persiste y cierra; en consulta nueva persiste y abre el flujo (reporte → cita)
-  const guardarConsulta = () => {
-    onSave(f);
-    if (modoEdicion) return;   // editConsulta cierra el modal por su cuenta
-    setPaso("reporte");
-  };
+  // Edición: persiste y cierra (editConsulta cierra por su cuenta)
+  const guardarConsulta = () => { onSave(f); };
+
+  // Persiste la consulta una sola vez (botones "Generar reporte" y "Siguiente")
+  const saveOnce = () => { if (!guardado) { onSave(f); setGuardado(true); } };
+
+  // ¿Hay suficientes mediciones con báscula para un reporte? (≥2)
+  const compsConBascula = (p.composicion||[]).filter(c=>c.peso||c.grasa).length;
+  const fTieneComp = !!(f.comp && (f.comp.peso||f.comp.grasa)) || !!f.peso;
+  const puedeReporte = (guardado ? compsConBascula : compsConBascula + (fTieneComp?1:0)) >= 2;
+
+  // Botón "Generar reporte": guarda y abre el PDF de progreso (con opciones de compartir)
+  const generarReporte = () => { saveOnce(); onReporte && onReporte(); };
 
   // Texto por defecto del evento GCal: "Nombre · ABREV dosis · FARM/CON"
   const textoGCalDefault = () => {
@@ -2755,7 +2762,8 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
     const orig = ORIGEN_ABREV[f.origenMed] || "";
     return [p.nombre, [ab, f.dosis].filter(Boolean).join(" "), orig].filter(Boolean).join(" · ");
   };
-  const irACita = () => { setGcalTexto(textoGCalDefault()); setPaso("cita"); };
+  // Botón "Siguiente →": guarda (si falta) y abre el panel de próxima cita
+  const irACita = () => { saveOnce(); setGcalTexto(textoGCalDefault()); setPaso("cita"); };
 
   // Crear (o actualizar si ya existe) un único evento de GCal para esta cita
   const crearCitaGCal = async () => {
@@ -2820,33 +2828,6 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
         fontSize:20,cursor:"pointer",borderRadius:8,padding:"2px 10px"}}>×</button>
     </div>
   );
-
-  // ── PASO B: Reporte de progreso ──
-  if (paso === "reporte") {
-    return (
-      <div style={overlay}>
-        <div style={card}>
-          {headerBar(C.azul, "📊 Reporte de progreso — "+p.nombre)}
-          <div style={{padding:22}}>
-            <div style={{fontSize:13,color:C.texto,marginBottom:16,lineHeight:1.5}}>
-              ✅ Consulta guardada. Envía el reporte de progreso al paciente antes de agendar la próxima cita.
-            </div>
-            {onReporteWA && (
-              <button onClick={onReporteWA} style={{width:"100%",padding:"12px 16px",background:"#25D366",
-                color:"white",border:"none",borderRadius:10,fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:8}}>
-                📱 Enviar reporte por WhatsApp
-              </button>
-            )}
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"14px 22px",
-            borderTop:"1px solid "+C.grisMedio,background:C.gris}}>
-            <Btn onClick={onClose} outline color={C.suave}>Cerrar</Btn>
-            <Btn onClick={irACita} color={C.verde} icon="→">Continuar a próxima cita</Btn>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // ── PASO C: Próxima cita + evento Google Calendar ──
   if (paso === "cita") {
@@ -3085,12 +3066,23 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
             )}
           </Sec>
         </div>
-        <div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"14px 22px",
-          borderTop:"1px solid "+C.grisMedio,background:C.gris}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"14px 22px",
+          borderTop:"1px solid "+C.grisMedio,background:C.gris,flexWrap:"wrap"}}>
           <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
-          <Btn onClick={guardarConsulta} color={C.verde} icon="✓">
-            {modoEdicion ? "Guardar cambios" : "Guardar consulta"}
-          </Btn>
+          {modoEdicion ? (
+            <Btn onClick={guardarConsulta} color={C.verde} icon="✓">Guardar cambios</Btn>
+          ) : (
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <span title={puedeReporte ? "" : "Sin datos suficientes"} style={{display:"inline-flex"}}>
+                <Btn onClick={generarReporte} color={C.azul} icon="📊" disabled={!puedeReporte}>
+                  Generar reporte
+                </Btn>
+              </span>
+              <Btn onClick={irACita} color={C.verde} icon="→" disabled={puedeReporte && !guardado}>
+                Siguiente
+              </Btn>
+            </div>
+          )}
         </div>
       </div>
 
@@ -4480,7 +4472,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           </Card>
         )}
       </div>
-      {showC && <ModalConsulta p={p} gcalEventos={gcalEventos} onReporteWA={waProgreso}
+      {showC && <ModalConsulta p={p} gcalEventos={gcalEventos} onReporte={()=>setDoc({tipo:"progreso"})}
         onClose={()=>setShowC(false)} onSave={addConsulta}/>}
       {consultaAEditar && <ModalConsulta p={p} gcalEventos={gcalEventos} consultaExistente={consultaAEditar} modoEdicion
         onClose={()=>setConsultaAEditar(null)} onSave={editConsulta}/>}
@@ -5936,11 +5928,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                     </div>
                   </div>
 
-                </div>
-
-                {/* ── Columna derecha (panels) ── */}
-                <div>
-                  {/* Cola del día */}
+                  {/* Cola del día — debajo de Paciente actual y Google Calendar */}
                   <div className="gft-panel">
                     <div className="gft-panel__header">
                       <div className="gft-panel__title">Cola del día</div>
@@ -5970,6 +5958,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                     })}
                   </div>
 
+                </div>
+
+                {/* ── Columna derecha (panels) ── */}
+                <div>
                   {/* Pacientes de mañana */}
                   <div className="gft-panel">
                     <div className="gft-panel__header">
