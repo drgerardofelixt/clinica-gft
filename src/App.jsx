@@ -1456,7 +1456,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
   const items = (rec.items||[]).filter(m=>m.ok!==false);
   return (
     <div className="doc-receta pdf-page" style={{display:"flex",flexDirection:"column",position:"relative",
-      width:"816px",height:"1056px",padding:"72px 80px",boxSizing:"border-box",
+      width:"816px",height:"1056px",overflow:"hidden",padding:"72px 80px",boxSizing:"border-box",
       fontFamily:"Arial,sans-serif",fontSize:12,color:C.texto,lineHeight:1.4}}>
       {/* Header — logo acotado en altura */}
       <div style={{paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
@@ -1823,7 +1823,7 @@ const DocProgreso = ({p}) => {
 
   const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
 
-  const pageStyle = {width:"816px",minHeight:"1056px",padding:"40px 48px",boxSizing:"border-box",
+  const pageStyle = {width:"816px",height:"1056px",overflow:"hidden",padding:"48px 56px",boxSizing:"border-box",
     background:"white",fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.4};
   return (
     <>
@@ -1870,7 +1870,8 @@ const DocProgreso = ({p}) => {
         <div style={{marginBottom:14}}>
           <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>Evolución de peso</div>
           <div style={{background:"#F4F6FB",borderRadius:10,padding:"10px 8px 4px"}}>
-            <svg viewBox={`0 0 ${CW} ${CH}`} style={{width:"100%",height:130,display:"block"}}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${CW} ${CH}`}
+              style={{width:"100%",height:130,display:"block"}}>
               <defs>
                 <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#5BC4A0" stopOpacity="0.3"/>
@@ -1885,6 +1886,8 @@ const DocProgreso = ({p}) => {
                   <text x="28" y={yy+3} textAnchor="end" fontSize="7" fill="#94A3B8">{vv}</text>
                 </g>;
               })}
+              {/* Relleno sólido de respaldo + gradiente (por si la rasterización ignora url(#wg)) */}
+              {areaD && <path d={areaD} fill="#5BC4A0" fillOpacity="0.12"/>}
               <path d={areaD} fill="url(#wg)"/>
               <path d={lineD} fill="none" stroke="#1B3F8B" strokeWidth="2.5"
                 strokeLinecap="round" strokeLinejoin="round"/>
@@ -1950,7 +1953,7 @@ const DocProgreso = ({p}) => {
               if(md==null&&gd==null) return null;
               return (
                 <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
-                  padding:"5px 0",borderBottom:i<SEGS.length-1?"1px solid #E2E8F0":"none",
+                  padding:"4px 0",borderBottom:i<SEGS.length-1?"1px solid #E2E8F0":"none",
                   alignItems:"center"}}>
                   <span style={{fontSize:10,color:C.suave}}>{s.label}</span>
                   <span style={{textAlign:"center"}}>
