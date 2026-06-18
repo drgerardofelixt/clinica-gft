@@ -1197,34 +1197,57 @@ const sanitizeFilename = (str) =>
   (str||"").normalize("NFD").replace(/[̀-ͯ]/g,"")
     .replace(/[^a-zA-Z0-9\-]/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"");
 
+// ── Núcleo de generación de PDF ───────────────────────────────
+// Si el contenido tiene elementos .pdf-page → cada uno se captura como UNA página carta (816×1056px @96dpi).
+// Si no, y singlePage=true → toda la captura a 1 página carta. Si no, paginado mm clásico.
+const LETTER_PX = [816, 1056];
+const construirPDF = async (contentRef, {singlePage=false}={}) => {
+  const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
+    import("jspdf"), import("html2canvas")
+  ]);
+  const root = contentRef.current;
+  const render = (el) => html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
+  const pageEls = root.querySelectorAll(".pdf-page");
+
+  // Documento compuesto por páginas fijas → 1 .pdf-page = 1 hoja carta
+  if (pageEls.length > 0) {
+    const pdf = new jsPDF({orientation: "portrait", unit: "px", format: LETTER_PX});
+    for (let i = 0; i < pageEls.length; i++) {
+      const canvas = await render(pageEls[i]);
+      if (i > 0) pdf.addPage(LETTER_PX, "portrait");
+      let w = 816, h = 816 * (canvas.height / canvas.width);
+      if (h > 1056) { h = 1056; w = 1056 * (canvas.width / canvas.height); } // contenido más alto → ajustar para caber
+      pdf.addImage(canvas.toDataURL("image/png", 0.95), "PNG", (816 - w) / 2, 0, w, h);
+    }
+    return pdf;
+  }
+
+  const canvas = await render(root);
+  const imgData = canvas.toDataURL("image/png", 0.95);
+  if (singlePage) {
+    const pdf = new jsPDF({orientation: "portrait", unit: "px", format: LETTER_PX});
+    pdf.addImage(imgData, "PNG", 0, 0, 816, 1056);
+    return pdf;
+  }
+  const pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
+  const margin = 10;
+  const pdfW = pdf.internal.pageSize.getWidth() - margin * 2;
+  const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
+  const imgH = pdfW * (canvas.height / canvas.width);
+  if (imgH <= pdfH) {
+    pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
+  } else {
+    let y = 0;
+    while (y < imgH - 0.5) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH); y += pdfH; }
+  }
+  return pdf;
+};
+
 // ── PDF helper: genera PDF real y lo abre en macOS Preview sin diálogo ──
 const generarYDescargarPDF = async (contentRef, filename) => {
   try {
-    const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
-      import("jspdf"), import("html2canvas")
-    ]);
-    const canvas = await html2canvas(contentRef.current, {
-      scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false
-    });
-    const pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
-    const margin = 10;
-    const pdfW = pdf.internal.pageSize.getWidth() - margin * 2;
-    const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
-    const imgData = canvas.toDataURL("image/png", 0.95);
-    const imgH = pdfW * (canvas.height / canvas.width);
-    if (imgH <= pdfH) {
-      pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
-    } else {
-      let y = 0;
-      // tolerancia 0.5 mm evita página en blanco por error de punto flotante
-      while (y < imgH - 0.5) {
-        if (y > 0) pdf.addPage();
-        pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH);
-        y += pdfH;
-      }
-    }
-    const pdfBytes = pdf.output("arraybuffer");
-    const blob = new Blob([pdfBytes], { type: "application/pdf" });
+    const pdf = await construirPDF(contentRef);
+    const blob = new Blob([pdf.output("arraybuffer")], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1232,7 +1255,6 @@ const generarYDescargarPDF = async (contentRef, filename) => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // 500ms después de iniciar la descarga, abrir en Preview (macOS detecta blob PDF)
     setTimeout(() => window.open(url, "_blank"), 500);
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   } catch(e) {
@@ -1241,38 +1263,10 @@ const generarYDescargarPDF = async (contentRef, filename) => {
 };
 
 // ── PDF helper: genera un blob PDF desde un ref renderizado (para compartir en móvil) ──
-// singlePage=true → escala toda la imagen para que quepa en UNA sola página (docs de página fija: receta/labs)
+// Usa el núcleo construirPDF: detecta .pdf-page (multi-página fija) o singlePage (1 hoja).
 const generarPDFBlob = async (contentRef, filename, {singlePage=false}={}) => {
   try {
-    const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
-      import("jspdf"), import("html2canvas")
-    ]);
-    const canvas = await html2canvas(contentRef.current, {
-      scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false
-    });
-    const imgData = canvas.toDataURL("image/png", 0.95);
-    let pdf;
-    if (singlePage) {
-      // Página dimensionada al contenedor fijo de la receta (816×1056px = carta a 96dpi).
-      // La captura mapea 1:1 a una sola página, sin escalado variable.
-      const imgWidth = 816;
-      pdf = new jsPDF({orientation: "portrait", unit: "px", format: [imgWidth, imgWidth * (1056/816)]});
-      const PW = pdf.internal.pageSize.getWidth();
-      const PH = pdf.internal.pageSize.getHeight();
-      pdf.addImage(imgData, "PNG", 0, 0, PW, PH);
-    } else {
-      pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
-      const margin = 10;
-      const pdfW = pdf.internal.pageSize.getWidth() - margin * 2;
-      const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
-      const imgH = pdfW * (canvas.height / canvas.width);
-      if (imgH <= pdfH) {
-        pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
-      } else {
-        let y = 0;
-        while (y < imgH - 0.5) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH); y += pdfH; }
-      }
-    }
+    const pdf = await construirPDF(contentRef, {singlePage});
     const blob = new Blob([pdf.output("arraybuffer")], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
     const file = new File([blob], filename || "documento.pdf", { type: "application/pdf" });
@@ -1461,7 +1455,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
   const isLibre = rec.tipo==="libre";
   const items = (rec.items||[]).filter(m=>m.ok!==false);
   return (
-    <div className="doc-receta" style={{display:"flex",flexDirection:"column",position:"relative",
+    <div className="doc-receta pdf-page" style={{display:"flex",flexDirection:"column",position:"relative",
       width:"816px",height:"1056px",padding:"72px 80px",boxSizing:"border-box",
       fontFamily:"Arial,sans-serif",fontSize:12,color:C.texto,lineHeight:1.4}}>
       {/* Header — logo acotado en altura */}
@@ -1594,9 +1588,11 @@ const DocProgreso = ({p}) => {
   const caConsultas = (p.consultas||[]).filter(c=>c.ca).sort(porFechaClinica);
   const caIni = caConsultas[0]?.ca;
   const caAct = caConsultas[caConsultas.length-1]?.ca;
+  // Consulta más reciente (real, por fecha clínica) para tratamiento actual
+  const ultimaConsulta = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica).slice(-1)[0];
   const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
-  const med   = p.ci?.glp1 || p.ci?.medicamento || null;
-  const dosis = p.ci?.dosis || null;
+  const med   = ultimaConsulta?.medicamento || p.ci?.glp1 || p.ci?.medicamento || null;
+  const dosis = ultimaConsulta?.dosis || p.ci?.dosis || null;
   const esMujer = /mujer|femenino|^f$/i.test(p.sexo||"");
 
   const pesoDif    = difStr(ultima?.peso, primera?.peso);
@@ -1717,11 +1713,11 @@ const DocProgreso = ({p}) => {
             width:14,height:14,borderRadius:"50%",background:zonaActiva.color,
             border:"2px solid white",boxShadow:"0 1px 3px rgba(0,0,0,.25)"}}/>
         </div>
-        {/* Footer: zona izq · rango saludable central · zona der */}
+        {/* Footer: zona base (izq, verde) · rango saludable (centro) · zona ACTIVA del paciente (der) */}
         <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:8}}>
           <span style={{color:z0.color,fontWeight:700}}>{z0.label}</span>
           <span style={{color:C.suave}}>{z0.min}–{z0.max}{unit}</span>
-          <span style={{color:zN.color,fontWeight:700}}>{zN.label}</span>
+          <span style={{color:zonaActiva.color,fontWeight:700}}>{zonaActiva.label}</span>
         </div>
       </div>
     );
@@ -1827,8 +1823,12 @@ const DocProgreso = ({p}) => {
 
   const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
 
+  const pageStyle = {width:"816px",minHeight:"1056px",padding:"40px 48px",boxSizing:"border-box",
+    background:"white",fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.4};
   return (
-    <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+    <>
+    {/* ── PÁGINA 1 ── */}
+    <div className="pdf-page" style={pageStyle}>
       {/* 1. Header — logo original con Céd./Reg. SSA ya integrados */}
       <div style={{marginBottom:4,paddingBottom:6,borderBottom:"2px solid #1B3F8B20"}}>
         <img src={IMG_LOGO_CED} alt="Logo" style={{maxWidth:260,width:"100%",height:"auto",display:"block"}}/>
@@ -1966,6 +1966,10 @@ const DocProgreso = ({p}) => {
         </div>
       )}
 
+    </div>
+
+    {/* ── PÁGINA 2 ── */}
+    <div className="pdf-page" style={{...pageStyle, display:"flex", flexDirection:"column"}}>
       {/* Metas personalizadas */}
       {hasMetas&&(
         <div style={{marginBottom:14}}>
@@ -2006,9 +2010,13 @@ const DocProgreso = ({p}) => {
         <div>{motiv}</div>
       </div>
 
-      <FooterDoc/>
-      <OlasDoc/>
+      {/* Footer anclado al fondo de la página 2 */}
+      <div style={{marginTop:"auto"}}>
+        <FooterDoc/>
+        <div style={{maxHeight:40,overflow:"hidden"}}><OlasDoc/></div>
+      </div>
     </div>
+    </>
   );
 };
 
