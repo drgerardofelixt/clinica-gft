@@ -1834,7 +1834,9 @@ const DocProgreso = ({p}) => {
 
   const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
 
-  const pageStyle = {width:"816px",height:"1056px",overflow:"hidden",padding:"48px 56px",boxSizing:"border-box",
+  // minHeight (no height+overflow:hidden) para no recortar la última sección (tabla de segmentos);
+  // construirPDF escala cada .pdf-page para caber en una hoja carta.
+  const pageStyle = {width:"816px",minHeight:"1056px",padding:"48px 56px",boxSizing:"border-box",
     background:"white",fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.4};
   return (
     <>
