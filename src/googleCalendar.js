@@ -149,7 +149,7 @@ export const crearEventoGCal = async (nombre, telefono, fecha, hora, tipoCita, d
 };
 
 // Mueve/actualiza un evento existente (cambio de fecha/hora/duración) vía PATCH
-export const actualizarEventoGCal = async (eventId, fecha, hora, duracionMin) => {
+export const actualizarEventoGCal = async (eventId, fecha, hora, duracionMin, titulo) => {
   if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return null; }
   const token = loadSavedToken();
   window.gapi.client.setToken({ access_token: token });
@@ -166,6 +166,7 @@ export const actualizarEventoGCal = async (eventId, fecha, hora, duracionMin) =>
       calendarId: "primary",
       eventId,
       resource: {
+        ...(titulo ? { summary: titulo } : {}),
         start: { dateTime: iniISO, timeZone: "America/Hermosillo" },
         end:   { dateTime: finISO, timeZone: "America/Hermosillo" },
       }

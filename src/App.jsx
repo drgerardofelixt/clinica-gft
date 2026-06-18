@@ -312,6 +312,17 @@ const generarHorariosClinica = (fechaStr, duracionMin=30) => {
   bloques.forEach(([ini,fin]) => { for (let t=ini; t+duracionMin<=fin; t+=30) horas.push(minAHhmm(t)); });
   return horas;
 };
+// Abreviación de medicamento para el título del evento GCal
+const abrevMed = (med) => {
+  if (!med) return "";
+  const m = med.toLowerCase();
+  if (m.includes("mounjaro")) return "MOUN";
+  if (m.includes("wegovy"))   return "WEG";
+  if (m.includes("ozempic"))  return "OZE";
+  if (m.includes("saxenda"))  return "SAX";
+  return med.replace(/[^a-zA-Z]/g,"").slice(0,4).toUpperCase();
+};
+
 // Slots de GCal ocupados en una fecha dada (reusa el array gcalEventos ya cargado a nivel App)
 const gcalOcupadasEnFecha = (gcalEventos, fechaSel) => (gcalEventos||[]).flatMap(ev => {
   const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
@@ -2705,15 +2716,20 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
 };
 
 // ── Modal Consulta ────────────────────────────────────────────
-const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false, gcalEventos=[]}) => {
+const ORIGEN_ABREV = { Farmacia:"FARM", Consultorio:"CON" };
+const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false, gcalEventos=[], onReporteWA}) => {
   const prev = [...(p.consultas||[])].sort(porFechaClinica).slice(-1)[0];
   const [confirmarSinCita, setConfirmarSinCita] = useState(false);
+  const [paso, setPaso] = useState("form");        // form | reporte | cita
+  const [gcalTexto, setGcalTexto] = useState("");
+  const [gcalMsg, setGcalMsg] = useState("");
+  const [creando, setCreando] = useState(false);
   const [f, setF] = useState(() => {
     const base = {
       id:Date.now().toString(), fecha:hoy(), hora:ahora(),
       peso:"", ca:"", ta:"", fc:"", spo2:"", glucosaCapilar:"",
       subjetivo:"", efectos:"Negados", respuesta:"Adecuada",
-      plan:"", cambioDosis:"Continúa esquema actual",
+      plan:"", cambioDosis:"Continúa esquema actual", origenMed:"",
       medicamento:(p.ci&&p.ci.glp1)||"", dosis:"", proxCita:"", proxHora:"", proxDuracion:30,
       comp:{peso:"",grasa:"",musculo:"",agua:"",osea:"",visceral:"",bmr:"",edadMet:"",imc:""},
     };
@@ -2724,16 +2740,44 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   const u = (k,v) => setF(x=>({...x,[k]:v}));
   const uc = (k,v) => setF(x=>({...x,comp:{...x.comp,[k]:v}}));
 
+  // Guardar: en edición persiste y cierra; en consulta nueva persiste y abre el flujo (reporte → cita)
   const guardarConsulta = () => {
     onSave(f);
-    // En modo edición no se reenvía la confirmación de cita por WhatsApp
-    if (!modoEdicion && f.proxCita && p.telefono) {
-      const fechaMx = new Date(f.proxCita+"T00:00:00").toLocaleDateString("es-MX",{
-        weekday:"long",day:"numeric",month:"long",year:"numeric"
+    if (modoEdicion) return;   // editConsulta cierra el modal por su cuenta
+    setPaso("reporte");
+  };
+
+  // Texto por defecto del evento GCal: "Nombre · ABREV dosis · FARM/CON"
+  const textoGCalDefault = () => {
+    const ab = abrevMed(f.medicamento);
+    const orig = ORIGEN_ABREV[f.origenMed] || "";
+    return [p.nombre, [ab, f.dosis].filter(Boolean).join(" "), orig].filter(Boolean).join(" · ");
+  };
+  const irACita = () => { setGcalTexto(textoGCalDefault()); setPaso("cita"); };
+
+  // Crear (o actualizar si ya existe) un único evento de GCal para esta cita
+  const crearCitaGCal = async () => {
+    if (!f.proxCita || !f.proxHora) { setGcalMsg("⚠️ Falta fecha u hora de la próxima cita."); return; }
+    setCreando(true); setGcalMsg("");
+    try {
+      const dur = f.proxDuracion || 30;
+      // Dedup: ¿ya hay un evento de la app para este paciente ese día?
+      const nombreNorm = (p.nombre||"").toLowerCase();
+      const existente = (gcalEventos||[]).find(ev => {
+        const fch = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
+        return fch === f.proxCita && (ev.summary||"").toLowerCase().includes(nombreNorm.split(" ")[0]||"___");
       });
-      const msg = `Hola ${p.nombre}, te confirmo tu próxima cita programada para el ${fechaMx}${f.proxHora?" a las "+f.proxHora+" hrs":""}.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
-      setTimeout(()=>enviarWA(p.telefono, msg), 300);
-    }
+      let ok;
+      if (existente) {
+        ok = await actualizarEventoGCal(existente.id, f.proxCita, f.proxHora, dur, gcalTexto);
+      } else {
+        ok = await crearEventoGCal(p.nombre, p.telefono, f.proxCita, f.proxHora, "seguimiento", dur, gcalTexto);
+      }
+      setGcalMsg(ok ? (existente?"✅ Cita actualizada en Google Calendar":"✅ Cita creada en Google Calendar")
+                    : "⚠️ No se pudo crear — verifica la conexión con Google Calendar.");
+      if (ok) setTimeout(onClose, 1200);
+    } catch(e) { console.error("crearCitaGCal:", e); setGcalMsg("⚠️ Error al crear el evento."); }
+    finally { setCreando(false); }
   };
   const perd = f.peso && prev && prev.peso
     ? (parseFloat(prev.peso)-parseFloat(f.peso)).toFixed(2) : "";
@@ -2761,6 +2805,113 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
       },
     }));
   };
+
+  // Overlay/card compartido por los pasos del flujo
+  const overlay = {position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
+    overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16};
+  const card = {background:"white",borderRadius:16,width:"100%",maxWidth:560,overflow:"hidden",
+    boxShadow:"0 20px 60px rgba(0,0,0,0.2)",margin:"24px 0"};
+  const headerBar = (bg,titulo) => (
+    <div style={{background:bg,padding:"14px 22px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <div style={{color:"white",fontWeight:800,fontSize:14}}>{titulo}</div>
+      <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",
+        fontSize:20,cursor:"pointer",borderRadius:8,padding:"2px 10px"}}>×</button>
+    </div>
+  );
+
+  // ── PASO B: Reporte de progreso ──
+  if (paso === "reporte") {
+    return (
+      <div style={overlay}>
+        <div style={card}>
+          {headerBar(C.azul, "📊 Reporte de progreso — "+p.nombre)}
+          <div style={{padding:22}}>
+            <div style={{fontSize:13,color:C.texto,marginBottom:16,lineHeight:1.5}}>
+              ✅ Consulta guardada. Envía el reporte de progreso al paciente antes de agendar la próxima cita.
+            </div>
+            {onReporteWA && (
+              <button onClick={onReporteWA} style={{width:"100%",padding:"12px 16px",background:"#25D366",
+                color:"white",border:"none",borderRadius:10,fontWeight:800,fontSize:13,cursor:"pointer",marginBottom:8}}>
+                📱 Enviar reporte por WhatsApp
+              </button>
+            )}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"14px 22px",
+            borderTop:"1px solid "+C.grisMedio,background:C.gris}}>
+            <Btn onClick={onClose} outline color={C.suave}>Cerrar</Btn>
+            <Btn onClick={irACita} color={C.verde} icon="→">Continuar a próxima cita</Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PASO C: Próxima cita + evento Google Calendar ──
+  if (paso === "cita") {
+    const dur = f.proxDuracion || 30;
+    const slots = f.proxCita ? generarHorariosClinica(f.proxCita, dur) : [];
+    const ocupadas = gcalOcupadasEnFecha(gcalEventos, f.proxCita);
+    const evDe = h => { const ini=hhmmAMin(h), fin=ini+dur; return ocupadas.find(o=>ini<o.fin&&fin>o.ini)||null; };
+    return (
+      <div style={overlay}>
+        <div style={card}>
+          {headerBar(C.verde, "📅 Próxima cita — "+p.nombre)}
+          <div style={{padding:22,maxHeight:"70vh",overflow:"auto"}}>
+            <Row cols={3}>
+              <Inp label="Próxima cita" value={f.proxCita} onChange={v=>u("proxCita",v)} tipo="date"/>
+              <Inp label="Hora" value={f.proxHora} onChange={v=>u("proxHora",v)} tipo="time"/>
+              <Sel label="Duración" value={String(dur)} onChange={v=>u("proxDuracion",parseInt(v)||30)} opts={["30","45","60"]}/>
+            </Row>
+            {isGoogleAuthorized() && f.proxCita && (
+              <div style={{marginTop:10}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.suave,marginBottom:6}}>
+                  Horarios disponibles · {new Date(f.proxCita+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}
+                </div>
+                {slots.length===0 ? (
+                  <div style={{fontSize:11,color:C.suave}}>Sin horario de consultorio ese día (domingo cerrado).</div>
+                ) : (
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {slots.map(h=>{
+                      const ev = evDe(h), selH = f.proxHora===h;
+                      return (
+                        <button key={h} type="button" disabled={!!ev} onClick={()=>!ev&&u("proxHora",h)}
+                          title={ev?`Ocupado: ${ev.pac}`:"Disponible"}
+                          style={{fontSize:11,fontWeight:700,padding:"5px 9px",borderRadius:7,cursor:ev?"not-allowed":"pointer",
+                            border:selH?"2px solid "+C.verde:"1px solid "+(ev?C.rojo+"40":C.verde+"40"),
+                            background:ev?C.rojo+"15":selH?C.verde:C.verde+"12",
+                            color:ev?C.rojo:selH?"white":C.verde,textDecoration:ev?"line-through":"none"}}>
+                          {h}{ev?` · ${ev.pac.slice(0,10)}`:""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={{marginTop:14}}>
+              <label style={{fontSize:11,fontWeight:600,color:C.suave,display:"block",marginBottom:4}}>
+                Texto del evento (editable)
+              </label>
+              <textarea value={gcalTexto} onChange={e=>setGcalTexto(e.target.value)} rows={2} inputMode="text"
+                style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid "+C.grisMedio,
+                  fontSize:16,boxSizing:"border-box",fontFamily:"inherit"}}/>
+            </div>
+            {gcalMsg && (
+              <div style={{marginTop:12,fontSize:12,fontWeight:700,
+                color:gcalMsg.startsWith("✅")?C.verde:C.naranja}}>{gcalMsg}</div>
+            )}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"14px 22px",
+            borderTop:"1px solid "+C.grisMedio,background:C.gris}}>
+            <Btn onClick={onClose} outline color={C.suave}>Omitir</Btn>
+            <Btn onClick={crearCitaGCal} color={C.azul} icon="📅" disabled={creando}>
+              {creando ? "Creando…" : "Crear en Google Calendar"}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
@@ -2868,6 +3019,11 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               <Inp label="Dosis" value={f.dosis} onChange={v=>u("dosis",v)}/>
               <Inp label="Cambio de dosis" value={f.cambioDosis} onChange={v=>u("cambioDosis",v)}/>
             </Row>
+            <Row cols={3}>
+              <Sel label="Origen del medicamento" value={f.origenMed} onChange={v=>u("origenMed",v)}
+                opts={["","Farmacia","Consultorio"]}/>
+              <div/><div/>
+            </Row>
             <div style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:8}}>
               <div style={{flex:1}}>
                 <Txt label="Plan detallado" value={f.plan} onChange={v=>u("plan",v)} rows={2}
@@ -2930,15 +3086,9 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
         <div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"14px 22px",
           borderTop:"1px solid "+C.grisMedio,background:C.gris}}>
           <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
-          <Btn onClick={()=>{
-            // Si no tiene próxima cita, mostrar modal de confirmación
-            if (!f.proxCita) {
-              setConfirmarSinCita(true);
-              return;
-            }
-            // Guardar y enviar confirmación WhatsApp
-            guardarConsulta();
-          }} color={C.verde} icon="✓">{modoEdicion ? "Guardar cambios" : "Guardar consulta"}</Btn>
+          <Btn onClick={guardarConsulta} color={C.verde} icon="✓">
+            {modoEdicion ? "Guardar cambios" : "Guardar consulta"}
+          </Btn>
         </div>
       </div>
 
@@ -3437,13 +3587,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       consultas:[...(p.consultas||[]),d],
       composicion:[...(p.composicion||[]),comp],
     });
-    // Si la consulta agendó próxima cita, ofrecer agregarla a Google Calendar (toast con botón)
-    if (d.proxCita) {
-      try { onCitaAgendada && onCitaAgendada({nombre:p.nombre, telefono:p.telefono,
-        fecha:d.proxCita, hora:d.proxHora||"", tipoCita:"seguimiento", duracion:d.proxDuracion||30}); }
-      catch(e) { console.warn("onCitaAgendada falló:", e); }
-    }
-    setShowC(false);
+    // No se cierra aquí: ModalConsulta continúa al flujo reporte → próxima cita y cierra al final (o con X).
   };
   // Reemplaza una consulta existente (modo edición) y sincroniza p.composicion por id/fecha
   const editConsulta = (d) => {
@@ -4334,7 +4478,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           </Card>
         )}
       </div>
-      {showC && <ModalConsulta p={p} gcalEventos={gcalEventos} onClose={()=>setShowC(false)} onSave={addConsulta}/>}
+      {showC && <ModalConsulta p={p} gcalEventos={gcalEventos} onReporteWA={waProgreso}
+        onClose={()=>setShowC(false)} onSave={addConsulta}/>}
       {consultaAEditar && <ModalConsulta p={p} gcalEventos={gcalEventos} consultaExistente={consultaAEditar} modoEdicion
         onClose={()=>setConsultaAEditar(null)} onSave={editConsulta}/>}
       {showR && <ModalReceta p={p} firmaB64={firmaB64} onClose={()=>setShowR(false)} onSave={addReceta}/>}
