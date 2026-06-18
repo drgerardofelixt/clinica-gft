@@ -5934,72 +5934,6 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                     </div>
                   </div>
 
-                  {/* Mañana — recordatorios */}
-                  {citasManana.length>0&&(
-                    <div className="gft-panel">
-                      <div className="gft-panel__header">
-                        <div className="gft-panel__title">Mañana</div>
-                        <span className="gft-panel__count">{citasManana.length}</span>
-                      </div>
-                      {citasManana.map((c,i)=>{
-                        const chipColor=c.tipo==="gcal"?"#4285F4":c.tipoCita==="primera"?"var(--gft-success)":"var(--gft-accent)";
-                        return (
-                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,
-                            padding:"9px 0",borderBottom:i<citasManana.length-1?"1px solid var(--gft-border)":"none"}}>
-                            <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
-                              color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div title={c.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
-                              <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
-                                {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
-                              </div>
-                            </div>
-                            {c.pac&&(c.pac.telefono?(
-                              <button className="gft-btn gft-btn--secondary gft-btn--sm"
-                                style={{flexShrink:0,fontSize:11}}
-                                onClick={e=>{e.stopPropagation();enviarRecordatorio(c);}}>
-                                📱 Recordatorio
-                              </button>
-                            ):(
-                              <span title="Sin teléfono registrado"
-                                style={{flexShrink:0,fontSize:16,opacity:0.35,cursor:"default",userSelect:"none"}}>
-                                📵
-                              </span>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Pacientes recientes */}
-                  {recientes.length>0 && (
-                    <div className="gft-panel">
-                      <div className="gft-panel__header">
-                        <div className="gft-panel__title">Pacientes recientes</div>
-                        <button className="gft-section-action" onClick={()=>setContentView("pacientes")}>Ver todos →</button>
-                      </div>
-                      {recientes.map(pac=>{
-                        const uc=(pac.consultas||[]).filter(c=>!c.esSoloCita).slice(-1)[0];
-                        const compUlt=(pac.composicion||[]).slice(-1)[0];
-                        const pesoMostrar = compUlt?.peso || uc?.peso;
-                        const color=getAvatarColor(pac.nombre||"");
-                        return (
-                          <div key={pac.id} className="gft-patient-row" onClick={()=>onVer(pac)}>
-                            <div className={`gft-avatar gft-avatar--sm gft-avatar--${color}`}>{getIniciales(pac.nombre)}</div>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div title={pac.nombre} className="gft-patient-row__name" style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pac.nombre}</div>
-                              <div className="gft-patient-row__meta">
-                                {(pac.consultas||[]).length} consultas{uc?.fecha?" · "+fmtF(uc.fecha):""}
-                              </div>
-                            </div>
-                            {pesoMostrar&&<div className="gft-patient-row__weight">{pesoMostrar} kg</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
 
                 {/* ── Columna derecha (panels) ── */}
@@ -6029,6 +5963,45 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                             </div>
                           </div>
                           {c.pac&&<span style={{fontSize:12,color:"var(--gft-accent)",flexShrink:0}}>→</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Pacientes de mañana */}
+                  <div className="gft-panel">
+                    <div className="gft-panel__header">
+                      <div className="gft-panel__title">Pacientes de mañana</div>
+                      {citasManana.length>0&&<span className="gft-panel__count">{citasManana.length}</span>}
+                    </div>
+                    {citasManana.length===0 ? (
+                      <div className="gft-panel__empty">Sin citas programadas para mañana</div>
+                    ) : citasManana.map((c,i)=>{
+                      const chipColor=c.tipo==="gcal"?"#4285F4":c.tipoCita==="primera"?"var(--gft-success)":"var(--gft-accent)";
+                      return (
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,
+                          padding:"9px 0",borderBottom:i<citasManana.length-1?"1px solid var(--gft-border)":"none"}}>
+                          <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
+                            color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div title={c.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
+                            <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
+                              {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
+                            </div>
+                          </div>
+                          {c.pac&&(c.pac.telefono?(
+                            <button className="gft-btn gft-btn--secondary gft-btn--sm"
+                              style={{flexShrink:0,fontSize:11}}
+                              onClick={e=>{e.stopPropagation();enviarRecordatorio(c);}}>
+                              📱 Recordatorio
+                            </button>
+                          ):(
+                            <span title="Sin teléfono registrado"
+                              style={{flexShrink:0,fontSize:16,opacity:0.35,cursor:"default",userSelect:"none"}}>
+                              📵
+                            </span>
+                          ))}
                         </div>
                       );
                     })}
