@@ -1814,7 +1814,11 @@ const DocProgreso = ({p}) => {
   const hasSegmental = segRef && segAct && segRef!==segAct;
   // val = difNum result (number or null); null = dato ausente → "—"; 0 = sin cambio → "= X"
   const SegCell = ({val, rawAct, positiveGood, unit}) => {
-    if(val==null) return <span style={{color:C.suave,fontSize:10}}>—</span>;
+    if(val==null) {
+      // Sin diferencia calculable (falta el dato en una de las mediciones): mostrar el valor actual si existe
+      const raw=parseFloat(rawAct);
+      return <span style={{color:C.suave,fontSize:10}}>{isNaN(raw)?"—":`${raw.toFixed(1)} ${unit}`}</span>;
+    }
     const v=parseFloat(val);
     if(v===0) {
       const raw=parseFloat(rawAct);
@@ -1967,7 +1971,7 @@ const DocProgreso = ({p}) => {
             {SEGS.map((s,i)=>{
               const md=difNum(segAct[s.mKey],segRef[s.mKey]);
               const gd=difNum(segAct[s.gKey],segRef[s.gKey]);
-              if(md==null&&gd==null) return null;
+              // Siempre renderizar las 5 zonas; si no hay diff, SegCell muestra el valor actual o "—"
               return (
                 <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
                   padding:"4px 0",borderBottom:i<SEGS.length-1?"1px solid #E2E8F0":"none",
@@ -2838,7 +2842,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
     return (
       <div style={overlay}>
         <div style={card}>
-          {headerBar(C.verde, "📅 Próxima cita — "+p.nombre)}
+          {headerBar(C.verde, "Agendar próxima cita")}
           <div style={{padding:22,maxHeight:"70vh",overflow:"auto"}}>
             <Row cols={3}>
               <Inp label="Próxima cita" value={f.proxCita} onChange={v=>u("proxCita",v)} tipo="date"/>
@@ -3078,7 +3082,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
                   Generar reporte
                 </Btn>
               </span>
-              <Btn onClick={irACita} color={C.verde} icon="→" disabled={puedeReporte && !guardado}>
+              <Btn onClick={irACita} color={C.verde} icon="→">
                 Siguiente
               </Btn>
             </div>
