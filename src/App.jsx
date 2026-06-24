@@ -1907,6 +1907,60 @@ const DocProgreso = ({p}) => {
     );
   };
 
+  // Visceral con dominio 1–20 para RangoGrad
+  const ZONAS_VISCERAL = [
+    {label:'Saludable', min:1,  max:10, color:'#1D9E75'},
+    {label:'Moderada',  min:10, max:15, color:'#E0A45F'},
+    {label:'Elevada',   min:15, max:20, color:'#D85A30'},
+  ];
+
+  // Barra de rango con DEGRADADO continuo (píldora) + punto blanco marcador.
+  const RangoGrad = ({ zonas, valor, domMin, domMax, unidad = '' }) => {
+    const v = parseFloat(valor);
+    if (valor == null || valor === "" || isNaN(v)) return null;
+    const total = (domMax - domMin) || 1;
+    const stops = [];
+    let pct = 0;
+    zonas.forEach((z, i) => {
+      const w = ((z.max - z.min) / total) * 100;
+      stops.push(`${z.color} ${pct.toFixed(1)}%`);
+      pct += w;
+      stops.push(`${z.color} ${pct.toFixed(1)}%`);
+      if (i < zonas.length - 1) {
+        const next = zonas[i + 1].color;
+        stops[stops.length - 1] = `${z.color} ${(pct - 2).toFixed(1)}%`;
+        stops.push(`${next} ${(pct + 2).toFixed(1)}%`);
+      }
+    });
+    const gradient = `linear-gradient(to right, ${stops.join(', ')})`;
+    const pos = Math.min(99, Math.max(1, ((v - domMin) / total) * 100));
+    const zonaActual = zonas.find(z => v >= z.min && v < z.max) || zonas[zonas.length - 1];
+    return (
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 }}>
+          <div className="d" style={{ fontSize: 20, fontWeight: 500, color: '#1B3F8B' }}>
+            {v.toFixed(1)}
+            {unidad && <span style={{ fontSize: 12, color: '#8A99AC', marginLeft: 3 }}>{unidad}</span>}
+          </div>
+        </div>
+        <div style={{ position: 'relative', height: 12, borderRadius: 30, overflow: 'visible', background: gradient }}>
+          <div style={{
+            position: 'absolute', top: '50%', left: `${pos}%`, transform: 'translate(-50%, -50%)',
+            width: 18, height: 18, borderRadius: '50%', background: '#fff',
+            border: `3px solid ${zonaActual.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.18)', boxSizing: 'border-box', zIndex: 2,
+          }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#A4AEBD', marginTop: 7 }}>
+          {zonas.map(z => (
+            <span key={z.label} style={v >= z.min && v < z.max ? { color: zonaActual.color, fontWeight: 500 } : {}}>
+              {z.label}{v >= z.min && v < z.max ? ' ●' : ''}
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   // ── Masa muscular (FFMI), agua, zonas de peso ──
   const ZONAS_FFMI = {
     H: [
@@ -1983,6 +2037,73 @@ const DocProgreso = ({p}) => {
           {za && <span style={{marginLeft:"auto",color:za.color,fontWeight:700}}>{za.label}</span>}
         </div>
         {etiqueta && <div style={{fontSize:8.5,color:C.suave,marginTop:3}}>{etiqueta}</div>}
+      </div>
+    );
+  };
+
+  // Barra de meta: degradado + marcador HOY (azul sólido) y META (verde punteado), línea HOY→META, etiqueta de rango.
+  const MetaBarra = ({ zonas, valorHoy, valorMeta, domMin, domMax, unidad='', etiquetaRango }) => {
+    const vh = parseFloat(valorHoy);
+    if (valorHoy == null || valorHoy === "" || isNaN(vh)) return null;
+    const total = (domMax - domMin) || 1;
+    const vm = valorMeta != null ? parseFloat(valorMeta) : null;
+    const pctHoy  = Math.min(98, Math.max(2, ((vh - domMin) / total) * 100));
+    const pctMeta = (vm != null && !isNaN(vm)) ? Math.min(98, Math.max(2, ((vm - domMin) / total) * 100)) : null;
+    const stops = [];
+    let pct = 0;
+    zonas.forEach((z, i) => {
+      const w = ((z.max - z.min) / total) * 100;
+      stops.push(`${z.color} ${pct.toFixed(1)}%`);
+      pct += w;
+      if (i < zonas.length - 1) {
+        stops.push(`${z.color} ${(pct-2).toFixed(1)}%`);
+        stops.push(`${zonas[i+1].color} ${(pct+2).toFixed(1)}%`);
+      } else {
+        stops.push(`${z.color} ${pct.toFixed(1)}%`);
+      }
+    });
+    const gradient = `linear-gradient(to right, ${stops.join(', ')})`;
+    const zonaHoy = zonas.find(z => vh >= z.min && vh < z.max) || zonas[zonas.length-1];
+    return (
+      <div style={{marginBottom: 26}}>
+        <div style={{position:'relative', height:50, marginBottom:4}}>
+          <div style={{position:'absolute', bottom:6, left:`${pctHoy}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
+            <div style={{fontSize:10, color:'#8A99AC', letterSpacing:.5}}>HOY</div>
+            <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
+              {vh.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
+          </div>
+          {pctMeta != null && (
+            <div style={{position:'absolute', bottom:6, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
+              <div style={{fontSize:10, color:'#1D9E75', letterSpacing:.5}}>META</div>
+              <div className="d" style={{fontSize:14, fontWeight:500, color:'#1D9E75'}}>
+                {vm.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
+            </div>
+          )}
+        </div>
+        <div style={{position:'relative', height:12, borderRadius:30, background:gradient, overflow:'visible'}}>
+          {pctMeta != null && (
+            <div style={{position:'absolute', top:'50%', transform:'translateY(-50%)',
+              left:`${Math.min(pctHoy,pctMeta)}%`, width:`${Math.abs(pctHoy-pctMeta)}%`,
+              borderTop:'2px dashed rgba(255,255,255,0.7)', zIndex:1}}/>
+          )}
+          {pctMeta != null && (
+            <div style={{position:'absolute', top:'50%', left:`${pctMeta}%`, transform:'translate(-50%,-50%)',
+              width:16, height:16, borderRadius:'50%', background:'#fff', border:'2.5px dashed #1D9E75', boxSizing:'border-box', zIndex:3}}/>
+          )}
+          <div style={{position:'absolute', top:'50%', left:`${pctHoy}%`, transform:'translate(-50%,-50%)',
+            width:18, height:18, borderRadius:'50%', background:'#1B3F8B', border:'3px solid #fff',
+            boxShadow:'0 0 0 1px #1B3F8B', boxSizing:'border-box', zIndex:4}}/>
+        </div>
+        <div style={{display:'flex', justifyContent:'space-between', fontSize:11, color:'#A4AEBD', marginTop:7}}>
+          {zonas.map(z => (
+            <span key={z.label} style={vh >= z.min && vh < z.max ? {color:zonaHoy.color, fontWeight:500} : {}}>
+              {z.label}{vh >= z.min && vh < z.max ? ' ●' : ''}</span>
+          ))}
+        </div>
+        {etiquetaRango && (
+          <div style={{marginTop:10, background:'#F4F8F6', borderRadius:9, padding:'9px 14px', fontSize:12, color:'#5F6B7E'}}>
+            {etiquetaRango}</div>
+        )}
       </div>
     );
   };
@@ -2076,7 +2197,7 @@ const DocProgreso = ({p}) => {
         {[
           {l:"PESO", v:ultima?.peso, u:"kg", chip:zonaDe(ultima?.imc,ZONAS_IMC)?.color},
           {l:"GRASA", v:ultima?.grasa, u:"%", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color},
-          {l:"MÚSCULO", v:ultima?.musculo, u:"kg", chip:"#1D9E75"},
+          {l:"MÚSCULO TOTAL", v:ultima?.musculo, u:"kg", chip:"#1D9E75"},
           {l:"C. ABDOMINAL", v:caAct, u:"cm", chip:colorCintura(caAct)},
         ].map((m,i)=>(
           <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"12px 13px",position:"relative"}}>
@@ -2090,41 +2211,57 @@ const DocProgreso = ({p}) => {
 
       <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>¿En qué rango te encuentras?</div>
       <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>Rangos ajustados a tu sexo. El punto blanco marca dónde estás hoy.</div>
-      <div style={{background:"#F4F6FB",borderRadius:11,padding:"16px 18px",marginBottom:18}}>
-        <RangoProp label="IMC" value={ultima?.imc} dmin={15} dmax={35} zonas={ZONAS_IMC}/>
-        <RangoProp label="Grasa corporal" value={ultima?.grasa} unit="%"
-          dmin={ZONAS_GRASA[sexoKey][0].min} dmax={ZONAS_GRASA[sexoKey][ZONAS_GRASA[sexoKey].length-1].max}
-          zonas={ZONAS_GRASA[sexoKey]}/>
-        <RangoProp label="Grasa visceral" value={ultima?.visceral} dmin={1} dmax={30} zonas={ZONAS_VISC}/>
+      <div style={{background:"#F4F6FB",borderRadius:11,padding:"18px 20px",marginBottom:18}}>
+        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>IMC</div>
+        <RangoGrad zonas={ZONAS_IMC} valor={ultima?.imc} domMin={15} domMax={35}/>
+
+        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa corporal</div>
+        <RangoGrad zonas={ZONAS_GRASA[sexoKey]} valor={ultima?.grasa} domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"/>
+
+        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa visceral</div>
+        <RangoGrad zonas={ZONAS_VISCERAL} valor={ultima?.visceral} domMin={1} domMax={20}/>
+
         {ffmi!=null && (<>
-          <RangoProp label="Masa muscular (FFMI)" value={ffmi.toFixed(1)} unit="kg/m²"
-            dmin={zonasFFMI[0].min} dmax={zonasFFMI[zonasFFMI.length-1].max} zonas={zonasFFMI}/>
-          <div style={{fontSize:8.5,color:C.suave,margin:"-9px 0 2px"}}>Tu masa magra ajustada a tu estatura.</div>
+          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular libre de grasa</div>
+          <div style={{fontSize:12,color:'#8A99AC',marginBottom:10}}>Ajustada a tu estatura y peso.</div>
+          <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"/>
         </>)}
       </div>
 
       <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>Tus metas personalizadas</div>
       <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>Calculadas con tu edad, sexo y estatura — no son números genéricos.</div>
       <div style={{background:"#F4F6FB",borderRadius:11,padding:"16px 18px",marginBottom:16}}>
-        {ZONAS_PESO ? (
-          <RangoMeta label="Peso" value={ultima?.peso} meta={pesoObj} unit="kg"
-            dmin={ZONAS_PESO[0].min} dmax={ZONAS_PESO[ZONAS_PESO.length-1].max} zonas={ZONAS_PESO}
-            etiqueta={`Saludable: ${pesoMin}–${pesoMax} kg · Tu meta: ${pesoObj} kg`}/>
-        ) : ((ultima?.peso!=null && ultima?.peso!=="") && (
+        {(pesoMin!=null) ? (<>
+          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:6}}>Peso</div>
+          <MetaBarra
+            zonas={[
+              {label:'Bajo',      min:parseFloat((pesoMin-15).toFixed(1)), max:pesoMin, color:'#9DB4D6'},
+              {label:'Saludable', min:pesoMin, max:pesoMax, color:'#1D9E75'},
+              {label:'Sobrepeso', min:pesoMax, max:parseFloat((pesoMax+15).toFixed(1)), color:'#E0A45F'},
+            ]}
+            valorHoy={ultima?.peso} valorMeta={pesoObj}
+            domMin={parseFloat((pesoMin-15).toFixed(1))} domMax={parseFloat((pesoMax+15).toFixed(1))} unidad="kg"
+            etiquetaRango={`Rango saludable para tu estatura: ${pesoMin.toFixed(1)}–${pesoMax.toFixed(1)} kg`}/>
+        </>) : ((ultima?.peso!=null && ultima?.peso!=="") && (
           <div style={{marginBottom:14,fontSize:11}}>
             <b>Peso:</b> {ultima.peso} kg · Meta: {pesoObj} kg <span style={{color:C.suave,fontSize:9}}>(sin estatura para calcular rango)</span>
           </div>
         ))}
-        {(ultima?.grasa!=null && ultima?.grasa!=="") && (
-          <RangoMeta label="Grasa corporal" value={ultima?.grasa} meta={metaGrasaPct} unit="%"
-            dmin={ZONAS_GRASA[sexoKey][0].min} dmax={ZONAS_GRASA[sexoKey][ZONAS_GRASA[sexoKey].length-1].max} zonas={ZONAS_GRASA[sexoKey]}
-            etiqueta={`Saludable para tu sexo: ${zonaSaludGrasa.min}–${zonaSaludGrasa.max}% · Tu meta: ${metaGrasaPct}%`}/>
-        )}
-        {ffmi!=null && (
-          <RangoMeta label="Masa muscular (FFMI)" value={ffmi.toFixed(1)} meta={pisoAdecuado} unit="kg/m²"
-            dmin={zonasFFMI[0].min} dmax={zonasFFMI[zonasFFMI.length-1].max} zonas={zonasFFMI} metaLabel="Mínimo a conservar"
-            etiqueta={`Adecuado: ${pisoAdecuado}+ kg/m² · Tú: ${ffmi.toFixed(1)}`}/>
-        )}
+        {(ultima?.grasa!=null && ultima?.grasa!=="") && (<>
+          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:6}}>Grasa corporal</div>
+          <MetaBarra zonas={ZONAS_GRASA[sexoKey]} valorHoy={ultima?.grasa} valorMeta={metaGrasaPct}
+            domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
+            etiquetaRango={`Meta de grasa saludable para tu sexo: ${metaGrasaPct}%`}/>
+        </>)}
+        {ffmi!=null && (<>
+          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular libre de grasa</div>
+          <div style={{fontSize:12,color:'#8A99AC',marginBottom:8}}>Ajustada a tu estatura y peso.</div>
+          <MetaBarra zonas={ZONAS_FFMI[sexoKey]} valorHoy={ffmi} valorMeta={null}
+            domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"
+            etiquetaRango={sexoKey==='H'
+              ? 'Objetivo: mantener o subir. Mínimo recomendado: 18 kg/m²'
+              : 'Objetivo: mantener o subir. Mínimo recomendado: 15 kg/m²'}/>
+        </>)}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:11,marginTop:4}}>
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>PESO META (IMC SALUDABLE)</div>
