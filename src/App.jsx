@@ -1984,62 +1984,11 @@ const DocProgreso = ({p}) => {
     : (!isNaN(_pesoU) && !isNaN(_grasaU) ? _pesoU*(1 - _grasaU/100) : null);
   const ffmi = (tallaM>0 && ffm!=null) ? parseFloat((ffm/(tallaM*tallaM)).toFixed(1)) : null;
   const zonasFFMI = ZONAS_FFMI[sexoKey];
-  const pisoAdecuado = zonasFFMI[1].min;
   const aguaAct = (ultima?.agua!=null && ultima?.agua!=="" && !isNaN(parseFloat(ultima.agua))) ? parseFloat(ultima.agua) : null;
   const aguaZona = ZONAS_AGUA[sexoKey];
   // Zonas de peso saludable por IMC (según estatura)
   const pesoMin = tallaM>0 ? parseFloat((18.5*tallaM*tallaM).toFixed(1)) : null;
   const pesoMax = tallaM>0 ? parseFloat((24.9*tallaM*tallaM).toFixed(1)) : null;
-  const ZONAS_PESO = tallaM>0 ? [
-    {label:'Bajo',      min:parseFloat(Math.max(0,pesoMin-12).toFixed(1)), max:pesoMin, color:'#9DB4D6'},
-    {label:'Saludable', min:pesoMin, max:pesoMax, color:'#1D9E75'},
-    {label:'Sobrepeso', min:pesoMax, max:parseFloat((pesoMax+18).toFixed(1)), color:'#E0A45F'},
-  ] : null;
-  const zonaSaludGrasa = (ZONAS_GRASA[sexoKey].find(z=>z.label==="Saludable")) || ZONAS_GRASA[sexoKey][1];
-
-  // Barra de rango con DOS marcadores: actual (círculo blanco) y meta (línea punteada ▼). Etiqueta de rango bueno debajo.
-  const RangoMeta = ({label, value, meta, unit="", dmin, dmax, zonas, etiqueta, metaLabel="Tu meta"}) => {
-    const v = parseFloat(value), m = parseFloat(meta);
-    const span = (dmax-dmin)||1;
-    const za = zonaDe(v, zonas);
-    const pos = x => Math.min(Math.max((x-dmin)/span*100,1.5),98.5);
-    const vpct = isNaN(v)?null:pos(v), mpct = isNaN(m)?null:pos(m);
-    return (
-      <div style={{marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:7}}>
-          <span style={{fontSize:11,fontWeight:700,color:C.texto}}>{label}</span>
-          <span className="d" style={{fontSize:15,fontWeight:700,color:za?za.color:C.suave}}>
-            {value!=null&&value!==""?value:"—"}{unit?` ${unit}`:""}</span>
-        </div>
-        <div style={{position:"relative"}}>
-          <div style={{height:10,borderRadius:5,overflow:"hidden",display:"flex",background:"#E9EDF3"}}>
-            {zonas.map((z,i)=>(<div key={i} style={{width:`${(z.max-z.min)/span*100}%`,background:z.color}}/>))}
-          </div>
-          {mpct!=null && (
-            <div style={{position:"absolute",left:mpct+"%",top:-10,transform:"translateX(-50%)",
-              fontSize:10,lineHeight:1,color:C.azul,fontWeight:800}}>▼</div>
-          )}
-          {mpct!=null && (
-            <div style={{position:"absolute",left:mpct+"%",top:0,height:10,
-              borderLeft:`2px dashed ${C.azul}`,transform:"translateX(-50%)"}}/>
-          )}
-          {vpct!=null && (
-            <div style={{position:"absolute",top:"50%",left:vpct+"%",transform:"translate(-50%,-50%)",
-              width:15,height:15,borderRadius:"50%",background:"white",border:`3px solid ${za?za.color:C.azul}`,
-              boxShadow:"0 1px 4px rgba(0,0,0,.3)",zIndex:2}}/>
-          )}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:14,marginTop:7,fontSize:8,color:C.suave}}>
-          <span><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:"white",
-            border:"2px solid "+C.suave,verticalAlign:"middle",marginRight:3}}/>Hoy</span>
-          <span><span style={{display:"inline-block",borderLeft:"2px dashed "+C.azul,height:9,
-            verticalAlign:"middle",marginRight:3}}/>{metaLabel}</span>
-          {za && <span style={{marginLeft:"auto",color:za.color,fontWeight:700}}>{za.label}</span>}
-        </div>
-        {etiqueta && <div style={{fontSize:8.5,color:C.suave,marginTop:3}}>{etiqueta}</div>}
-      </div>
-    );
-  };
 
   // Barra de meta: degradado + marcador HOY (azul sólido) y META (verde punteado), línea HOY→META, etiqueta de rango.
   const MetaBarra = ({ zonas, valorHoy, valorMeta, domMin, domMax, unidad='', etiquetaRango }) => {
@@ -2166,7 +2115,7 @@ const DocProgreso = ({p}) => {
     <div style={{marginTop:"auto",paddingTop:10,borderTop:"1px solid #E2E8F0",display:"flex",
       justifyContent:"space-between",alignItems:"center",fontSize:8.5,color:C.suave}}>
       <span>Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Son. · (662) 298-4145</span>
-      <span style={{fontWeight:700,color:C.azul}}>Hoja {n} de 2</span>
+      <span style={{fontWeight:700,color:C.azul}}>Hoja {n} de 3</span>
     </div>
   );
 
@@ -2200,7 +2149,7 @@ const DocProgreso = ({p}) => {
     display:"flex",flexDirection:"column"};
   return (
     <>
-    {/* ── PÁGINA 1 — Estado actual personalizado ── */}
+    {/* ── HOJA 1 — Estado actual personalizado ── */}
     <div className="pdf-page" style={pageStyle}>
       <Encabezado/>
       <Banda derecha={`HOY · ${fechaHoy}`}/>
@@ -2240,6 +2189,19 @@ const DocProgreso = ({p}) => {
           <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"/>
         </>)}
       </div>
+
+      <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"13px 16px",marginBottom:16}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#B9772E",marginBottom:2}}>En resumen</div>
+        <div style={{fontSize:11,color:C.texto,lineHeight:1.45}}>{notaImc}</div>
+      </div>
+
+      <Pie n={1}/>
+    </div>
+
+    {/* ── HOJA 2 — Tus metas personalizadas ── */}
+    <div className="pdf-page" style={pageStyle}>
+      <Encabezado/>
+      <Banda derecha={`TUS METAS · ${fechaHoy}`}/>
 
       <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>Tus metas personalizadas</div>
       <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>Calculadas con tu edad, sexo y estatura — no son números genéricos.</div>
@@ -2303,15 +2265,10 @@ const DocProgreso = ({p}) => {
         </div>
       </div>
 
-      <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"13px 16px",marginBottom:16}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#B9772E",marginBottom:2}}>En resumen</div>
-        <div style={{fontSize:11,color:C.texto,lineHeight:1.45}}>{notaImc}</div>
-      </div>
-
-      <Pie n={1}/>
+      <Pie n={2}/>
     </div>
 
-    {/* ── PÁGINA 2 — Evolución mes a mes ── */}
+    {/* ── HOJA 3 — Evolución mes a mes ── */}
     <div className="pdf-page" style={pageStyle}>
       <Encabezado/>
       <Banda derecha={`${n} MEDICIÓN${n!==1?"ES":""} · ${normDate(primera?.fecha)} → ${normDate(ultima?.fecha)}`}/>
@@ -2377,7 +2334,7 @@ const DocProgreso = ({p}) => {
         )}
       </div>
 
-      <Pie n={2}/>
+      <Pie n={3}/>
     </div>
     </>
   );
