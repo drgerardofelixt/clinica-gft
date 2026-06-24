@@ -2064,15 +2064,18 @@ const DocProgreso = ({p}) => {
     });
     const gradient = `linear-gradient(to right, ${stops.join(', ')})`;
     const zonaHoy = zonas.find(z => vh >= z.min && vh < z.max) || zonas[zonas.length-1];
+    // Si HOY y META están a <12 pp, sus etiquetas se enciman → META baja debajo de la barra
+    const cercanos = pctMeta != null && Math.abs(pctHoy - pctMeta) < 12;
     return (
       <div style={{marginBottom: 26}}>
+        {/* Etiquetas arriba: HOY siempre; META arriba SOLO si no están cercanos */}
         <div style={{position:'relative', height:50, marginBottom:4}}>
           <div style={{position:'absolute', bottom:6, left:`${pctHoy}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
             <div style={{fontSize:10, color:'#8A99AC', letterSpacing:.5}}>HOY</div>
             <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
               {vh.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
           </div>
-          {pctMeta != null && (
+          {pctMeta != null && !cercanos && (
             <div style={{position:'absolute', bottom:6, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
               <div style={{fontSize:10, color:'#1D9E75', letterSpacing:.5}}>META</div>
               <div className="d" style={{fontSize:14, fontWeight:500, color:'#1D9E75'}}>
@@ -2094,6 +2097,16 @@ const DocProgreso = ({p}) => {
             width:18, height:18, borderRadius:'50%', background:'#1B3F8B', border:'3px solid #fff',
             boxShadow:'0 0 0 1px #1B3F8B', boxSizing:'border-box', zIndex:4}}/>
         </div>
+        {/* META abajo de la barra cuando están cercanos (evita encimar con HOY) */}
+        {pctMeta != null && cercanos && (
+          <div style={{position:'relative', height:34, marginTop:3, paddingBottom:8}}>
+            <div style={{position:'absolute', top:0, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
+              <div style={{fontSize:10, color:'#1D9E75', letterSpacing:.5}}>META</div>
+              <div className="d" style={{fontSize:14, fontWeight:500, color:'#1D9E75'}}>
+                {vm.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
+            </div>
+          </div>
+        )}
         <div style={{display:'flex', justifyContent:'space-between', fontSize:11, color:'#A4AEBD', marginTop:7}}>
           {zonas.map(z => (
             <span key={z.label} style={vh >= z.min && vh < z.max ? {color:zonaHoy.color, fontWeight:500} : {}}>
@@ -2160,7 +2173,7 @@ const DocProgreso = ({p}) => {
   // Logo grande + banda de identidad reutilizables
   const Encabezado = () => (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-      paddingBottom:16,marginBottom:18,borderBottom:"2px solid #1B3F8B2E"}}>
+      paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B2E"}}>
       <img src={IMG_LOGO_CED} alt="Logo" style={{height:180,width:"auto",display:"block"}}/>
       <div className="d" style={{fontSize:14,fontWeight:700,color:C.azul,letterSpacing:"1.5px",
         textTransform:"uppercase"}}>Reporte de progreso</div>
