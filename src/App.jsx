@@ -1179,7 +1179,7 @@ const G4 = ({children}) => (
 
 const LogoDoc = ({compact=false}) => (
   <div style={{marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
-    <img src={IMG_LOGO} alt="Logo" style={{maxWidth:compact?180:225,width:"100%",height:"auto",display:"block"}}/>
+    <img src={IMG_LOGO} alt="Logo" style={{height:compact?72:92,width:"auto",maxWidth:"100%",display:"block"}}/>
   </div>
 );
 
@@ -1471,7 +1471,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
       fontFamily:"Arial,sans-serif",fontSize:12,color:C.texto,lineHeight:1.4}}>
       {/* Header — logo acotado en altura */}
       <div style={{paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
-        <img src={IMG_LOGO} alt="Logo" style={{maxHeight:110,maxWidth:"100%",height:"auto",display:"block"}}/>
+        <img src={IMG_LOGO} alt="Logo" style={{height:92,width:"auto",maxWidth:"100%",display:"block"}}/>
       </div>
       <G4>
         <CF l="Paciente" v={p.nombre} span={2}/>
@@ -1838,202 +1838,279 @@ const DocProgreso = ({p}) => {
 
   const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
 
-  // minHeight (no height+overflow:hidden) para no recortar la última sección (tabla de segmentos);
-  // construirPDF escala cada .pdf-page para caber en una hoja carta.
+  // ── Helpers del rediseño (zonas por sexo, rango proporcional, series, sparkline) ──
+  const sexoKey = esMujer ? "M" : "H";
+  const ZONAS_GRASA = {
+    M: [
+      {label:'Atleta',    min:14, max:21, color:'#9DB4D6'},
+      {label:'Saludable', min:21, max:25, color:'#1D9E75'},
+      {label:'Aceptable', min:25, max:32, color:'#E0A45F'},
+      {label:'Alto',      min:32, max:45, color:'#D85A30'},
+    ],
+    H: [
+      {label:'Atleta',    min:6,  max:14, color:'#9DB4D6'},
+      {label:'Saludable', min:14, max:18, color:'#1D9E75'},
+      {label:'Aceptable', min:18, max:25, color:'#E0A45F'},
+      {label:'Alto',      min:25, max:40, color:'#D85A30'},
+    ],
+  };
+  const ZONAS_IMC = [
+    {label:'Bajo',      min:15,   max:18.5, color:'#9DB4D6'},
+    {label:'Saludable', min:18.5, max:25,   color:'#1D9E75'},
+    {label:'Sobrepeso', min:25,   max:30,   color:'#E0A45F'},
+    {label:'Obesidad',  min:30,   max:35,   color:'#D85A30'},
+  ];
+  const ZONAS_VISC = [
+    {label:'Saludable', min:1,  max:10, color:'#1D9E75'},
+    {label:'Moderada',  min:10, max:15, color:'#E0A45F'},
+    {label:'Elevada',   min:15, max:30, color:'#D85A30'},
+  ];
+  const zonaDe = (value, zonas) => {
+    const v = parseFloat(value);
+    if (isNaN(v)) return null;
+    return zonas.find(z => v >= z.min && v < z.max)
+      || (v >= zonas[zonas.length-1].min ? zonas[zonas.length-1] : zonas[0]);
+  };
+  const colorCintura = (v) => { const x=parseFloat(v); if(isNaN(x)) return C.suave;
+    return esMujer ? (x<80?"#1D9E75":x<88?"#E0A45F":"#D85A30") : (x<94?"#1D9E75":x<102?"#E0A45F":"#D85A30"); };
+  const caChange = difNum(caAct, caIni);
+
+  // Barra de rango con segmentos de ANCHO PROPORCIONAL al tamaño de zona + marcador blanco
+  const RangoProp = ({label, value, unit="", dmin, dmax, zonas}) => {
+    const v = parseFloat(value);
+    const span = (dmax - dmin) || 1;
+    const za = zonaDe(v, zonas);
+    const pct = isNaN(v) ? null : Math.min(Math.max((v - dmin)/span*100, 1.5), 98.5);
+    return (
+      <div style={{marginBottom:13}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:5}}>
+          <span style={{fontSize:11,fontWeight:700,color:C.texto}}>{label}</span>
+          <span className="d" style={{fontSize:15,fontWeight:700,color:za?za.color:C.suave}}>
+            {value!=null&&value!==""?value:"—"}{unit?` ${unit}`:""}</span>
+        </div>
+        <div style={{position:"relative",height:10,borderRadius:5,overflow:"hidden",display:"flex",background:"#E9EDF3"}}>
+          {zonas.map((z,i)=>(<div key={i} style={{width:`${(z.max-z.min)/span*100}%`,background:z.color}}/>))}
+          {pct!=null && (
+            <div style={{position:"absolute",top:"50%",left:pct+"%",transform:"translate(-50%,-50%)",
+              width:15,height:15,borderRadius:"50%",background:"white",border:`3px solid ${za?za.color:C.azul}`,
+              boxShadow:"0 1px 4px rgba(0,0,0,.3)"}}/>
+          )}
+        </div>
+        <div style={{display:"flex",marginTop:5}}>
+          {zonas.map((z,i)=>(
+            <div key={i} style={{width:`${(z.max-z.min)/span*100}%`,textAlign:"center",overflow:"hidden"}}>
+              <div style={{fontSize:7.5,fontWeight:700,color:z.color,whiteSpace:"nowrap"}}>{z.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Series + escala para sparklines (hoja 2)
+  const serie = (getVal) => comps.map(c=>({f:normDate(c.fecha), v:parseFloat(getVal(c))})).filter(d=>!isNaN(d.v));
+  const sPeso  = serie(c=>c.peso);
+  const sGrasa = serie(c=>c.grasa);
+  const sMusc  = serie(c=>c.musculo);
+  const sCA    = caConsultas.map(c=>({f:normDate(c.fecha), v:parseFloat(c.ca)})).filter(d=>!isNaN(d.v));
+  const yScale = (arr) => { const vs=arr.map(d=>d.v), min=Math.min(...vs), max=Math.max(...vs), rng=(max-min)||1;
+    return v => 58 - ((v-min)/rng)*36; };
+  const Sparkline = ({arr, color, decimals=1, sufijo=""}) => {
+    if(!arr.length) return <div style={{fontSize:9,color:C.suave,padding:"18px 0"}}>Sin datos suficientes</div>;
+    const W=320, H=66, pad=20, ys=yScale(arr);
+    const xx = i => arr.length===1 ? W/2 : pad + (i/(arr.length-1))*(W-pad*2);
+    const pts = arr.map((d,i)=>({x:xx(i), y:ys(d.v), f:d.f, v:d.v}));
+    const path = pts.map((pt,i)=>(i===0?"M":"L")+pt.x.toFixed(1)+","+pt.y.toFixed(1)).join(" ");
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:66,display:"block"}}>
+        {pts.length>1 && <path d={path} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>}
+        {pts.map((pt,i)=>(
+          <g key={i}>
+            <circle cx={pt.x} cy={pt.y} r="3" fill={color}/>
+            <text x={pt.x} y={pt.y-6} textAnchor="middle" fontSize="8.5" fontWeight="700" fill={C.texto}>{pt.v.toFixed(decimals)}{sufijo}</text>
+            <text x={pt.x} y={H-3} textAnchor="middle" fontSize="7" fill={C.suave}>{(pt.f||"").slice(0,5)}</text>
+          </g>
+        ))}
+      </svg>
+    );
+  };
+
+  const fechaHoy = new Date().toLocaleDateString("es-MX",{day:"numeric",month:"long",year:"numeric"});
+  const imcZona = zonaDe(ultima?.imc, ZONAS_IMC);
+  const notaImc = imcZona?.label==="Saludable"
+      ? "Estás dentro de tu rango de IMC saludable. Mantén tus hábitos para conservarlo."
+    : imcZona?.label==="Sobrepeso"
+      ? "Vas en sobrepeso, en camino a tu rango Saludable. Cada medición cuenta — sigue así."
+    : imcZona?.label==="Obesidad"
+      ? "Estás trabajando para reducir tu peso. Los cambios sostenidos te acercan a tu meta paso a paso."
+    : imcZona?.label==="Bajo"
+      ? "Tu IMC está por debajo del rango. Enfócate en nutrición y masa muscular."
+      : "Continúa con tu plan de tratamiento y nutrición para alcanzar tus metas.";
+
+  // Footer de hoja (dirección + número de hoja)
+  const Pie = ({n}) => (
+    <div style={{marginTop:"auto",paddingTop:10,borderTop:"1px solid #E2E8F0",display:"flex",
+      justifyContent:"space-between",alignItems:"center",fontSize:8.5,color:C.suave}}>
+      <span>Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Son. · (662) 298-4145</span>
+      <span style={{fontWeight:700,color:C.azul}}>Hoja {n} de 2</span>
+    </div>
+  );
+
+  // Logo grande + banda de identidad reutilizables
+  const Encabezado = () => (
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",
+      paddingBottom:10,marginBottom:14,borderBottom:"2px solid #1B3F8B2E"}}>
+      <img src={IMG_LOGO_CED} alt="Logo" style={{height:92,width:"auto",display:"block"}}/>
+      <div className="d" style={{fontSize:14,fontWeight:700,color:C.azul,letterSpacing:"1.5px",
+        textTransform:"uppercase"}}>Reporte de progreso</div>
+    </div>
+  );
+  const Banda = ({derecha}) => (
+    <div style={{background:"linear-gradient(135deg,#1B3F8B,#1D9E75)",color:"white",borderRadius:14,
+      padding:"18px 22px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",gap:14}}>
+      <div style={{minWidth:0}}>
+        <div style={{fontSize:21,fontWeight:800,marginBottom:4,lineHeight:1.1}}>{p.nombre}</div>
+        <div className="d" style={{fontSize:11,opacity:0.92,letterSpacing:"0.5px",textTransform:"uppercase"}}>
+          {[p.edad?`${p.edad} AÑOS`:null, p.sexo, p.talla?`${p.talla} CM`:null,
+            med?`${med}${dosis?" "+dosis:""}`:null].filter(Boolean).join(" · ")}
+        </div>
+      </div>
+      <div style={{textAlign:"right",flexShrink:0}}>
+        <div className="d" style={{fontSize:11,fontWeight:700,letterSpacing:"0.5px",opacity:0.92,textTransform:"uppercase"}}>{derecha}</div>
+      </div>
+    </div>
+  );
+
   const pageStyle = {width:"816px",minHeight:"1056px",padding:"48px 56px",boxSizing:"border-box",
-    background:"white",fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.4};
+    background:"white",fontFamily:"Gotham, Arial, sans-serif",fontSize:11,color:C.texto,lineHeight:1.4,
+    display:"flex",flexDirection:"column"};
   return (
     <>
-    {/* ── PÁGINA 1 ── */}
+    {/* ── PÁGINA 1 — Estado actual personalizado ── */}
     <div className="pdf-page" style={pageStyle}>
-      {/* 1. Header — logo original con Céd./Reg. SSA ya integrados */}
-      <div style={{marginBottom:4,paddingBottom:6,borderBottom:"2px solid #1B3F8B20"}}>
-        <img src={IMG_LOGO_CED} alt="Logo" style={{maxWidth:260,width:"100%",height:"auto",display:"block"}}/>
-      </div>
+      <Encabezado/>
+      <Banda derecha={`HOY · ${fechaHoy}`}/>
 
-      {/* 2. Hero banner */}
-      <div style={{background:"linear-gradient(135deg,#1B3F8B,#5BC4A0)",color:"white",
-        borderRadius:10,padding:"18px 20px",marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",opacity:0.85,marginBottom:2}}>
-          REPORTE DE PROGRESO
-        </div>
-        <div style={{fontSize:19,fontWeight:800,marginBottom:3}}>{p.nombre}</div>
-        <div style={{fontSize:11,opacity:0.85}}>
-          {n} medición{n!==1?"es":""} · {normDate(primera?.fecha)} → {normDate(ultima?.fecha)}
-        </div>
-      </div>
-
-      {/* 3. Métricas hero 2×2 — valor en azul marino */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>¿Cómo estás hoy?</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:11,marginBottom:18}}>
         {[
-          {l:"PESO ACTUAL",    v:ultima?.peso    ?ultima.peso+" kg":"—",    d:pesoDif,    pos:false},
-          {l:"GRASA CORPORAL", v:ultima?.grasa   ?ultima.grasa+"%":"—",     d:grasaDif,   pos:false},
-          {l:"MASA MUSCULAR",  v:ultima?.musculo ?ultima.musculo+" kg":"—", d:musculoDif, pos:true},
-          {l:"CIRC. ABDOMINAL",v:caAct           ?caAct+" cm":"—",          d:caDif,      pos:false},
+          {l:"PESO", v:ultima?.peso, u:"kg", chip:zonaDe(ultima?.imc,ZONAS_IMC)?.color},
+          {l:"GRASA", v:ultima?.grasa, u:"%", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color},
+          {l:"MÚSCULO", v:ultima?.musculo, u:"kg", chip:"#1D9E75"},
+          {l:"C. ABDOMINAL", v:caAct, u:"cm", chip:colorCintura(caAct)},
         ].map((m,i)=>(
-          <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:12}}>
-            <div style={{fontSize:10,fontWeight:700,color:C.suave,textTransform:"uppercase",
-              letterSpacing:"0.05em",marginBottom:4}}>{m.l}</div>
-            <div style={{fontSize:22,fontWeight:800,lineHeight:1,color:"#1B3F8B"}}>{m.v}</div>
-            {m.d!=null&&m.d!=="0"&&(
-              <div style={{fontSize:11,fontWeight:700,marginTop:4,color:dcol(m.d,m.pos)}}>{m.d}</div>
-            )}
+          <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"12px 13px",position:"relative"}}>
+            <span style={{position:"absolute",top:11,right:11,width:9,height:9,borderRadius:"50%",background:m.chip||C.suave}}/>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>{m.l}</div>
+            <div className="d" style={{fontSize:24,fontWeight:700,lineHeight:1.05,color:C.azul,marginTop:3}}>
+              {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:12,fontWeight:600,color:C.suave}}> {m.u}</span></div>
           </div>
         ))}
       </div>
 
-      {/* Gráfica de peso SVG */}
-      {pts.length>=2&&(
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>Evolución de peso</div>
-          <div style={{background:"#F4F6FB",borderRadius:10,padding:"10px 8px 4px"}}>
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${CW} ${CH}`}
-              style={{width:"100%",height:130,display:"block"}}>
-              <defs>
-                <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#5BC4A0" stopOpacity="0.3"/>
-                  <stop offset="100%" stopColor="#5BC4A0" stopOpacity="0"/>
-                </linearGradient>
-              </defs>
-              {[0,1,2,3].map(i=>{
-                const yy=12+i*((CH-26)/3);
-                const vv=(pMax-i*(pMax-pMin)/3).toFixed(1);
-                return <g key={i}>
-                  <line x1="30" y1={yy} x2={CW-4} y2={yy} stroke="#E2E8F0" strokeWidth="1"/>
-                  <text x="28" y={yy+3} textAnchor="end" fontSize="7" fill="#94A3B8">{vv}</text>
-                </g>;
-              })}
-              {/* Relleno sólido de respaldo + gradiente (por si la rasterización ignora url(#wg)) */}
-              {areaD && <path d={areaD} fill="#5BC4A0" fillOpacity="0.12"/>}
-              <path d={areaD} fill="url(#wg)"/>
-              <path d={lineD} fill="none" stroke="#1B3F8B" strokeWidth="2.5"
-                strokeLinecap="round" strokeLinejoin="round"/>
-              {pts.map((pt,i)=>(
-                <g key={i}>
-                  <circle cx={pt.x} cy={pt.y} r="4" fill="#1B3F8B"/>
-                  <text x={pt.x} y={CH-2} textAnchor="middle" fontSize="7" fill="#94A3B8">
-                    {pt.f.slice(0,5)}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        </div>
-      )}
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>¿En qué rango te encuentras?</div>
+      <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>Rangos ajustados a tu sexo. El punto blanco marca dónde estás hoy.</div>
+      <div style={{background:"#F4F6FB",borderRadius:11,padding:"16px 18px",marginBottom:18}}>
+        <RangoProp label="IMC" value={ultima?.imc} dmin={15} dmax={35} zonas={ZONAS_IMC}/>
+        <RangoProp label="Grasa corporal" value={ultima?.grasa} unit="%"
+          dmin={ZONAS_GRASA[sexoKey][0].min} dmax={ZONAS_GRASA[sexoKey][ZONAS_GRASA[sexoKey].length-1].max}
+          zonas={ZONAS_GRASA[sexoKey]}/>
+        <RangoProp label="Grasa visceral" value={ultima?.visceral} dmin={1} dmax={30} zonas={ZONAS_VISC}/>
+      </div>
 
-      {/* Rangos saludables */}
-      <div style={{marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Rangos saludables</div>
-        <div style={{background:"#F4F6FB",borderRadius:10,padding:"14px 16px"}}>
-          <RangeBarSimple label="IMC" value={ultima?.imc} unit=""
-            zones={[
-              {label:"Saludable", color:"#1D9E75", min:18.5, max:24.9},
-              {label:"Sobrepeso", color:"#FAC775", min:25,   max:29.9},
-              {label:"Obesidad",  color:"#D85A30", min:30,   max:null},
-            ]}/>
-          <RangeBarSimple label="Grasa corporal" value={ultima?.grasa} unit="%"
-            zones={esMujer ? [
-              {label:"Fitness",   color:"#1D9E75", min:14, max:24},
-              {label:"Aceptable", color:"#FAC775", min:25, max:31},
-              {label:"Elevada",   color:"#D85A30", min:32, max:null},
-            ] : [
-              {label:"Fitness",   color:"#1D9E75", min:6,  max:17},
-              {label:"Aceptable", color:"#FAC775", min:18, max:24},
-              {label:"Elevada",   color:"#D85A30", min:25, max:null},
-            ]}/>
-          <RangeBarSimple label="Grasa visceral" value={ultima?.visceral} unit=""
-            zones={[
-              {label:"Excelente", color:"#1D9E75", min:1,  max:9},
-              {label:"Moderada",  color:"#FAC775", min:10, max:14},
-              {label:"Elevada",   color:"#D85A30", min:15, max:null},
-            ]}/>
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>Tus metas personalizadas</div>
+      <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>Calculadas con tu edad, sexo y estatura — no son números genéricos.</div>
+      <div style={{background:"#F4F6FB",borderRadius:11,padding:"16px 18px",marginBottom:16}}>
+        <GoalBar label="Peso" valIni={primera?.peso} valAct={ultima?.peso} valMeta={pesoObj} unit="kg" lowerBetter={true}/>
+        <GoalBar label="Grasa corporal" valIni={primera?.grasa} valAct={ultima?.grasa} valMeta={metaGrasaPct} unit="%" lowerBetter={true}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:11,marginTop:4}}>
+          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>PESO META (IMC SALUDABLE)</div>
+            <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{pesoObj}<span style={{fontSize:11,color:C.suave}}> kg</span></div>
+          </div>
+          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>METABOLISMO BASAL META</div>
+            <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{bmrObj}<span style={{fontSize:11,color:C.suave}}> kcal</span>
+              {bmrAct!=null && <span style={{fontSize:10,color:C.suave,fontWeight:600}}>  ·  hoy {bmrAct}</span>}</div>
+          </div>
         </div>
       </div>
 
+      <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"13px 16px",marginBottom:16}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#B9772E",marginBottom:2}}>En resumen</div>
+        <div style={{fontSize:11,color:C.texto,lineHeight:1.45}}>{notaImc}</div>
+      </div>
+
+      <Pie n={1}/>
     </div>
 
-    {/* ── PÁGINA 2 ── */}
-    <div className="pdf-page" style={{...pageStyle, display:"flex", flexDirection:"column"}}>
-      {/* Progreso por segmento — movido a página 2 para que las 5 zonas no se corten */}
-      {hasSegmental&&(
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:2}}>Progreso por segmento</div>
-          <div style={{fontSize:9,color:C.suave,marginBottom:8}}>
-            Cambio en composición muscular y grasa por zona
-          </div>
-          <div style={{background:"#F4F6FB",borderRadius:10,padding:"12px 14px"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
-              borderBottom:"1px solid #E2E8F0",paddingBottom:6,marginBottom:4}}>
-              <span style={{fontSize:9,fontWeight:700,color:C.suave}}>Zona</span>
-              <span style={{fontSize:9,fontWeight:700,color:C.suave,textAlign:"center"}}>Músculo</span>
-              <span style={{fontSize:9,fontWeight:700,color:C.suave,textAlign:"right"}}>Grasa</span>
+    {/* ── PÁGINA 2 — Evolución mes a mes ── */}
+    <div className="pdf-page" style={pageStyle}>
+      <Encabezado/>
+      <Banda derecha={`${n} MEDICIÓN${n!==1?"ES":""} · ${normDate(primera?.fecha)} → ${normDate(ultima?.fecha)}`}/>
+
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:10}}>Tu evolución, mes a mes</div>
+      <div style={{marginBottom:16}}>
+        {[
+          {label:"Peso", v:ultima?.peso, u:"kg", arr:sPeso, chg:pesoChange, baja:true, color:"#1B3F8B", dec:1},
+          {label:"Grasa corporal", v:ultima?.grasa, u:"%", arr:sGrasa, chg:grasaChange, baja:true, color:"#E0A45F", dec:1},
+          {label:"Masa muscular", v:ultima?.musculo, u:"kg", arr:sMusc, chg:musculoChange, baja:false, color:"#1D9E75", dec:1},
+          {label:"Circ. abdominal", v:caAct, u:"cm", arr:sCA, chg:caChange, baja:true, color:"#5B8DB8", dec:1},
+        ].map((m,i)=>{
+          const bueno = m.chg==null?null:(m.baja ? m.chg<0 : m.chg>0);
+          const flecha = m.chg==null?"":(m.chg<0?"▼":"▲");
+          const bcol = bueno==null?C.suave:(bueno?"#1D9E75":"#D85A30");
+          return (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:14,background:"#F4F6FB",borderRadius:11,padding:"12px 16px",marginBottom:9}}>
+              <div style={{width:172,flexShrink:0}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.suave,letterSpacing:"0.3px"}}>{m.label.toUpperCase()}</div>
+                <div className="d" style={{fontSize:26,fontWeight:700,color:C.azul,lineHeight:1.05}}>
+                  {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:12,color:C.suave}}> {m.u}</span></div>
+                {m.chg!=null
+                  ? <div style={{fontSize:11,fontWeight:700,color:bcol,marginTop:2}}>{flecha} {Math.abs(m.chg)} {m.u} <span style={{color:C.suave,fontWeight:600}}>vs. inicio</span></div>
+                  : <div style={{fontSize:10,color:C.suave,marginTop:2}}>Una sola medición</div>}
+              </div>
+              <div style={{flex:1,minWidth:0}}><Sparkline arr={m.arr} color={m.color} decimals={m.dec}/></div>
             </div>
+          );
+        })}
+      </div>
+
+      {hasSegmental&&(
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>Detalle por zona del cuerpo</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:9}}>
             {SEGS.map((s,i)=>{
               const md=difNum(segAct[s.mKey],segRef[s.mKey]);
               const gd=difNum(segAct[s.gKey],segRef[s.gKey]);
-              // Siempre renderizar las 5 zonas; si no hay diff, SegCell muestra el valor actual o "—"
               return (
-                <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
-                  padding:"4px 0",borderBottom:i<SEGS.length-1?"1px solid #E2E8F0":"none",
-                  alignItems:"center"}}>
-                  <span style={{fontSize:10,color:C.suave}}>{s.label}</span>
-                  <span style={{textAlign:"center"}}>
-                    <SegCell val={md} rawAct={segAct[s.mKey]} positiveGood={true} unit="kg"/>
-                  </span>
-                  <span style={{textAlign:"right"}}>
-                    <SegCell val={gd} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/>
-                  </span>
+                <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:"11px 9px",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:700,color:C.texto,marginBottom:7}}>{s.label}</div>
+                  <div style={{fontSize:8,color:C.suave,marginBottom:1}}>MÚSCULO</div>
+                  <div style={{marginBottom:6}}><SegCell val={md} rawAct={segAct[s.mKey]} positiveGood={true} unit="kg"/></div>
+                  <div style={{fontSize:8,color:C.suave,marginBottom:1}}>GRASA</div>
+                  <div><SegCell val={gd} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/></div>
                 </div>
               );
             })}
           </div>
         </div>
       )}
-      {/* Metas personalizadas */}
-      {hasMetas&&(
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>Metas personalizadas</div>
-          <div style={{background:"#F4F6FB",borderRadius:10,padding:"14px 16px"}}>
-            <GoalBar label="Masa muscular"
-              valIni={musculoIni!=null?parseFloat((musculoIni*0.9).toFixed(1)):null}
-              valAct={musculoAct} valMeta={musculoIni} unit="kg" lowerBetter={false}/>
-            <GoalBar label="Masa grasa"
-              valIni={grasaIniKg} valAct={grasaActKg} valMeta={grasaObjKg} unit="kg" lowerBetter={true}/>
-            <GoalBar label="TMB"
-              valIni={bmrIni} valAct={bmrAct} valMeta={bmrObj} unit="kcal" lowerBetter={false}/>
-            <div style={{fontSize:8,color:C.suave,marginTop:8,
-              borderTop:"1px solid #E2E8F0",paddingTop:6}}>
-              Metas estimadas como referencia · sujetas a criterio médico
-            </div>
+
+      <div style={{display:"flex",gap:12,marginBottom:16,alignItems:"stretch"}}>
+        <div style={{flex:1,background:"linear-gradient(135deg,#E1F5EE,#E6F1FB)",borderRadius:11,padding:"14px 16px"}}>
+          <div style={{fontWeight:800,color:"#1D9E75",marginBottom:3}}>{motivTitle}</div>
+          <div style={{fontSize:10.5,lineHeight:1.45}}>{motiv}</div>
+        </div>
+        {proxCita && (
+          <div style={{width:170,flexShrink:0,background:C.azul,color:"white",borderRadius:11,padding:"14px 16px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+            <div style={{fontSize:9,fontWeight:700,opacity:0.85,letterSpacing:"0.5px"}}>PRÓXIMA CITA</div>
+            <div className="d" style={{fontSize:18,fontWeight:700,marginTop:4}}>{normDate(proxCita)}</div>
           </div>
-        </div>
-      )}
-
-      {/* Tratamiento actual */}
-      {(med||proxCita)&&(
-        <div style={{background:"#F4F6FB",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>Tratamiento actual</div>
-          {med&&<div style={{marginBottom:4}}>💊 {med}{dosis?" — "+dosis:""}</div>}
-          {proxCita&&(
-            <div style={{color:C.suave}}>
-              📅 Próxima cita: <b style={{color:C.texto}}>{normDate(proxCita)}</b>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Mensaje motivacional */}
-      <div style={{background:"linear-gradient(135deg,#E1F5EE,#E6F1FB)",borderRadius:10,
-        padding:"12px 16px",marginBottom:14}}>
-        <div style={{fontWeight:800,color:"#1D9E75",marginBottom:3}}>{motivTitle}</div>
-        <div>{motiv}</div>
+        )}
       </div>
 
-      {/* Footer anclado al fondo de la página 2 */}
-      <div style={{marginTop:"auto"}}>
-        <FooterDoc/>
-        <div style={{maxHeight:40,overflow:"hidden"}}><OlasDoc/></div>
-      </div>
+      <Pie n={2}/>
     </div>
     </>
   );

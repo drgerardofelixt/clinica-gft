@@ -995,3 +995,6 @@ select.gft-input {
   }
   .doc-receta, .doc-receta * { page-break-inside: avoid; }
 }
+
+/* Números en D-DIN Condensed — clase .d usada en documentos PDF (DocProgreso, etc.) */
+.d { font-family: var(--gft-font-data); }
