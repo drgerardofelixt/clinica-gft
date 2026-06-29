@@ -1268,19 +1268,16 @@ const generarPDFBlob = async (contentRef, filename, {singlePage=false}={}) => {
 
 // Comparte/abre un PDF YA preparado. iOS-safe: Web Share API si se puede, si no abre el blob en pestaña vía <a>.
 // Nunca usa window.open() en setTimeout (bloqueado por iOS Safari).
-const compartirOAbrirPDF = async ({file, url, filename, waText}) => {
-  // Móvil: Web Share con el archivo adjunto (+ texto si se dio) → hoja nativa, 1 toque a WhatsApp.
+const compartirOAbrirPDF = async ({file, url, filename}) => {
+  // Móvil: Web Share SOLO con el archivo (sin text — adjuntar archivo + texto duplica el PDF en WhatsApp/macOS).
   if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: filename || "Documento", ...(waText ? { text: waText } : {}) });
-    } catch(e) { /* cancelado o fallo de share → no abrir además */ }
-    return;
+    try { await navigator.share({ files: [file], title: filename || "Documento" }); }
+    catch(e) { /* usuario canceló → no hacer nada más */ }
+    return; // crítico: no caer al fallback de escritorio
   }
   // Escritorio / sin Web Share de archivos: abrir el PDF (blob) en pestaña nueva UNA sola vez.
-  // El usuario comparte desde ahí (WhatsApp, AirDrop, Mail…). Sin whatsapp://, sin wa.me, sin descarga.
   const blobURL = url || URL.createObjectURL(file);
   window.open(blobURL, "_blank");
-  // No revocar de inmediato: dar tiempo amplio para que el visor/Share procese el archivo.
   setTimeout(() => { try { URL.revokeObjectURL(blobURL); } catch(e) {} }, 300000);
 };
 
@@ -4071,10 +4068,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       const fname = `Reporte_${sanitizeFilename(p.nombre||"Paciente")}_${fecha}.pdf`;
       const pdf = await generarPDFBlob(ref, fname, { singlePage: false });
       if (!pdf) { alert("No se pudo generar el PDF del reporte."); return; }
-      // Móvil: hoja nativa con el PDF adjunto (1 toque a WhatsApp). Escritorio: descarga + wa.me con texto.
-      await compartirOAbrirPDF({
-        file: pdf.file, url: pdf.url, filename: fname, waText: generarMsgProgreso(),
-      });
+      // Móvil: hoja nativa con el PDF adjunto (1 toque a WhatsApp). Escritorio: abre el PDF en pestaña.
+      await compartirOAbrirPDF({ file: pdf.file, url: pdf.url, filename: fname });
     } finally { done && done(); }
   };
 
