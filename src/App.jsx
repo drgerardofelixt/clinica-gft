@@ -1254,25 +1254,6 @@ const construirPDF = async (contentRef, {singlePage=false}={}) => {
   return pdf;
 };
 
-// ── PDF helper: genera PDF real y lo abre en macOS Preview sin diálogo ──
-const generarYDescargarPDF = async (contentRef, filename) => {
-  try {
-    const pdf = await construirPDF(contentRef);
-    const blob = new Blob([pdf.output("arraybuffer")], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || "documento.pdf";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => window.open(url, "_blank"), 500);
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch(e) {
-    console.error("PDF error:", e);
-  }
-};
-
 // ── PDF helper: genera un blob PDF desde un ref renderizado (para compartir en móvil) ──
 // Usa el núcleo construirPDF: detecta .pdf-page (multi-página fija) o singlePage (1 hoja).
 const generarPDFBlob = async (contentRef, filename, {singlePage=false}={}) => {
@@ -1287,27 +1268,20 @@ const generarPDFBlob = async (contentRef, filename, {singlePage=false}={}) => {
 
 // Comparte/abre un PDF YA preparado. iOS-safe: Web Share API si se puede, si no abre el blob en pestaña vía <a>.
 // Nunca usa window.open() en setTimeout (bloqueado por iOS Safari).
-const compartirOAbrirPDF = async ({file, url, filename, waNumber, waText}) => {
-  // Si Web Share con archivos está disponible, usarlo y NO hacer fallback (evita doble apertura/envío).
-  // En móvil abre la hoja nativa con el PDF adjunto (+ texto si se dio); el doctor elige WhatsApp en 1 toque.
+const compartirOAbrirPDF = async ({file, url, filename, waText}) => {
+  // Móvil: Web Share con el archivo adjunto (+ texto si se dio) → hoja nativa, 1 toque a WhatsApp.
   if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: filename || "Documento", ...(waText ? { text: waText } : {}) });
     } catch(e) { /* cancelado o fallo de share → no abrir además */ }
     return;
   }
-  // Fallback escritorio / sin Web Share: descargar el PDF...
-  const a = document.createElement("a");
-  a.href = url; a.target = "_blank"; a.rel = "noopener"; a.download = filename || "documento.pdf";
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  // ...y si hay número de WhatsApp, abrir wa.me con el texto (el doctor adjunta el PDF ya descargado)
-  if (waNumber) {
-    const tel = String(waNumber).replace(/\D/g, "");
-    if (tel.length >= 10) {
-      const num = tel.startsWith("52") ? tel : "52" + tel;
-      window.open(`https://wa.me/${num}?text=${encodeURIComponent(waText || "")}`, "_blank");
-    }
-  }
+  // Escritorio / sin Web Share de archivos: abrir el PDF (blob) en pestaña nueva UNA sola vez.
+  // El usuario comparte desde ahí (WhatsApp, AirDrop, Mail…). Sin whatsapp://, sin wa.me, sin descarga.
+  const blobURL = url || URL.createObjectURL(file);
+  window.open(blobURL, "_blank");
+  // No revocar de inmediato: dar tiempo amplio para que el visor/Share procese el archivo.
+  setTimeout(() => { try { URL.revokeObjectURL(blobURL); } catch(e) {} }, 300000);
 };
 
 // ── Print Modal ───────────────────────────────────────────────
@@ -1329,11 +1303,15 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, p
     } catch(e) { alert("Error: "+e.message); }
   };
 
-  const handleCompartirPDF = () => {
+  const handleCompartirPDF = async () => {
     if (isGenerating.current) return;
     isGenerating.current = true;
-    const fname = pdfFilename || (sanitizeFilename(titulo||"Documento") + ".pdf");
-    generarYDescargarPDF(ref, fname).finally(() => { isGenerating.current = false; });
+    try {
+      const fname = pdfFilename || (sanitizeFilename(titulo||"Documento") + ".pdf");
+      // singlePage:false → construirPDF usa los .pdf-page si existen (receta/progreso) o pagina por contenido (HC/nota/labs)
+      const pdf = await generarPDFBlob(ref, fname, { singlePage: false });
+      if (pdf) await compartirOAbrirPDF({ file: pdf.file, url: pdf.url, filename: fname });
+    } finally { isGenerating.current = false; }
   };
 
   const handleWA = () => {
@@ -4095,8 +4073,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       if (!pdf) { alert("No se pudo generar el PDF del reporte."); return; }
       // Móvil: hoja nativa con el PDF adjunto (1 toque a WhatsApp). Escritorio: descarga + wa.me con texto.
       await compartirOAbrirPDF({
-        file: pdf.file, url: pdf.url, filename: fname,
-        waNumber: p.telefono, waText: generarMsgProgreso(),
+        file: pdf.file, url: pdf.url, filename: fname, waText: generarMsgProgreso(),
       });
     } finally { done && done(); }
   };
