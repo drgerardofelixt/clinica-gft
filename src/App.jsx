@@ -1260,8 +1260,8 @@ const generarPDFBlob = async (contentRef, filename, {singlePage=false}={}) => {
   try {
     const pdf = await construirPDF(contentRef, {singlePage});
     const blob = new Blob([pdf.output("arraybuffer")], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
     const file = new File([blob], filename || "documento.pdf", { type: "application/pdf" });
+    const url = URL.createObjectURL(file); // UNA sola Object URL, derivada del MISMO file que se comparte
     return { blob, url, file };
   } catch(e) { console.error("PDF blob error:", e); return null; }
 };
@@ -1275,8 +1275,10 @@ const compartirOAbrirPDF = async ({file, url, filename}) => {
     catch(e) { /* usuario canceló → no hacer nada más */ }
     return; // crítico: no caer al fallback de escritorio
   }
-  // Escritorio / sin Web Share de archivos: abrir el PDF (blob) en pestaña nueva UNA sola vez.
-  const blobURL = url || URL.createObjectURL(file);
+  // Escritorio / sin Web Share de archivos: abrir el PDF en pestaña nueva UNA sola vez.
+  // Usar la url que ya viene de generarPDFBlob (derivada del file) — NO crear una segunda Object URL.
+  const blobURL = url;
+  if (!blobURL) return;
   window.open(blobURL, "_blank");
   setTimeout(() => { try { URL.revokeObjectURL(blobURL); } catch(e) {} }, 300000);
 };
