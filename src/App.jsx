@@ -310,6 +310,36 @@ const parseFechaClinica = (f) => {
 };
 // Comparador para .sort() — siempre sobre una copia, nunca mutar el array original
 const porFechaClinica = (a,b) => parseFechaClinica(a.fecha) - parseFechaClinica(b.fecha);
+// Migración puntual: genera la "Consulta 1" faltante para pacientes creados antes del fix f8c0f70
+// (composición inicial en p.composicion sin consulta vinculada en p.consultas).
+// Devuelve el paciente actualizado, o null si no hay nada que migrar. Idempotente (seguro de correr varias veces).
+const migrarConsultaInicial = (p) => {
+  const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
+  if (comps.length === 0) return null; // sin mediciones, nada que migrar
+  const primera = comps[0];
+  const cons = p.consultas || [];
+  // Ya vinculada por id, o ya existe una consulta real en esa misma fecha → no migrar.
+  const yaVinculada = primera.id && cons.some(c => c.id === primera.id);
+  const mismaFecha  = cons.some(c => !c.esSoloCita && normDate(c.fecha) === normDate(primera.fecha));
+  if (yaVinculada || mismaFecha) return null;
+  const cid = primera.id || crypto.randomUUID();
+  const compConId = primera.id ? primera : {...primera, id:cid}; // vincula la composición con el mismo id
+  const consultaInicial = {
+    id: cid,
+    fecha: primera.fecha,
+    hora: primera.hora || ahora(),
+    peso: primera.peso || "",
+    ca: "", ta:(p.ci&&p.ci.ta)||"", fc:(p.ci&&p.ci.fc)||"", spo2:(p.ef&&p.ef.spo2)||"",
+    glucosaCapilar:(p.ef&&p.ef.glucosaCapilar)||"",
+    subjetivo: "(Consulta inicial — migrada automáticamente, datos originales no capturados en el sistema)",
+    efectos: "", respuesta: "",
+    plan: "", cambioDosis: "", origenMed: "",
+    medicamento:(p.ci&&p.ci.glp1)||"", dosis:(p.ci&&p.ci.dosis)||"",
+    comp: {...compConId},
+  };
+  const composicion = primera.id ? (p.composicion||[]) : (p.composicion||[]).map(c => c===primera ? compConId : c);
+  return { ...p, composicion, consultas: [...(p.consultas||[]), consultaInicial] };
+};
 // Helpers de horario (compartidos por ModalAgenda y ModalConsulta)
 const hhmmAMin = (s) => { const [h,m]=(s||"0:0").split(":").map(Number); return (h||0)*60+(m||0); };
 const minAHhmm = (n) => `${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
@@ -4074,6 +4104,13 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const ultima = comps[comps.length-1];
   const perdT = primera && ultima && primera.peso && ultima.peso
     ? (parseFloat(primera.peso)-parseFloat(ultima.peso)).toFixed(2) : null;
+  // Migración: paciente migrado (objeto) si le falta su Consulta 1, o null. Se recalcula en cada render.
+  const repararInicial = migrarConsultaInicial(p);
+  const repararConsultaInicial = () => {
+    if (!repararInicial) return;
+    if (!confirm(`Se generará una Consulta 1 con la fecha ${fmtF(primera?.fecha)} basada en tu primera medición de báscula. Esta consulta no tendrá nota clínica original. ¿Continuar?`)) return;
+    onUpdate(repararInicial);
+  };
   const grafData = comps.map(c=>({
     fecha:fmtF(c.fecha),
     Peso:parseFloat(c.peso)||null,
@@ -4698,7 +4735,21 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         )}
 
         {tab==="consultas" && (
-          (p.consultas||[]).length===0 ? (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {repararInicial && (
+              <div style={{background:"#FFF7ED",border:"1.5px solid #FDBA74",borderRadius:10,
+                padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",
+                gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:11,color:"#9A3412"}}>
+                  <b>Falta la Consulta 1 de este paciente.</b> Su primera medición de báscula
+                  {primera?.fecha?` (${fmtF(primera.fecha)})`:""} no tiene consulta vinculada.
+                </div>
+                <Btn onClick={repararConsultaInicial} color={C.naranja} size="sm" icon="🔧">
+                  Reparar Consulta 1 faltante
+                </Btn>
+              </div>
+            )}
+            {(p.consultas||[]).length===0 ? (
             <div style={{textAlign:"center",padding:60,color:C.suave}}>
               <div style={{fontSize:48,marginBottom:12}}>📋</div>
               <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>Sin consultas registradas</div>
@@ -4747,7 +4798,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                 );
               })}
             </div>
-          )
+          )}
+          </div>
         )}
         {tab==="labs" && (
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
