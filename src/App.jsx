@@ -6109,6 +6109,210 @@ const Calendario = ({pacientes, gcalEventos, onVer, onMoverCita}) => {
   );
 };
 
+// ── AGENDA v2 — Administrar citas (CRUD sobre la tabla `citas`) ───────────────
+const DOSIS_POR_MED = {
+  MOUN: ["2.5mg","5mg","7.5mg","10mg","12.5mg","15mg"],
+  WEG:  ["0.25mg","0.5mg","1mg","1.7mg","2.4mg"],
+};
+const HMO_OFFSET_MIN = -7 * 60; // Hermosillo = UTC-7 fijo (sin horario de verano)
+
+// timestamptz (instante) → componentes de hora de Hermosillo para inputs date/time
+const isoAInputsHmo = (iso) => {
+  if (!iso) return { fecha:"", hora:"" };
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return { fecha:"", hora:"" };
+  const s = new Date(t + HMO_OFFSET_MIN*60000); // ahora los componentes UTC == hora local Hermosillo
+  const z = n => String(n).padStart(2,"0");
+  return {
+    fecha: `${s.getUTCFullYear()}-${z(s.getUTCMonth()+1)}-${z(s.getUTCDate())}`,
+    hora:  `${z(s.getUTCHours())}:${z(s.getUTCMinutes())}`,
+  };
+};
+// timestamptz (instante) → texto legible en hora de Hermosillo
+const fmtCitaHmo = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("es-MX",{timeZone:"America/Hermosillo",
+    weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+};
+const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG", cita_rapida:"RÁPIDA" };
+
+const ModalEditarCitaAdmin = ({cita, onClose, onSaved}) => {
+  const ini = isoAInputsHmo(cita.inicio);
+  const [nombre,setNombre] = useState(cita.pacienteNombre||"");
+  const [tipo,setTipo]     = useState(cita.tipo||"seguimiento");
+  const [med,setMed]       = useState(cita.medicamento||"");
+  const [dosis,setDosis]   = useState(cita.dosis||"");
+  const [fecha,setFecha]   = useState(ini.fecha);
+  const [hora,setHora]     = useState(ini.hora);
+  const [estado,setEstado] = useState(cita.estado||"agendada");
+  const [guardando,setGuardando] = useState(false);
+
+  const dosisOpts = [{value:"",label:"—"},
+    ...(DOSIS_POR_MED[med]||[]).map(d=>({value:d,label:d.replace("mg"," mg")}))];
+
+  const cambiarMed = (v) => {
+    setMed(v);
+    if (!DOSIS_POR_MED[v] || !DOSIS_POR_MED[v].includes(dosis)) setDosis("");
+  };
+
+  const guardar = async () => {
+    if (!nombre.trim()) { alert("El nombre del paciente no puede estar vacío."); return; }
+    if (!fecha || !hora) { alert("Falta fecha u hora."); return; }
+    setGuardando(true);
+    const dur = tipo==="primera_vez" ? 60 : 30;
+    const cambios = {
+      pacienteNombre: nombre.trim(),
+      tipo,
+      medicamento: med || null,
+      dosis: med ? (dosis||null) : null,
+      inicio: `${fecha}T${hora}:00`,
+      fin: calcFinCitaISO(fecha, hora, dur),
+      estado,
+    };
+    cambios.tituloGenerado = generarTituloCita({ ...cita, ...cambios });
+    try {
+      await actualizarCita(cita.id, cambios); // incrementa version + ultima_modificacion (Fase B)
+      // TODO Fase D: si cita.googleEventId, reflejar el cambio en GCal (actualizarEventoEnCalendario)
+      onSaved && onSaved();
+    } catch(e) { console.error("actualizarCita:",e); alert("⚠️ No se pudo guardar la cita."); }
+    finally { setGuardando(false); }
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:4100,
+      overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
+      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:560,overflow:"hidden",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.25)",margin:"24px 0"}}>
+        <div style={{background:C.azul,padding:"14px 22px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:14}}>Editar cita</div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",
+            fontSize:20,cursor:"pointer",borderRadius:8,padding:"2px 10px"}}>×</button>
+        </div>
+        <div style={{padding:22}}>
+          <Inp label="Nombre del paciente" value={nombre} onChange={setNombre}/>
+          <Row>
+            <Sel label="Tipo" value={tipo} onChange={setTipo} opts={[
+              {value:"primera_vez",label:"Primera vez"},
+              {value:"seguimiento",label:"Seguimiento"},
+              {value:"cita_rapida",label:"Cita rápida"}]}/>
+            <Sel label="Estado" value={estado} onChange={setEstado} opts={[
+              {value:"agendada",label:"Agendada"},{value:"confirmada",label:"Confirmada"},
+              {value:"cancelada",label:"Cancelada"},{value:"completada",label:"Completada"}]}/>
+            <div/>
+          </Row>
+          <Row>
+            <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
+              {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
+            <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
+            <div/>
+          </Row>
+          <Row>
+            <Inp label="Fecha (Hermosillo)" value={fecha} onChange={setFecha} tipo="date"/>
+            <Inp label="Hora (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
+            <div/>
+          </Row>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+            <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
+            <Btn onClick={guardar} color={C.azul} icon="✓" disabled={guardando}>
+              {guardando?"Guardando…":"Guardar"}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AdminCitas = () => {
+  const [citas,setCitas] = useState([]);
+  const [cargando,setCargando] = useState(true);
+  const [editar,setEditar] = useState(null);
+
+  const cargar = async () => {
+    setCargando(true);
+    try { setCitas(await listarCitas({})); }
+    catch(e) { console.error("listarCitas:",e); }
+    finally { setCargando(false); }
+  };
+  useEffect(()=>{ cargar(); },[]);
+
+  // Detección de duplicados: instante de inicio idéntico o a ±5 min de otra cita
+  const instantes = citas.map(c=>new Date(c.inicio).getTime());
+  const esDup = (i) => {
+    const t = instantes[i]; if (isNaN(t)) return false;
+    return instantes.some((o,j)=> j!==i && !isNaN(o) && Math.abs(o-t) <= 5*60000);
+  };
+
+  const borrar = async (c) => {
+    if (!confirm(`¿Borrar la cita de ${c.pacienteNombre} del ${fmtCitaHmo(c.inicio)}?`)) return;
+    try {
+      await borrarCita(c.id);
+      // TODO Fase D: si c.googleEventId, borrar también el evento en GCal (borrarEventoEnCalendario)
+      await cargar();
+    } catch(e) { console.error("borrarCita:",e); alert("⚠️ No se pudo borrar la cita."); }
+  };
+
+  return (
+    <>
+      <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:12,color:"var(--gft-text-muted)"}}>
+          {cargando ? "Cargando…" : `${citas.length} cita${citas.length!==1?"s":""} en la tabla`}
+        </div>
+        <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={cargar}>↻ Refrescar</button>
+      </div>
+
+      {!cargando && citas.length===0 && (
+        <div style={{textAlign:"center",padding:"60px 20px",color:"var(--gft-text-muted)"}}>
+          <div style={{fontSize:40,marginBottom:12}}>🗂️</div>
+          <div style={{fontSize:14,fontWeight:700,color:"var(--gft-text)"}}>Sin citas en la tabla</div>
+          <div style={{fontSize:12,marginTop:6}}>Ejecuta la migración desde Ajustes para poblarla.</div>
+        </div>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {citas.map((c,i)=>{
+          const dup = esDup(i);
+          const med = c.medicamento ? [c.medicamento, c.dosis].filter(Boolean).join(" ") : null;
+          return (
+            <div key={c.id} style={{background:"var(--gft-surface)",borderRadius:12,padding:"12px 16px",
+              border:"1px solid "+(dup?"#F59E0B":"var(--gft-border)"),
+              borderLeft:dup?"4px solid #F59E0B":"1px solid var(--gft-border)",
+              display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:160}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  {dup && <span title="Posible duplicado (otra cita a ±5 min)" style={{fontSize:14}}>⚠️</span>}
+                  <span style={{fontWeight:700,fontSize:13,color:"var(--gft-text)"}}>{c.pacienteNombre||"—"}</span>
+                  <span style={{background:"var(--gft-accent-dim)",color:"var(--gft-accent)",borderRadius:10,
+                    padding:"1px 8px",fontSize:10,fontWeight:700}}>{TIPO_ABREV_CITA[c.tipo]||c.tipo}</span>
+                  {med && <span style={{background:"var(--gft-success-dim)",color:"var(--gft-success)",
+                    borderRadius:10,padding:"1px 8px",fontSize:10,fontWeight:700}}>{med}</span>}
+                  {c.estado && c.estado!=="agendada" && <span style={{fontSize:10,color:"var(--gft-text-muted)",
+                    textTransform:"capitalize"}}>· {c.estado}</span>}
+                  {c.pendienteSincronizar && <span title="Pendiente de sincronizar con Google Calendar"
+                    style={{fontSize:10,color:"var(--gft-warning)"}}>· sin GCal</span>}
+                </div>
+                <div style={{fontSize:11,color:"var(--gft-text-muted)",marginTop:3,textTransform:"capitalize"}}>
+                  {fmtCitaHmo(c.inicio)}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setEditar(c)}>✏️ Editar</button>
+                <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}}
+                  onClick={()=>borrar(c)}>🗑️ Borrar</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {editar && <ModalEditarCitaAdmin cita={editar} onClose={()=>setEditar(null)}
+        onSaved={()=>{ setEditar(null); cargar(); }}/>}
+    </>
+  );
+};
+
 const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
@@ -6364,7 +6568,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       contentView==="agenda"?"Agenda":
                       contentView==="calendario"?"Calendario":
                       contentView==="pacientes"?"Pacientes":
-                      contentView==="citas"?"Modificar cita":"Dashboard";
+                      contentView==="citas"?"Modificar cita":
+                      contentView==="admincitas"?"Administrar citas":"Dashboard";
 
   return (
     <div className="gft-layout">
@@ -6402,6 +6607,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           <button className={"gft-sidebar__item"+(contentView==="citas"?" gft-sidebar__item--active":"")}
             onClick={()=>setContentView("citas")}>
             <span className="gft-sidebar__icon">✏️</span>Modificar cita
+          </button>
+          <button className={"gft-sidebar__item"+(contentView==="admincitas"?" gft-sidebar__item--active":"")}
+            onClick={()=>setContentView("admincitas")}>
+            <span className="gft-sidebar__icon">🗂️</span>Administrar citas
           </button>
 
           <div className="gft-sidebar__section">SISTEMA</div>
@@ -7062,6 +7271,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               </>
             );
           })()}
+
+          {contentView==="admincitas" && <AdminCitas/>}
 
         </main>
       </div>
