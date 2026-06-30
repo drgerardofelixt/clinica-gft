@@ -3183,6 +3183,13 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   const perd = f.peso && prev && prev.peso
     ? (parseFloat(prev.peso)-parseFloat(f.peso)).toFixed(2) : "";
 
+  // Texto de actividad física para el panel de báscula Tanita
+  const _af = p.actividadFisica;
+  const _nivelLabel = {sedentario:"Sedentario",ligero:"Ligero",moderado:"Moderado",intenso:"Intenso"};
+  const actividadTxt = !_af
+    ? "No registrado · captúralo en Editar paciente"
+    : (_af.hace ? (_nivelLabel[_af.nivel] || "Sí (nivel sin especificar)") : "No hace ejercicio");
+
   const applyTanita = (d) => {
     const s = (v) => v!=null?String(v):"";
     setF(x=>({...x,
@@ -3221,16 +3228,33 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
             color:"white",fontSize:20,cursor:"pointer",borderRadius:8,padding:"2px 10px"}}>×</button>
         </div>
         <div style={{padding:20,maxHeight:"78vh",overflow:"auto"}}>
-          <Sec title="Datos de báscula" icon="⚖️">
-            <TanitaUp nombre={p.nombre} onApply={applyTanita}/>
-          </Sec>
-          {/* ── RESUMEN CONSULTA ANTERIOR ── */}
+          {/* PARTE B — Datos para báscula Tanita (SIEMPRE visible, con o sin historial) */}
+          <div style={{marginBottom:14,padding:"12px 14px",borderRadius:10,background:"#F4F6FB",
+            borderLeft:"3px solid "+C.azul}}>
+            <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:8}}>⚖️ Datos para báscula Tanita</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {[
+                ["Nombre", p.nombre||"—"],
+                ["Talla", p.talla?p.talla+" cm":"—"],
+                ["F. nacimiento", p.fechaNacimiento ? fmtF(p.fechaNacimiento) : (p.edad?`${p.edad} años · sin F. nac.`:"No registrada")],
+                ["Ejercicio", actividadTxt],
+                ["Sexo", p.sexo||"—"],
+              ].map(([l,v])=>(
+                <div key={l} style={{background:"#fff",border:"1px solid "+C.grisMedio,borderRadius:8,
+                  padding:"5px 10px",fontSize:11}}>
+                  <span style={{color:C.suave,fontWeight:600}}>{l}: </span>
+                  <span style={{color:C.texto,fontWeight:700}}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* PARTE C — Consulta anterior (solo si existe prev) */}
           {prev && (
             <div style={{marginBottom:16,padding:"12px 16px",borderRadius:10,
-              background:"#EEF2FF",border:"1.5px solid #C7D2FE"}}>
+              background:"#F4F6FB",borderLeft:"3px solid "+C.azul}}>
               <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:10,
                 display:"flex",alignItems:"center",gap:6}}>
-                📋 Resumen consulta anterior — {fmtF(prev.fecha)}
+                📋 Consulta anterior — {fmtF(prev.fecha)}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"6px 20px"}}>
                 {[
@@ -3238,8 +3262,8 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
                   ["Circ. Abdominal",prev.ca?prev.ca+" cm":"—"],
                   ["Medicamento",prev.medicamento||"—"],
                   ["Dosis",prev.dosis||"—"],
-                  ["Efectos secundarios",prev.efectos||"—"],
                   ["Respuesta",prev.respuesta||"—"],
+                  ["Efectos secundarios",prev.efectos||"—"],
                 ].map(([l,val])=>(
                   <div key={l} style={{fontSize:11}}>
                     <span style={{color:C.suave,fontWeight:600}}>{l}: </span>
@@ -3248,13 +3272,16 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
                 ))}
               </div>
               {prev.subjetivo && (
-                <div style={{marginTop:8,fontSize:11,borderTop:"1px solid #C7D2FE",paddingTop:8}}>
+                <div style={{marginTop:8,fontSize:11,borderTop:"1px solid #DCE3F0",paddingTop:8}}>
                   <span style={{color:C.suave,fontWeight:600}}>Nota anterior: </span>
                   <span style={{color:C.texto,fontStyle:"italic"}}>{prev.subjetivo}</span>
                 </div>
               )}
             </div>
           )}
+          <Sec title="Datos de báscula" icon="⚖️">
+            <TanitaUp nombre={p.nombre} onApply={applyTanita}/>
+          </Sec>
           <Sec title="Signos vitales" icon="📊">
             <Row>
               <Inp label="Fecha" value={f.fecha} onChange={v=>u("fecha",v)} tipo="date"/>
@@ -3591,6 +3618,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
     fechaInicio:hoy(), horaRegistro:ahora(), pesoObjetivo:"",
     motivoConsulta:"Inicia manejo farmacológico para sobrepeso y obesidad con agonista GLP-1.",
     pronostico:"Favorable con adecuada adherencia al tratamiento.",
+    actividadFisica:{hace:false, nivel:""},
     hf:{dm2:"NEGADO",hta:"NEGADA",obesidad:"NEGADA",cardiopatia:"NEGADA",cancer:"NEGADO",otros:""},
     ant:{cronicas:"NEGADAS",alergias:"NEGADAS",cirugias:"NEGADAS",medicamentos:"NINGUNO",tabaco:"NEGADO",alcohol:"NEGADO"},
     meta:{hta:"NO",dm2:"NO",dislipidemias:"NO"},
@@ -3613,6 +3641,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
     ci:{...DEF.ci,...(pac.ci||{})},
     dx:{...DEF.dx,...(pac.dx||{})},
     labsI:{...DEF.labsI,...(pac.labsI||{})},
+    actividadFisica:{...DEF.actividadFisica,...(pac.actividadFisica||{})},
   });
   const s = (path,val) => setF(prev=>{
     const n=JSON.parse(JSON.stringify(prev));
@@ -3700,6 +3729,18 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                   <Inp label="Contacto emergencia" value={f.contactoEmergencia} onChange={v=>s("contactoEmergencia",v)}/>
                   <Inp label="Tel. emergencia" value={f.telEmergencia} onChange={v=>s("telEmergencia",v)}/>
                   <Inp label="Parentesco" value={f.parentescoEmergencia} onChange={v=>s("parentescoEmergencia",v)}/>
+                </Row>
+                <Row>
+                  <Sel label="¿Hace ejercicio?" value={f.actividadFisica && f.actividadFisica.hace ? "Sí" : "No"}
+                    onChange={v=>s("actividadFisica.hace", v==="Sí")} opts={["No","Sí"]}/>
+                  {f.actividadFisica && f.actividadFisica.hace
+                    ? <Sel label="Nivel de actividad" value={(f.actividadFisica&&f.actividadFisica.nivel)||""}
+                        onChange={v=>s("actividadFisica.nivel",v)}
+                        opts={[{value:"",label:"—"},{value:"sedentario",label:"Sedentario"},
+                          {value:"ligero",label:"Ligero"},{value:"moderado",label:"Moderado"},
+                          {value:"intenso",label:"Intenso"}]}/>
+                    : <div/>}
+                  <div/>
                 </Row>
               </Sec>
               <Sec title="Inicio del tratamiento" icon="💊">
