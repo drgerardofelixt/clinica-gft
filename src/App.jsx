@@ -12,7 +12,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
-import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario } from "./googleCalendar.js";
+import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -697,6 +697,105 @@ const sincronizarPendientes = async () => {
     } catch(e) { console.warn("sincronizarPendientes/cita:", e); }
   }
   return { ok:true, sincronizadas:n, total:pendientes.length };
+};
+
+// ── FASE D2-B — Lectura Google → app ─────────────────────────────────────────
+// Config: calendarios personales que cuentan como "ocupado" (array de calendarIds en configuracion).
+const getCalendariosOcupado = async () => {
+  try { const v = await getConfig("calendarios_ocupado"); return v ? JSON.parse(v) : []; }
+  catch(e){ console.warn("getCalendariosOcupado:", e); return []; }
+};
+const setCalendariosOcupado = async (ids) => {
+  try { await setConfig("calendarios_ocupado", JSON.stringify(ids||[])); }
+  catch(e){ console.warn("setCalendariosOcupado:", e); }
+};
+
+// B1+B2 — Importa cambios del calendario del consultorio a la tabla `citas` (Google → app).
+// Resolución de conflictos: gana el timestamp más reciente (ev.updated vs cita.ultimaModificacion).
+// Detecta borrados (evento ya no está en Google) → marca la cita como 'cancelada' (conserva el registro).
+// NUNCA rompe la app: si Google falla o está desconectado, devuelve {ok:false} y no toca nada.
+const importarCambiosConsultorio = async () => {
+  if (!isGoogleAuthorized()) return { ok:false, motivo:"desconectado" };
+  const calendarId = getCalendarioConsultorioId() || await obtenerOCrearCalendarioConsultorio();
+  if (!calendarId) return { ok:false, motivo:"sin_calendario" };
+  const desde = new Date(); desde.setHours(0,0,0,0);
+  const hasta = new Date(Date.now() + 90*24*60*60*1000);
+  let eventos = [];
+  try { eventos = await leerEventosDeCalendario(calendarId, { timeMin:desde.toISOString(), timeMax:hasta.toISOString() }); }
+  catch(e){ console.warn("importar/leer:", e); return { ok:false, motivo:"lectura_fallo" }; }
+
+  const avisos = []; let nuevas=0, actualizadas=0, canceladas=0;
+  const seen = new Set();
+  for (const ev of eventos) {
+    if (!ev.id || !ev.start?.dateTime) continue;  // ignora eventos de día completo / inválidos
+    seen.add(ev.id);
+    const inicioISO = ev.start.dateTime;
+    const finISO = ev.end?.dateTime || ev.start.dateTime;
+    const nombre = (ev.summary||"").split(" · ")[0].trim() || "Cita";
+    let cita = null;
+    try { cita = await obtenerCitaPorGoogleEventId(ev.id); } catch(e){ continue; }
+    if (cita) {
+      const gUpd = new Date(ev.updated||0).getTime();
+      const lUpd = new Date(cita.ultimaModificacion||0).getTime();
+      if (gUpd > lUpd) {   // Google es más reciente → gana Google
+        try {
+          await actualizarCita(cita.id, { inicio:inicioISO, fin:finISO,
+            tituloGenerado: ev.summary||cita.tituloGenerado, pacienteNombre:nombre,
+            origenUltimoCambio:"gcal", pendienteSincronizar:false });
+          actualizadas++;
+          avisos.push(`La cita de ${cita.pacienteNombre} se actualizó desde Google Calendar`);
+        } catch(e){ console.warn("importar/actualizar:", e); }
+      }
+      // Si lo local es más reciente, gana local: no se toca (lo subirá D2-A / sincronizarPendientes).
+    } else {
+      // Evento creado directamente en Google (ej. desde el teléfono) → alta en la tabla.
+      try {
+        const nueva = construirCitaV2({ pacienteNombre:nombre, tipo:"seguimiento", fecha:"2000-01-01", hora:"00:00" });
+        nueva.inicio = inicioISO; nueva.fin = finISO;
+        nueva.googleEventId = ev.id; nueva.calendarId = calendarId;
+        nueva.tituloGenerado = ev.summary || nueva.tituloGenerado;
+        nueva.origenUltimoCambio = "gcal"; nueva.pendienteSincronizar = false;
+        await crearCita(nueva); nuevas++;
+      } catch(e){ console.warn("importar/crear:", e); }
+    }
+  }
+  // Detección de borrados: cita con googleEventId que ya no existe en Google → cancelar.
+  try {
+    const enTabla = await listarCitas({ desde:desde.toISOString(), hasta:hasta.toISOString() });
+    for (const c of enTabla) {
+      if (c.googleEventId && !seen.has(c.googleEventId) && c.estado!=="cancelada") {
+        try {
+          await actualizarCita(c.id, { estado:"cancelada", origenUltimoCambio:"gcal" });
+          canceladas++;
+          avisos.push(`La cita de ${c.pacienteNombre} fue cancelada desde Google Calendar`);
+        } catch(e){ console.warn("importar/cancelar:", e); }
+      }
+    }
+  } catch(e){ console.warn("importar/borrados:", e); }
+  return { ok:true, nuevas, actualizadas, canceladas, avisos };
+};
+
+// B4 — Lee los eventos de los calendarios PERSONALES seleccionados (solo lectura) como bloques "ocupado".
+const leerEventosOcupado = async ({ desde, hasta } = {}) => {
+  try {
+    if (!isGoogleAuthorized()) return [];
+    const ids = await getCalendariosOcupado();
+    if (!ids.length) return [];
+    let cals = [];
+    try { cals = await listarCalendariosDisponibles(); } catch(e){ cals = []; }
+    const nombreDe = (id) => (cals.find(c=>c.id===id)?.summary) || "Calendario";
+    const out = [];
+    for (const id of ids) {
+      let evs = [];
+      try { evs = await leerEventosDeCalendario(id, { timeMin:desde, timeMax:hasta }); } catch(e){ evs = []; }
+      for (const ev of evs) {
+        if (!ev.start?.dateTime) continue; // ignora día completo
+        out.push({ inicio:ev.start.dateTime, fin:ev.end?.dateTime||ev.start.dateTime,
+          summary:ev.summary||"Ocupado", calendario:nombreDe(id), calendarId:id });
+      }
+    }
+    return out;
+  } catch(e){ console.warn("leerEventosOcupado:", e); return []; }
 };
 
 // Instante exacto (ms) de una fecha+hora local de Hermosillo (UTC-7 fijo). Para comparación idempotente.
@@ -4200,6 +4299,24 @@ const ModalConfig = ({firmaB64, onSave, onClose, onMigrarCitas}) => {
   const [prev, setPrev] = useState(firmaB64||null);
   const [migrando, setMigrando] = useState(false);
   const ref = useRef();
+
+  // B4 — Calendarios personales que cuentan como "ocupado" (solo lectura).
+  const [cals, setCals] = useState([]);
+  const [calsSel, setCalsSel] = useState([]);
+  const [calsCargando, setCalsCargando] = useState(false);
+  const consultorioId = getCalendarioConsultorioId();
+  useEffect(()=>{
+    if (!isGoogleAuthorized()) return;
+    setCalsCargando(true);
+    Promise.all([listarCalendariosDisponibles(), getCalendariosOcupado()])
+      .then(([lista, sel])=>{ setCals(lista||[]); setCalsSel(sel||[]); })
+      .catch(e=>console.warn("cargar calendarios:", e))
+      .finally(()=>setCalsCargando(false));
+  },[]);
+  const toggleCal = (id) => {
+    const next = calsSel.includes(id) ? calsSel.filter(x=>x!==id) : [...calsSel, id];
+    setCalsSel(next); setCalendariosOcupado(next);
+  };
   const load = (file) => {
     if (!file||!file.type.startsWith("image/")) return;
     const r = new FileReader();
@@ -4250,6 +4367,31 @@ const ModalConfig = ({firmaB64, onSave, onClose, onMigrarCitas}) => {
           <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
             <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
             <Btn onClick={()=>{onSave(prev);onClose();}} color={C.azul} icon="✓">Guardar firma</Btn>
+          </div>
+
+          {/* B4 — Calendarios a considerar como "ocupado" (solo lectura) */}
+          <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid "+C.grisMedio}}>
+            <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:4}}>Calendarios a considerar como ocupado</div>
+            <div style={{fontSize:11,color:C.suave,marginBottom:10}}>
+              Marca los calendarios personales cuyos eventos quieres ver como “ocupado” al agendar (solo lectura,
+              nunca se escribe en ellos). El calendario del consultorio siempre se sincroniza aparte.
+            </div>
+            {!isGoogleAuthorized() ? (
+              <div style={{fontSize:11,color:C.suave}}>Conecta Google Calendar para elegir calendarios.</div>
+            ) : calsCargando ? (
+              <div style={{fontSize:11,color:C.suave}}>Cargando calendarios…</div>
+            ) : cals.length===0 ? (
+              <div style={{fontSize:11,color:C.suave}}>No se encontraron calendarios.</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:180,overflow:"auto"}}>
+                {cals.filter(c=>c.id!==consultorioId).map(c=>(
+                  <label key={c.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,cursor:"pointer"}}>
+                    <input type="checkbox" checked={calsSel.includes(c.id)} onChange={()=>toggleCal(c.id)}/>
+                    <span>{c.summary}{c.primary?" (principal)":""}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Agenda v2 — migración temporal (se quitará al finalizar la migración) */}
@@ -5930,7 +6072,7 @@ const getAvatarColor = (nombre="") => {
 };
 
 // ── Vista de Calendario completo (mes / semana / día, drag&drop, app + GCal) ──
-const Calendario = ({citasV2=[], onEditar, onVer, pacById}) => {
+const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, pacById}) => {
   const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const [vista, setVista] = useState("semana");        // mes | semana | dia
   const [refStr, setRefStr] = useState(() => fmtD(new Date()));
@@ -5955,6 +6097,14 @@ const Calendario = ({citasV2=[], onEditar, onVer, pacById}) => {
   });
   const evDe = (fecha) => eventos.filter(e=>e.fecha===fecha).sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
+  // Bloques "ocupado" de calendarios personales (solo lectura).
+  const ocupEv = (ocupado||[]).map((o,i)=>{
+    const {fecha,hora} = isoAInputsHmo(o.inicio);
+    const dur = (o.inicio && o.fin) ? Math.max(15, Math.round((new Date(o.fin)-new Date(o.inicio))/60000)) : 30;
+    return { key:"oc-"+i, fecha, hora:hora||"00:00", dur, nombre:o.summary||"Ocupado", calendario:o.calendario };
+  });
+  const ocupDe = (fecha) => ocupEv.filter(e=>e.fecha===fecha);
+
   // ── Navegación ──
   const navega = (n) => {
     const d = new Date(refStr+"T00:00:00");
@@ -5974,6 +6124,16 @@ const Calendario = ({citasV2=[], onEditar, onVer, pacById}) => {
         padding:compact?"1px 5px":"3px 7px", margin:"2px 0", cursor:"pointer", fontSize:compact?9:11,
         color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
       {!compact && <b style={{color:e.color}}>{e.hora} </b>}{e.nombre}
+    </div>
+  );
+
+  // Bloque "ocupado" (calendario personal, solo lectura): estilo gris rayado con candado.
+  const BloqueOcupado = ({e, compact}) => (
+    <div title={`🔒 ${e.hora} · ${e.nombre}${e.calendario?" ("+e.calendario+")":""} — ocupado (solo lectura)`}
+      style={{background:"repeating-linear-gradient(45deg,#9CA3AF22,#9CA3AF22 4px,#9CA3AF33 4px,#9CA3AF33 8px)",
+        borderLeft:"3px solid #9CA3AF", borderRadius:6, padding:compact?"1px 5px":"3px 7px", margin:"2px 0",
+        fontSize:compact?9:11, color:"var(--gft-text-muted)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
+      🔒 {!compact && <b>{e.hora} </b>}{e.nombre}
     </div>
   );
 
@@ -6022,11 +6182,12 @@ const Calendario = ({citasV2=[], onEditar, onVer, pacById}) => {
         ...fechas.map(f=>{
           const k = f+"|"+h, over = overKey===k;
           const evs = evDe(f).filter(e=>slotDe(e.hora)===h);
+          const ocs = ocupDe(f).filter(e=>slotDe(e.hora)===h);
           return (
             <div key={k}
-              onDragOver={e=>{e.preventDefault(); setOverKey(k);}} onDrop={e=>{e.preventDefault(); soltar(f, h);}}
               style={{borderBottom:"1px solid var(--gft-border)",borderLeft:"1px solid var(--gft-border)",
                 minHeight:30,padding:"1px 2px",background:over?"var(--gft-accent-dim)":"transparent"}}>
+              {ocs.map(e=><BloqueOcupado key={e.key} e={e}/>)}
               {evs.map(e=><Bloque key={e.key} e={e}/>)}
             </div>
           );
@@ -6162,8 +6323,31 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const [hora,setHora]       = useState("");
   const [guardando,setGuardando] = useState(false);
   const [mostrarSug,setMostrarSug] = useState(false);
+  const [ocupadoDia,setOcupadoDia] = useState([]); // bloques "ocupado" del día elegido (solo lectura)
 
   const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
+
+  // B5 — Carga los bloques "ocupado" (calendarios personales) del día elegido para advertir traslapes.
+  useEffect(()=>{
+    let activo = true;
+    if (!fecha) { setOcupadoDia([]); return; }
+    leerEventosOcupado({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
+      .then(b=>{ if(activo) setOcupadoDia(b||[]); })
+      .catch(()=>{ if(activo) setOcupadoDia([]); });
+    return ()=>{ activo=false; };
+  },[fecha]);
+
+  // Advertencia (no bloqueante) si la hora elegida se solapa con un evento personal.
+  const choque = (()=>{
+    if (!fecha || !hora || !ocupadoDia.length) return null;
+    const dur = tipo==="primera_vez"?60:30;
+    const ini = new Date(`${fecha}T${hora}:00-07:00`).getTime();
+    const fin = ini + dur*60000;
+    return ocupadoDia.find(o=>{
+      const oi=new Date(o.inicio).getTime(), of=new Date(o.fin).getTime();
+      return ini < of && fin > oi;
+    }) || null;
+  })();
 
   // Prefijar medicamento/dosis cuando se elige paciente o cambia a seguimiento
   useEffect(()=>{
@@ -6290,6 +6474,12 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
             <span style={{fontSize:10,color:C.suave}}>Duración: {esPrim?"60":"30"} min (automática)</span>
           </div>
         </Row>
+        {choque && (
+          <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#FFF7ED",
+            border:"1px solid #FDBA74",fontSize:11,color:"#9A3412"}}>
+            ⚠️ Tienes “{choque.summary}” a esta hora en tu calendario {choque.calendario}. Puedes agendar de todos modos.
+          </div>
+        )}
 
         <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
           <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
@@ -6620,8 +6810,37 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   // Las vistas Agenda y Calendario usan ESTO (no las anidadas esSoloCita), eliminando los duplicados.
   const [citasV2, setCitasV2] = useState([]);
   const [citaEditar, setCitaEditar] = useState(null);
+  const [ocupadoV2, setOcupadoV2] = useState([]);   // bloques de calendarios personales (solo lectura)
+  const [avisoSync, setAvisoSync] = useState("");    // toast discreto de cambios traídos de Google
   const recargarCitas = async () => { try { setCitasV2(await listarCitas({})); } catch(e){ console.error("listarCitas:",e); } };
   useEffect(()=>{ recargarCitas(); },[]);
+
+  // B3 — Polling: en Agenda/Calendario, importa cambios de Google y refresca (silencioso, defensivo).
+  const importarSilencioso = async () => {
+    try {
+      const r = await importarCambiosConsultorio();
+      if (r && r.ok) {
+        if ((r.actualizadas||0)+(r.nuevas||0)+(r.canceladas||0) > 0) await recargarCitas();
+        if (r.avisos && r.avisos.length) setAvisoSync(r.avisos[0]);
+      }
+    } catch(e){ console.warn("importarSilencioso:", e); }
+  };
+  // B5 — Carga los bloques "ocupado" (calendarios personales) para el rango visible (±45 días).
+  const recargarOcupado = async () => {
+    try {
+      const desde = new Date(); desde.setDate(desde.getDate()-7);
+      const hasta = new Date(Date.now() + 45*24*60*60*1000);
+      setOcupadoV2(await leerEventosOcupado({ desde:desde.toISOString(), hasta:hasta.toISOString() }));
+    } catch(e){ console.warn("recargarOcupado:", e); }
+  };
+  useEffect(()=>{
+    if (contentView!=="agenda" && contentView!=="calendario") return;
+    importarSilencioso(); recargarOcupado();
+    const id = setInterval(importarSilencioso, 75000);
+    return ()=>clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[contentView]);
+  useEffect(()=>{ if(!avisoSync) return; const t=setTimeout(()=>setAvisoSync(""), 6000); return ()=>clearTimeout(t); },[avisoSync]);
   const ordCita = (a,b) => new Date(a.inicio) - new Date(b.inicio);
   const citasV2Dia = {};
   citasV2.forEach(c=>{ const {fecha}=isoAInputsHmo(c.inicio); if(!fecha) return; (citasV2Dia[fecha]=citasV2Dia[fecha]||[]).push(c); });
@@ -7205,7 +7424,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
           {/* ── VISTA AGENDA ─────────────────────────────────── */}
           {contentView==="calendario" && (
-            <Calendario citasV2={citasV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}/>
+            <Calendario citasV2={citasV2} ocupado={ocupadoV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}/>
           )}
 
           {contentView==="agenda" && (
@@ -7509,6 +7728,16 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           onSaved={()=>{ setCitaEditar(null); recargarCitas(); }}
           onBorrar={()=>borrarCitaV2(citaEditar)}
         />
+      )}
+
+      {/* B2 — Aviso discreto cuando un cambio llega desde Google Calendar */}
+      {avisoSync && (
+        <div onClick={()=>setAvisoSync("")} style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",
+          zIndex:9998,background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderLeft:"4px solid #4285F4",
+          borderRadius:10,padding:"10px 16px",boxShadow:"0 10px 30px rgba(0,0,0,0.2)",fontSize:12,
+          color:"var(--gft-text)",cursor:"pointer",maxWidth:360}}>
+          📅 {avisoSync}
+        </div>
       )}
     </div>
   );

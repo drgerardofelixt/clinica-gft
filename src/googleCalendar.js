@@ -348,6 +348,22 @@ export const leerEventosDeCalendario = async (calendarId, { timeMin, timeMax } =
   }
 };
 
+// Lista TODOS los calendarios del doctor (consultorio + personales). Solo lectura. Devuelve [] si falla.
+export const listarCalendariosDisponibles = async () => {
+  if (!isGoogleAuthorized()) return [];
+  window.gapi.client.setToken({ access_token: loadSavedToken() });
+  try {
+    const resp = await window.gapi.client.calendar.calendarList.list({ maxResults: 250 });
+    return (resp.result.items || []).map(c => ({
+      id: c.id, summary: c.summary || c.id, primary: !!c.primary, accessRole: c.accessRole,
+    }));
+  } catch(e) {
+    console.error("Error listando calendarios:", e);
+    _manejar401(e);
+    return [];
+  }
+};
+
 // Borra un evento del calendario indicado. Devuelve true si se borró (o ya no existía), false si falló.
 export const borrarEventoEnCalendario = async (calendarId, eventId) => {
   if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return false; }
