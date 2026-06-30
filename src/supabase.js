@@ -86,6 +86,7 @@ const CITA_FIELD_MAP = {
   googleEventId: 'google_event_id', calendarId: 'calendar_id', pacienteId: 'paciente_id',
   pacienteNombre: 'paciente_nombre', tipo: 'tipo', medicamento: 'medicamento', dosis: 'dosis',
   numeroVisita: 'numero_visita', inicio: 'inicio', fin: 'fin', estado: 'estado',
+  origen: 'origen',
   origenUltimoCambio: 'origen_ultimo_cambio', tituloGenerado: 'titulo_generado',
   pendienteSincronizar: 'pendiente_sincronizar',
 }
@@ -99,6 +100,7 @@ const citaToRow = (c) => ({
   tipo: c.tipo,
   medicamento: c.medicamento || null,
   dosis: c.dosis || null,
+  origen: c.origen || null,
   numero_visita: c.numeroVisita != null ? c.numeroVisita : null,
   inicio: aOffsetHermosillo(c.inicio),
   fin: aOffsetHermosillo(c.fin),
@@ -119,6 +121,7 @@ const rowToCita = (r) => ({
   tipo: r.tipo,
   medicamento: r.medicamento || null,
   dosis: r.dosis || null,
+  origen: r.origen || null,
   numeroVisita: r.numero_visita != null ? r.numero_visita : null,
   inicio: r.inicio,
   fin: r.fin,

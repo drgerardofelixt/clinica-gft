@@ -545,13 +545,14 @@ const generarTituloCita = (cita) => {
     cita.pacienteNombre || null,
     tipoAbrev[cita.tipo] || null,
     med,
+    cita.origen || null,        // 'FARM' | 'CONS' — después de med+dosis, antes del nº de visita
     ordinal(cita.numeroVisita),
   ].filter(Boolean).join(" · ");
 };
 
 // Construye una cita v2 con la forma objetivo (sin googleEventId aún).
 const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=null,
-  pacienteNombre="", tipo="seguimiento", medicamento=null, dosis=null, numeroVisita=null,
+  pacienteNombre="", tipo="seguimiento", medicamento=null, dosis=null, origen=null, numeroVisita=null,
   fecha, hora, estado="agendada", origenUltimoCambio="app" } = {}) => {
   const dur = tipo === "primera_vez" ? 60 : 30;
   const cita = {
@@ -563,6 +564,7 @@ const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=n
     tipo: tipo,
     medicamento: medicamento || null,
     dosis: dosis || null,
+    origen: origen || null,
     numeroVisita: (numeroVisita!=null && numeroVisita!=="") ? parseInt(numeroVisita) : null,
     inicio: `${fecha}T${(hora||"00:00")}:00`,
     fin: calcFinCitaISO(fecha, hora, dur),
@@ -6144,6 +6146,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved}) => {
   const [tipo,setTipo]     = useState(cita.tipo||"seguimiento");
   const [med,setMed]       = useState(cita.medicamento||"");
   const [dosis,setDosis]   = useState(cita.dosis||"");
+  const [origen,setOrigen] = useState(cita.origen||"");
   const [fecha,setFecha]   = useState(ini.fecha);
   const [hora,setHora]     = useState(ini.hora);
   const [estado,setEstado] = useState(cita.estado||"agendada");
@@ -6167,6 +6170,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved}) => {
       tipo,
       medicamento: med || null,
       dosis: med ? (dosis||null) : null,
+      origen: origen || null,
       inicio: `${fecha}T${hora}:00`,
       fin: calcFinCitaISO(fecha, hora, dur),
       estado,
@@ -6206,7 +6210,8 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved}) => {
             <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
               {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
             <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
-            <div/>
+            <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
+              {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
           </Row>
           <Row>
             <Inp label="Fecha (Hermosillo)" value={fecha} onChange={setFecha} tipo="date"/>
@@ -6288,6 +6293,8 @@ const AdminCitas = () => {
                     padding:"1px 8px",fontSize:10,fontWeight:700}}>{TIPO_ABREV_CITA[c.tipo]||c.tipo}</span>
                   {med && <span style={{background:"var(--gft-success-dim)",color:"var(--gft-success)",
                     borderRadius:10,padding:"1px 8px",fontSize:10,fontWeight:700}}>{med}</span>}
+                  {c.origen && <span style={{background:"var(--gft-warning-dim, #FEF3C7)",color:"#92400E",
+                    borderRadius:10,padding:"1px 8px",fontSize:10,fontWeight:700}}>{c.origen}</span>}
                   {c.estado && c.estado!=="agendada" && <span style={{fontSize:10,color:"var(--gft-text-muted)",
                     textTransform:"capitalize"}}>· {c.estado}</span>}
                   {c.pendienteSincronizar && <span title="Pendiente de sincronizar con Google Calendar"

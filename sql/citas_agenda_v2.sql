@@ -32,6 +32,9 @@ create index if not exists idx_citas_inicio   on citas(inicio);
 create index if not exists idx_citas_paciente  on citas(paciente_id);
 create index if not exists idx_citas_gcal      on citas(google_event_id);
 
+-- Origen del medicamento: 'FARM' (farmacia) | 'CONS' (consultorio) | null. Sin constraint (lo controla la UI).
+alter table citas add column if not exists origen text;
+
 -- ── RLS ──────────────────────────────────────────────────────
 -- Replica la MISMA política que tenga `pacientes`. Por defecto (app de un solo
 -- doctor con login por Supabase Auth) se permite todo al rol authenticated.
