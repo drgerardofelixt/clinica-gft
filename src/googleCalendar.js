@@ -1,9 +1,14 @@
 // ── Google Calendar OAuth Integration ────────────────────────
 const CLIENT_ID = "1082789441339-8bumi6dht7obr58gh679sf9nsunh78v6.apps.googleusercontent.com";
-const SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
+// Scope amplio "calendar" requerido para calendars.insert (crear el calendario dedicado).
+// Se conservan events/readonly por compatibilidad. El doctor debe re-autorizar UNA vez.
+const SCOPES = "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
 const TOKEN_KEY = "gcal_access_token";
 const TOKEN_EXP_KEY = "gcal_token_exp";
+// Calendario dedicado nuevo (Agenda v2). El "primary" viejo queda como archivo histórico.
+const CALENDARIO_CONSULTORIO_NOMBRE = "Consultorio Dr. Félix Tapia";
+const CALENDAR_ID_KEY = "gcal_calendar_id";
 
 let tokenClient = null;
 let gapiInited = false;
@@ -211,5 +216,150 @@ export const leerEventosGCal = async () => {
       window.dispatchEvent(new Event("gcal_revoked"));
     }
     return [];
+  }
+};
+
+// ── AGENDA v2 — Calendario dedicado ──────────────────────────
+// Limpia el token cuando expira (401). Helper interno reusado por las funciones v2.
+const _manejar401 = (e) => {
+  if (e && e.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXP_KEY);
+    accessToken = null;
+    window.dispatchEvent(new Event("gcal_revoked"));
+  }
+};
+
+// Devuelve el calendarId dedicado cacheado (sin tocar la red). null si aún no se ha resuelto.
+export const getCalendarioConsultorioId = () => localStorage.getItem(CALENDAR_ID_KEY) || null;
+
+// Busca el calendario "Consultorio Dr. Félix Tapia"; si no existe lo crea. Devuelve su calendarId (o null).
+// Cachea el id en localStorage (CALENDAR_ID_KEY) y verifica que siga existiendo en cada llamada.
+export const obtenerOCrearCalendarioConsultorio = async () => {
+  if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return null; }
+  window.gapi.client.setToken({ access_token: loadSavedToken() });
+
+  // 1) Cache local — verificar que el calendario sigue existiendo.
+  const cached = localStorage.getItem(CALENDAR_ID_KEY);
+  if (cached) {
+    try {
+      await window.gapi.client.calendar.calendars.get({ calendarId: cached });
+      return cached;
+    } catch(e) {
+      if (e.status === 404) localStorage.removeItem(CALENDAR_ID_KEY); // fue borrado → recrear
+      else { _manejar401(e); if (e.status === 401) return null; }
+    }
+  }
+
+  try {
+    // 2) Buscar por nombre exacto en la lista de calendarios.
+    const lista = await window.gapi.client.calendar.calendarList.list({ maxResults: 250 });
+    const found = (lista.result.items || []).find(c => (c.summary || "") === CALENDARIO_CONSULTORIO_NOMBRE);
+    if (found) { localStorage.setItem(CALENDAR_ID_KEY, found.id); return found.id; }
+
+    // 3) No existe → crearlo (requiere scope amplio "calendar").
+    const creado = await window.gapi.client.calendar.calendars.insert({
+      resource: { summary: CALENDARIO_CONSULTORIO_NOMBRE, timeZone: "America/Hermosillo" }
+    });
+    const nuevoId = creado.result.id;
+    localStorage.setItem(CALENDAR_ID_KEY, nuevoId);
+    return nuevoId;
+  } catch(e) {
+    console.error("Error obteniendo/creando calendario consultorio:", e);
+    _manejar401(e);
+    return null;
+  }
+};
+
+// Crea un evento en el calendario indicado. Recibe ISO datetime completos (inicio/fin).
+// Devuelve el evento creado (incluye .id) o null. NO reintenta — un solo insert.
+export const crearEventoEnCalendario = async (calendarId, { summary, descripcion="", inicioISO, finISO, colorId, location } = {}) => {
+  if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return null; }
+  if (!calendarId) { console.warn("crearEventoEnCalendario: calendarId faltante"); return null; }
+  window.gapi.client.setToken({ access_token: loadSavedToken() });
+  try {
+    const resp = await window.gapi.client.calendar.events.insert({
+      calendarId,
+      resource: {
+        summary: summary || "Cita",
+        ...(descripcion ? { description: descripcion } : {}),
+        ...(location ? { location } : {}),
+        ...(colorId ? { colorId: String(colorId) } : {}),
+        start: { dateTime: inicioISO, timeZone: "America/Hermosillo" },
+        end:   { dateTime: finISO,   timeZone: "America/Hermosillo" },
+        reminders: { useDefault: false, overrides: [
+          { method: "popup", minutes: 60 },
+          { method: "popup", minutes: 15 },
+        ]},
+      }
+    });
+    return resp.result;
+  } catch(e) {
+    console.error("Error creando evento en calendario dedicado:", e);
+    _manejar401(e);
+    return null;
+  }
+};
+
+// Actualiza (PATCH) un evento existente en el calendario indicado. Devuelve el evento o null.
+export const actualizarEventoEnCalendario = async (calendarId, eventId, { summary, inicioISO, finISO, colorId } = {}) => {
+  if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return null; }
+  if (!calendarId || !eventId) { console.warn("actualizarEventoEnCalendario: calendarId/eventId faltante"); return null; }
+  window.gapi.client.setToken({ access_token: loadSavedToken() });
+  try {
+    const resp = await window.gapi.client.calendar.events.patch({
+      calendarId,
+      eventId,
+      resource: {
+        ...(summary ? { summary } : {}),
+        ...(colorId ? { colorId: String(colorId) } : {}),
+        ...(inicioISO ? { start: { dateTime: inicioISO, timeZone: "America/Hermosillo" } } : {}),
+        ...(finISO   ? { end:   { dateTime: finISO,   timeZone: "America/Hermosillo" } } : {}),
+      }
+    });
+    return resp.result;
+  } catch(e) {
+    console.error("Error actualizando evento en calendario dedicado:", e);
+    _manejar401(e);
+    return null;
+  }
+};
+
+// Lee eventos del calendario indicado en un rango (por defecto: ahora → +90 días). Devuelve array.
+export const leerEventosDeCalendario = async (calendarId, { timeMin, timeMax } = {}) => {
+  if (!isGoogleAuthorized()) return [];
+  if (!calendarId) return [];
+  window.gapi.client.setToken({ access_token: loadSavedToken() });
+  try {
+    const resp = await window.gapi.client.calendar.events.list({
+      calendarId,
+      timeMin: timeMin || new Date().toISOString(),
+      timeMax: timeMax || new Date(Date.now() + 90*24*60*60*1000).toISOString(),
+      showDeleted: false,
+      singleEvents: true,
+      maxResults: 500,
+      orderBy: "startTime",
+    });
+    return resp.result.items || [];
+  } catch(e) {
+    console.error("Error leyendo eventos del calendario dedicado:", e);
+    _manejar401(e);
+    return [];
+  }
+};
+
+// Borra un evento del calendario indicado. Devuelve true si se borró (o ya no existía), false si falló.
+export const borrarEventoEnCalendario = async (calendarId, eventId) => {
+  if (!isGoogleAuthorized()) { authorizeGoogleCalendar(); return false; }
+  if (!calendarId || !eventId) return false;
+  window.gapi.client.setToken({ access_token: loadSavedToken() });
+  try {
+    await window.gapi.client.calendar.events.delete({ calendarId, eventId });
+    return true;
+  } catch(e) {
+    if (e.status === 404 || e.status === 410) return true; // ya no existe → objetivo cumplido
+    console.error("Error borrando evento en calendario dedicado:", e);
+    _manejar401(e);
+    return false;
   }
 };

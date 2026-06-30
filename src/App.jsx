@@ -12,7 +12,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
-import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal } from "./googleCalendar.js";
+import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -516,6 +516,120 @@ const buildGCalTitulo = (pac, tipoCita) => {
     : medL.includes("liraglutida") ? "LIRA" : "";
   const dosis = ultima.med.split(" ").at(-1)||"";
   return `${pac.nombre} - ${ordinal(num)} ${abrev ? abrev+" "+dosis : ultima.med}`.trim();
+};
+
+// ── AGENDA v2 — Modelo de cita + identidad única ─────────────────────────────
+// FASE A: solo define el modelo y los helpers. La UI (ModalAgenda/Calendario) se migra en Fase D.
+const TIPOS_CITA_V2 = ["primera_vez","seguimiento","cita_rapida"];
+const ESTADOS_CITA_V2 = ["agendada","confirmada","cancelada","completada"];
+
+// Calcula el fin (ISO local naive YYYY-MM-DDTHH:MM:00) sumando la duración al inicio.
+const calcFinCitaISO = (fecha, hora, durMin) => {
+  const [y,m,d] = (fecha||"").split("-").map(Number);
+  const [hh,mm] = (hora||"0:0").split(":").map(Number);
+  const ini = new Date(y, (m||1)-1, d||1, hh||0, mm||0);
+  const fin = new Date(ini.getTime() + (durMin||30)*60000);
+  const z = n => String(n).padStart(2,"0");
+  return `${fin.getFullYear()}-${z(fin.getMonth()+1)}-${z(fin.getDate())}T${z(fin.getHours())}:${z(fin.getMinutes())}:00`;
+};
+
+// Título consistente para Google Calendar a partir de los campos estructurados de la cita.
+// Omite las partes nulas. Ej: "Cony Chávez · SEG · MOUN 5mg · 3ra" | "Claudia Valle · PRIM".
+const generarTituloCita = (cita) => {
+  if (!cita) return "";
+  const ordinal = (n) => { const x=parseInt(n); if(!x) return null;
+    return x===1?"1ra":x===2?"2da":x===3?"3ra":x===4?"4ta":x===5?"5ta":x+"a"; };
+  const tipoAbrev = { primera_vez:"PRIM", seguimiento:"SEG", cita_rapida:"RÁPIDA" };
+  const med = cita.medicamento ? [cita.medicamento, cita.dosis].filter(Boolean).join(" ") : null;
+  return [
+    cita.pacienteNombre || null,
+    tipoAbrev[cita.tipo] || null,
+    med,
+    ordinal(cita.numeroVisita),
+  ].filter(Boolean).join(" · ");
+};
+
+// Construye una cita v2 con la forma objetivo (sin googleEventId aún).
+const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=null,
+  pacienteNombre="", tipo="seguimiento", medicamento=null, dosis=null, numeroVisita=null,
+  fecha, hora, estado="agendada", origenUltimoCambio="app" } = {}) => {
+  const dur = tipo === "primera_vez" ? 60 : 30;
+  const cita = {
+    id: id || crypto.randomUUID(),
+    googleEventId: googleEventId,
+    calendarId: calendarId,
+    pacienteId: pacienteId,
+    pacienteNombre: pacienteNombre,
+    tipo: tipo,
+    medicamento: medicamento || null,
+    dosis: dosis || null,
+    numeroVisita: (numeroVisita!=null && numeroVisita!=="") ? parseInt(numeroVisita) : null,
+    inicio: `${fecha}T${(hora||"00:00")}:00`,
+    fin: calcFinCitaISO(fecha, hora, dur),
+    estado: estado,
+    version: 1,
+    ultimaModificacion: new Date().toISOString(),
+    origenUltimoCambio: origenUltimoCambio,
+    pendienteSincronizar: false,
+    tituloGenerado: "",
+  };
+  cita.tituloGenerado = generarTituloCita(cita);
+  return cita;
+};
+
+// Valida una cita v2. Devuelve array de errores ([] = válida).
+const validarCitaV2 = (cita) => {
+  const e = [];
+  if (!cita) return ["cita vacía"];
+  if (!cita.pacienteNombre) e.push("falta pacienteNombre");
+  if (!TIPOS_CITA_V2.includes(cita.tipo)) e.push("tipo inválido");
+  if (!ESTADOS_CITA_V2.includes(cita.estado)) e.push("estado inválido");
+  if (!cita.inicio || isNaN(new Date(cita.inicio).getTime())) e.push("inicio inválido");
+  if (!cita.fin || isNaN(new Date(cita.fin).getTime())) e.push("fin inválido");
+  return e;
+};
+
+// Agenda ATÓMICA con identidad única: una cita = un registro = un evento, enlazados por googleEventId
+// desde el nacimiento. Crea el evento en GCal UNA sola vez ANTES de persistir; nunca dos veces.
+// `persistirCita(citaCompleta)` es el callback que escribe en Supabase (lo inyecta la UI en Fase D).
+const agendarCitaV2 = async (datosCita, persistirCita) => {
+  const cita = construirCitaV2(datosCita);
+  const errs = validarCitaV2(cita);
+  if (errs.length) { console.error("Cita v2 inválida:", errs); return { ok:false, errores:errs, cita:null }; }
+
+  // Resolver calendario dedicado (lo crea si no existe).
+  const calendarId = await obtenerOCrearCalendarioConsultorio();
+  cita.calendarId = calendarId;
+  cita.tituloGenerado = generarTituloCita(cita);
+
+  // Crear el evento en GCal (un único insert) y capturar su id.
+  let evento = null;
+  if (calendarId) {
+    evento = await crearEventoEnCalendario(calendarId, {
+      summary: cita.tituloGenerado,
+      descripcion: `Tipo: ${cita.tipo}${cita.medicamento?` · ${cita.medicamento} ${cita.dosis||""}`.trim():""}`,
+      inicioISO: cita.inicio,
+      finISO: cita.fin,
+      colorId: cita.tipo==="primera_vez" ? "9" : "2",
+      location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
+    });
+  }
+
+  if (evento && evento.id) {
+    cita.googleEventId = evento.id;     // enlace establecido desde el nacimiento
+    cita.pendienteSincronizar = false;
+  } else {
+    // GCal falló (o sin conexión): persistir igual, marcada para reintento. NUNCA se crea el evento dos veces.
+    cita.googleEventId = null;
+    cita.pendienteSincronizar = true;
+  }
+
+  // Persistir UNA sola vez, con el googleEventId ya enlazado.
+  if (typeof persistirCita === "function") {
+    try { await persistirCita(cita); }
+    catch(e) { console.error("Error persistiendo cita v2:", e); return { ok:false, errores:["persist falló"], cita }; }
+  }
+  return { ok:true, cita };
 };
 
 // ── CATÁLOGO CIE-10 (Códigos más usados en clínica de obesidad y medicina general) ──
