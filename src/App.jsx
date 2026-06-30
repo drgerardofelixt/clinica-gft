@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario } from "./googleCalendar.js";
-import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig } from "./supabase.js";
+import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -630,6 +630,50 @@ const agendarCitaV2 = async (datosCita, persistirCita) => {
     catch(e) { console.error("Error persistiendo cita v2:", e); return { ok:false, errores:["persist falló"], cita }; }
   }
   return { ok:true, cita };
+};
+
+// Instante exacto (ms) de una fecha+hora local de Hermosillo (UTC-7 fijo). Para comparación idempotente.
+const _instanteHermosillo = (fecha, hora) => new Date(`${fecha}T${(hora||"00:00")}:00-07:00`).getTime();
+
+// FASE B — Migración automática de citas FUTURAS (hoy en adelante) anidadas en p.consultas (esSoloCita)
+// al formato v2 en la tabla `citas`. Idempotente. NO borra las viejas (respaldo). NO migra las pasadas.
+const migrarCitasFuturas = async (pacientes) => {
+  const hoyTs = new Date(hoy()+"T00:00:00").getTime();
+  // Cargar citas ya existentes (hoy→futuro) para no duplicar: clave = pacienteId|instante.
+  let existentes = [];
+  try { existentes = await listarCitas({ desde: hoy()+"T00:00:00" }); }
+  catch(e) { console.error("migrarCitasFuturas: no se pudieron leer citas existentes:", e); }
+  const claves = new Set(existentes.map(c =>
+    `${c.pacienteId||c.pacienteNombre}|${new Date(c.inicio).getTime()}`));
+
+  let migradas = 0, fallidas = 0;
+  const pacSet = new Set();
+  for (const p of (pacientes||[])) {
+    const futuras = (p.consultas||[]).filter(c =>
+      c.esSoloCita && parseFechaClinica(c.proxCita||c.fecha) >= hoyTs);
+    for (const c of futuras) {
+      const fecha = toISODate(c.proxCita||c.fecha) || (c.proxCita||c.fecha);
+      const hora  = c.proxHora || c.hora || "09:00";
+      const key = `${p.id||p.nombre}|${_instanteHermosillo(fecha,hora)}`;
+      if (claves.has(key)) continue; // ya migrada → idempotente
+      const glp = (p.ci && p.ci.glp1) || "";
+      const dm = glp.match(/([\d.]+\s*mg)/i);
+      const datos = {
+        pacienteId: p.id || null,
+        pacienteNombre: p.nombre || "",
+        tipo: c.tipoCita === "primera" ? "primera_vez" : "seguimiento",
+        medicamento: glp ? abrevMed(glp) : null,
+        dosis: dm ? dm[1].replace(/\s+/g,"") : null,
+        fecha, hora,
+      };
+      try {
+        const res = await agendarCitaV2(datos, crearCita); // crea evento en calendario dedicado + inserta en tabla
+        if (res.ok) { migradas++; pacSet.add(p.id||p.nombre); claves.add(key); }
+        else fallidas++;
+      } catch(e) { console.error("migrarCitasFuturas: fallo en una cita:", e); fallidas++; }
+    }
+  }
+  return { migradas, pacientes: pacSet.size, fallidas };
 };
 
 // ── CATÁLOGO CIE-10 (Códigos más usados en clínica de obesidad y medicina general) ──
@@ -4085,8 +4129,9 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
 };
 
 // ── Modal Configuración ───────────────────────────────────────
-const ModalConfig = ({firmaB64, onSave, onClose}) => {
+const ModalConfig = ({firmaB64, onSave, onClose, onMigrarCitas}) => {
   const [prev, setPrev] = useState(firmaB64||null);
+  const [migrando, setMigrando] = useState(false);
   const ref = useRef();
   const load = (file) => {
     if (!file||!file.type.startsWith("image/")) return;
@@ -4139,6 +4184,31 @@ const ModalConfig = ({firmaB64, onSave, onClose}) => {
             <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
             <Btn onClick={()=>{onSave(prev);onClose();}} color={C.azul} icon="✓">Guardar firma</Btn>
           </div>
+
+          {/* Agenda v2 — migración temporal (se quitará al finalizar la migración) */}
+          {onMigrarCitas && (
+            <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid "+C.grisMedio}}>
+              <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:4}}>Agenda v2 (migración)</div>
+              <div style={{fontSize:11,color:C.suave,marginBottom:10}}>
+                Copia las citas futuras (hoy en adelante) al nuevo formato y al calendario dedicado.
+                Es seguro repetirlo: no duplica. Las citas viejas se conservan como respaldo.
+              </div>
+              <Btn color={C.naranja} icon="🔄" disabled={migrando}
+                onClick={async()=>{
+                  if (!confirm("Se migrarán las citas futuras a la Agenda v2 (tabla nueva + calendario dedicado). Las citas viejas NO se borran. ¿Continuar?")) return;
+                  setMigrando(true);
+                  try {
+                    const r = await onMigrarCitas();
+                    alert(`✅ Migración completada.\nMigradas: ${r.migradas} cita(s) de ${r.pacientes} paciente(s).` + (r.fallidas?`\n⚠️ Fallidas: ${r.fallidas}`:""));
+                  } catch(e) {
+                    console.error("Migración falló:", e);
+                    alert("⚠️ La migración falló. Revisa la consola.");
+                  } finally { setMigrando(false); }
+                }}>
+                {migrando ? "Migrando…" : "Migrar citas futuras a Agenda v2"}
+              </Btn>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -7281,7 +7351,8 @@ export default function App() {
         onSave={async l=>{ if(!rapidaLabsPac._libre) await updPac({...rapidaLabsPac,laboratorios:[...(rapidaLabsPac.laboratorios||[]),l]}); setRapidaLabsPac(null);}}/>}
       {mNuevo && <ModalPaciente onClose={()=>setMNuevo(false)} onSave={savePac}/>}
       {showConfig && (
-        <ModalConfig firmaB64={firmaB64} onSave={saveFirma} onClose={()=>setShowConfig(false)}/>
+        <ModalConfig firmaB64={firmaB64} onSave={saveFirma} onClose={()=>setShowConfig(false)}
+          onMigrarCitas={()=>migrarCitasFuturas(pacientes)}/>
       )}
       {ultimaCita && (
         <div style={{position:"fixed",bottom:20,right:20,zIndex:9999,
