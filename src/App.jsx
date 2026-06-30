@@ -3126,8 +3126,15 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   // Edición: persiste y cierra (editConsulta cierra por su cuenta)
   const guardarConsulta = () => { onSave(f); };
 
-  // Persiste la consulta una sola vez (botones "Generar reporte" y "Siguiente")
-  const saveOnce = () => { if (!guardado) { onSave(f); setGuardado(true); } };
+  // Persiste la consulta una sola vez (botones "Generar reporte" y "Siguiente").
+  // Devuelve true si quedó guardada; false si el guardado se canceló (ej. duplicado de fecha).
+  const saveOnce = () => {
+    if (guardado) return true;
+    const ok = onSave(f);
+    if (ok === false) return false; // guardado cancelado → no avanzar el flujo
+    setGuardado(true);
+    return true;
+  };
 
   // ¿Hay suficientes mediciones con báscula para un reporte? (≥2)
   const compsConBascula = (p.composicion||[]).filter(c=>c.peso||c.grasa).length;
@@ -3135,10 +3142,10 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   const puedeReporte = (guardado ? compsConBascula : compsConBascula + (fTieneComp?1:0)) >= 2;
 
   // Botón "Generar reporte": guarda y abre el PDF de progreso (con opciones de compartir)
-  const generarReporte = () => { saveOnce(); onReporte && onReporte(); };
+  const generarReporte = () => { if (saveOnce()) onReporte && onReporte(); };
 
   // Botón "Siguiente →": guarda y delega a VistaPaciente para cerrar este modal y abrir ModalAgendarCita
-  const irSiguiente = () => { saveOnce(); onSiguiente && onSiguiente(f); };
+  const irSiguiente = () => { if (saveOnce()) onSiguiente && onSiguiente(f); };
 
   const perd = f.peso && prev && prev.peso
     ? (parseFloat(prev.peso)-parseFloat(f.peso)).toFixed(2) : "";
@@ -3720,6 +3727,34 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                     ]
                   }));
                 }}/>
+                {/* Preview en vivo: lee la última entrada de f.composicion (la que acaba de aplicar Tanita)
+                    → los recuadros se refrescan al instante, sin cerrar/reabrir el modal. */}
+                {(() => {
+                  const arr = f.composicion || [];
+                  const ult = arr[arr.length - 1];
+                  if (!ult || !(ult.peso || ult.grasa)) return null;
+                  const cajas = [
+                    ["PESO", ult.peso, "kg"], ["% GRASA", ult.grasa, "%"], ["MÚSCULO", ult.musculo, "kg"],
+                    ["IMC", ult.imc, ""], ["AGUA", ult.agua, "%"], ["VISCERAL", ult.visceral, ""],
+                  ];
+                  return (
+                    <div style={{marginTop:10}}>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                        {cajas.map(([l,v,u])=>(
+                          <div key={l} style={{background:C.gris,borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+                            <div style={{fontSize:9,fontWeight:700,color:C.suave,letterSpacing:0.4}}>{l}</div>
+                            <div style={{fontSize:15,fontWeight:800,color:C.azul}}>
+                              {v||"—"}<span style={{fontSize:9,fontWeight:600,color:C.suave}}>{u?" "+u:""}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{fontSize:9,color:C.verde,fontWeight:700,textAlign:"center",marginTop:6}}>
+                        ✓ Medición del {fmtF(ult.fecha)} aplicada
+                      </div>
+                    </div>
+                  );
+                })()}
               </Sec>
               <Sec title="Signos vitales" icon="📊">
                 <Row>
@@ -3895,6 +3930,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [conFirmaLabs, setConFirmaLabs] = useState(false);
   const [consultaAEditar, setConsultaAEditar] = useState(null);
   const [agendarCita, setAgendarCita] = useState(null); // consulta recién guardada para abrir ModalAgendarCita
+  const [editCompIdx, setEditCompIdx] = useState(null);  // índice (en p.composicion) de la medición cuya fecha se edita
+  const [editCompFecha, setEditCompFecha] = useState(""); // valor ISO del input type=date en edición
 
   const addConsulta = (d) => {
     // Asegurar que comp.peso usa el peso principal si comp.peso está vacío
@@ -3914,7 +3951,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         `Aceptar = Reemplazar los valores con los de este PDF\n`+
         `Cancelar = No guardar la medición`
       );
-      if (!reemplazar) return; // Cancelar: no se guarda nada
+      if (!reemplazar) return false; // Cancelar: no se guarda nada y el flujo se detiene (modal sigue abierto)
       // Reemplazar: actualiza el registro existente en su sitio (NO agrega uno nuevo) y lo vincula a esta consulta
       const composicion = (p.composicion||[]).map(c =>
         ((c.peso||c.grasa) && normDate(c.fecha) === fechaNorm) ? { ...comp } : c
@@ -3923,13 +3960,14 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         consultas:[...(p.consultas||[]),d],
         composicion,
       });
-      return;
+      return true;
     }
     onUpdate({...p,
       consultas:[...(p.consultas||[]),d],
       composicion:[...(p.composicion||[]),comp],
     });
     // No se cierra aquí: ModalConsulta continúa al flujo reporte → próxima cita y cierra al final (o con X).
+    return true;
   };
   // Reemplaza una consulta existente (modo edición) y sincroniza p.composicion por id/fecha
   const editConsulta = (d) => {
@@ -3957,6 +3995,29 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       consultas:(p.consultas||[]).filter(c => c.id !== consultaId),
       composicion:(p.composicion||[]).filter(c => c.id !== consultaId),
     });
+  };
+  // Edita SOLO la fecha de una medición de composición ya guardada (corrección manual de históricos).
+  const guardarFechaComp = (idx) => {
+    const nuevaISO = editCompFecha;
+    const arr = p.composicion || [];
+    const target = arr[idx];
+    if (!target || !nuevaISO) { setEditCompIdx(null); return; }
+    const fechaNorm = normDate(nuevaISO);
+    // Duplicado: otra medición (distinto índice) con la misma fecha → bloquear, no fusionar.
+    const dup = arr.some((c,i) => i!==idx && (c.peso||c.grasa) && normDate(c.fecha) === fechaNorm);
+    if (dup) {
+      alert(`Ya existe una medición registrada para el ${fechaNorm}.\nElige otra fecha o cancela.`);
+      return; // sigue en modo edición hasta elegir otra fecha o cancelar
+    }
+    // Actualiza solo la fecha (no toca peso/grasa/músculo) y reordena por fecha clínica.
+    const composicion = arr.map((c,i) => i===idx ? {...c, fecha:nuevaISO} : c).sort(porFechaClinica);
+    // Sincroniza la consulta vinculada por id (la CA vive en p.consultas con su propia fecha).
+    const consultas = (target.id!=null)
+      ? (p.consultas||[]).map(c => c.id===target.id ? {...c, fecha:nuevaISO} : c)
+      : (p.consultas||[]);
+    onUpdate({...p, composicion, consultas});
+    setEditCompIdx(null);
+    setEditCompFecha("");
   };
   const addReceta = (r) => { onUpdate({...p,recetas:[...(p.recetas||[]),r]}); setShowR(false); };
   const addLabs = (l) => { onUpdate({...p,laboratorios:[...(p.laboratorios||[]),l]}); setShowL(false); };
@@ -4550,9 +4611,28 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                       </tr>
                     </thead>
                     <tbody>
-                      {[...comps].reverse().map((c,i)=>(
+                      {[...comps].reverse().map((c,i)=>{
+                        const realIdx = (p.composicion||[]).indexOf(c);
+                        return (
                         <tr key={i} style={{borderBottom:"1px solid "+C.grisMedio}}>
-                          <td style={{padding:"6px 8px",fontWeight:700,whiteSpace:"nowrap",color:C.texto}}>{fmtF(c.fecha)}</td>
+                          <td style={{padding:"6px 8px",fontWeight:700,whiteSpace:"nowrap",color:C.texto}}>
+                            {editCompIdx===realIdx ? (
+                              <span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                                <input type="date" value={editCompFecha} onChange={e=>setEditCompFecha(e.target.value)}
+                                  style={{fontSize:10,padding:"2px 4px",border:"1px solid "+C.grisMedio,borderRadius:4}}/>
+                                <button onClick={()=>guardarFechaComp(realIdx)} title="Guardar fecha"
+                                  style={{background:C.verde,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontSize:10,padding:"2px 6px"}}>✓</button>
+                                <button onClick={()=>{setEditCompIdx(null);setEditCompFecha("");}} title="Cancelar"
+                                  style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:C.suave}}>✕</button>
+                              </span>
+                            ) : (
+                              <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
+                                {fmtF(c.fecha)}
+                                <button onClick={()=>{setEditCompIdx(realIdx);setEditCompFecha(toISODate(c.fecha));}} title="Editar fecha"
+                                  style={{background:"none",border:"none",cursor:"pointer",fontSize:11,opacity:0.55,padding:0}}>✏️</button>
+                              </span>
+                            )}
+                          </td>
                           <td style={{padding:"6px 8px",color:C.texto}}>{c.peso||"—"} kg</td>
                           <td style={{padding:"6px 8px",color:C.texto}}>{c.imc||calcIMC(c.peso,p.talla)||"—"}</td>
                           <td style={{padding:"6px 8px",color:C.naranja,fontWeight:700}}>{c.grasa||"—"}%</td>
@@ -4564,7 +4644,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           <td style={{padding:"6px 8px",color:C.texto}}>{c.bmr||"—"}</td>
                           <td style={{padding:"6px 8px",color:C.texto}}>{c.edadMet||"—"}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
