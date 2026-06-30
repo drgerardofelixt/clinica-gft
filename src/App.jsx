@@ -634,6 +634,71 @@ const agendarCitaV2 = async (datosCita, persistirCita) => {
   return { ok:true, cita };
 };
 
+// ── FASE D2-A — Escritura app → Google Calendar (calendario dedicado) ────────
+// Mapea una cita v2 → opciones de evento para el calendario dedicado.
+const citaAEvento = (cita) => ({
+  summary: cita.tituloGenerado || generarTituloCita(cita),
+  descripcion: `Tipo: ${cita.tipo}`
+    + (cita.medicamento ? ` · ${[cita.medicamento, cita.dosis].filter(Boolean).join(" ")}` : "")
+    + (cita.origen ? ` · ${cita.origen}` : ""),
+  inicioISO: cita.inicio,
+  finISO: cita.fin,
+  colorId: cita.tipo==="primera_vez" ? "9" : cita.tipo==="cita_rapida" ? "5" : "2",
+  location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
+});
+
+// Crea el evento en GCal para una cita ya persistida. Devuelve {googleEventId, calendarId} o null. NUNCA lanza.
+const pushCrearEventoGCal = async (cita) => {
+  try {
+    if (!isGoogleAuthorized()) return null;
+    const calendarId = await obtenerOCrearCalendarioConsultorio();
+    if (!calendarId) return null;
+    const ev = await crearEventoEnCalendario(calendarId, citaAEvento(cita));
+    return (ev && ev.id) ? { googleEventId: ev.id, calendarId } : null;
+  } catch(e) { console.warn("GCal crear evento (no crítico):", e); return null; }
+};
+
+// Actualiza el evento en GCal de una cita enlazada. Devuelve true si se reflejó. NUNCA lanza.
+const pushActualizarEventoGCal = async (cita) => {
+  try {
+    if (!cita.googleEventId || !isGoogleAuthorized()) return false;
+    const calendarId = cita.calendarId || getCalendarioConsultorioId() || await obtenerOCrearCalendarioConsultorio();
+    if (!calendarId) return false;
+    const ev = await actualizarEventoEnCalendario(calendarId, cita.googleEventId, citaAEvento(cita));
+    return !!ev;
+  } catch(e) { console.warn("GCal actualizar evento (no crítico):", e); return false; }
+};
+
+// Borra el evento en GCal de una cita enlazada. Devuelve true si se borró (o no aplicaba). NUNCA lanza.
+const pushBorrarEventoGCal = async (cita) => {
+  try {
+    if (!cita || !cita.googleEventId || !isGoogleAuthorized()) return false;
+    const calendarId = cita.calendarId || getCalendarioConsultorioId() || await obtenerOCrearCalendarioConsultorio();
+    if (!calendarId) return false;
+    return await borrarEventoEnCalendario(calendarId, cita.googleEventId);
+  } catch(e) { console.warn("GCal borrar evento (no crítico):", e); return false; }
+};
+
+// A4 — Sincroniza las citas con pendienteSincronizar=true que aún no tienen googleEventId.
+// Idempotente: salta las ya enlazadas. NUNCA rompe la app.
+const sincronizarPendientes = async () => {
+  if (!isGoogleAuthorized()) return { ok:false, motivo:"google_desconectado", sincronizadas:0, total:0 };
+  let pendientes = [];
+  try { pendientes = (await listarCitas({})).filter(c => c.pendienteSincronizar && !c.googleEventId); }
+  catch(e) { console.error("sincronizarPendientes/listar:", e); return { ok:false, motivo:"listar_fallo", sincronizadas:0, total:0 }; }
+  const calendarId = await obtenerOCrearCalendarioConsultorio();
+  if (!calendarId) return { ok:false, motivo:"sin_calendario", sincronizadas:0, total:pendientes.length };
+  let n = 0;
+  for (const c of pendientes) {
+    if (c.googleEventId) continue; // idempotente
+    try {
+      const ev = await crearEventoEnCalendario(calendarId, citaAEvento(c));
+      if (ev && ev.id) { await actualizarCita(c.id, { googleEventId: ev.id, calendarId, pendienteSincronizar:false }); n++; }
+    } catch(e) { console.warn("sincronizarPendientes/cita:", e); }
+  }
+  return { ok:true, sincronizadas:n, total:pendientes.length };
+};
+
 // Instante exacto (ms) de una fecha+hora local de Hermosillo (UTC-7 fijo). Para comparación idempotente.
 const _instanteHermosillo = (fecha, hora) => new Date(`${fecha}T${(hora||"00:00")}:00-07:00`).getTime();
 
@@ -6154,10 +6219,15 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       // C4 — Guardado unificado: construirCitaV2 (genera título) + crearCita
       const cita = construirCitaV2({ pacienteId, pacienteNombre:nombre.trim(), tipo,
         medicamento: med||null, dosis: med?(dosis||null):null, origen: origen||null, fecha, hora });
-      cita.pendienteSincronizar = true; // Google Calendar se conecta en Fase D2
-      await crearCita(cita);
-      // TODO Fase D2: crear el evento en el calendario dedicado (agendarCitaV2) y enlazar googleEventId
-      onCreada && onCreada(cita);
+      cita.pendienteSincronizar = true; // se baja a false si Google la sincroniza enseguida
+      const creada = await crearCita(cita);
+      // D2-A — Escritura a Google (no crítica): crear evento en el calendario dedicado y enlazar googleEventId.
+      const gc = await pushCrearEventoGCal(creada);
+      if (gc && gc.googleEventId) {
+        try { await actualizarCita(creada.id, { googleEventId: gc.googleEventId, calendarId: gc.calendarId, pendienteSincronizar:false }); }
+        catch(e){ console.warn("No se pudo enlazar googleEventId:", e); }
+      }
+      onCreada && onCreada(creada);
       onClose();
     } catch(e){ console.error("guardar cita v2:",e); alert("⚠️ No se pudo guardar la cita."); }
     finally { setGuardando(false); }
@@ -6270,7 +6340,12 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar}) => {
     cambios.tituloGenerado = generarTituloCita({ ...cita, ...cambios });
     try {
       await actualizarCita(cita.id, cambios); // incrementa version + ultima_modificacion (Fase B)
-      // TODO Fase D: si cita.googleEventId, reflejar el cambio en GCal (actualizarEventoEnCalendario)
+      // D2-A — Reflejar en Google si la cita ya está enlazada (no crítico).
+      if (cita.googleEventId) {
+        const ok = await pushActualizarEventoGCal({ ...cita, ...cambios });
+        // Si no se pudo reflejar (sin conexión/falla), marca para reintento posterior.
+        if (!ok) { try { await actualizarCita(cita.id, { pendienteSincronizar:true }); } catch(e){} }
+      }
       onSaved && onSaved();
     } catch(e) { console.error("actualizarCita:",e); alert("⚠️ No se pudo guardar la cita."); }
     finally { setGuardando(false); }
@@ -6327,6 +6402,7 @@ const AdminCitas = () => {
   const [citas,setCitas] = useState([]);
   const [cargando,setCargando] = useState(true);
   const [editar,setEditar] = useState(null);
+  const [sincronizando,setSincronizando] = useState(false);
 
   const cargar = async () => {
     setCargando(true);
@@ -6335,6 +6411,18 @@ const AdminCitas = () => {
     finally { setCargando(false); }
   };
   useEffect(()=>{ cargar(); },[]);
+
+  const nPendientes = citas.filter(c=>c.pendienteSincronizar && !c.googleEventId).length;
+  const sincronizar = async () => {
+    setSincronizando(true);
+    try {
+      const r = await sincronizarPendientes();
+      if (!r.ok && r.motivo==="google_desconectado") alert("⚠️ Google Calendar no está conectado. Conéctalo primero (en producción).");
+      else alert(`☁️ Sincronización: ${r.sincronizadas} de ${r.total} cita(s) pendiente(s) enviadas a Google.`);
+      await cargar();
+    } catch(e){ console.error("sincronizar:",e); alert("⚠️ Falló la sincronización."); }
+    finally { setSincronizando(false); }
+  };
 
   // Detección de duplicados: instante de inicio idéntico o a ±5 min de otra cita
   const instantes = citas.map(c=>new Date(c.inicio).getTime());
@@ -6347,7 +6435,7 @@ const AdminCitas = () => {
     if (!confirm(`¿Borrar la cita de ${c.pacienteNombre} del ${fmtCitaHmo(c.inicio)}?`)) return;
     try {
       await borrarCita(c.id);
-      // TODO Fase D: si c.googleEventId, borrar también el evento en GCal (borrarEventoEnCalendario)
+      await pushBorrarEventoGCal(c); // D2-A: borra el evento en GCal si está enlazado (no crítico)
       await cargar();
     } catch(e) { console.error("borrarCita:",e); alert("⚠️ No se pudo borrar la cita."); }
   };
@@ -6357,8 +6445,14 @@ const AdminCitas = () => {
       <div style={{marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:12,color:"var(--gft-text-muted)"}}>
           {cargando ? "Cargando…" : `${citas.length} cita${citas.length!==1?"s":""} en la tabla`}
+          {nPendientes>0 && <span style={{color:"var(--gft-warning)"}}> · {nPendientes} sin sincronizar</span>}
         </div>
-        <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={cargar}>↻ Refrescar</button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={sincronizar} disabled={sincronizando}>
+            {sincronizando ? "Sincronizando…" : "☁️ Sincronizar pendientes con Google"}
+          </button>
+          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={cargar}>↻ Refrescar</button>
+        </div>
       </div>
 
       {!cargando && citas.length===0 && (
@@ -6536,7 +6630,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const pacById = (id) => pacientes.find(pp=>pp.id===id) || null;
   const borrarCitaV2 = async (c) => {
     if (!confirm(`¿Borrar la cita de ${c.pacienteNombre} del ${fmtCitaHmo(c.inicio)}?`)) return;
-    try { await borrarCita(c.id); setCitaEditar(null); recargarCitas(); }
+    try { await borrarCita(c.id); await pushBorrarEventoGCal(c); setCitaEditar(null); recargarCitas(); }
     catch(e){ console.error("borrarCita:",e); alert("⚠️ No se pudo borrar la cita."); }
   };
 
