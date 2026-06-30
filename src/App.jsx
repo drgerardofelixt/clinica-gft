@@ -5231,63 +5231,16 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         onClose={()=>setShowC(false)} onSave={addConsulta}/>}
       {consultaAEditar && <ModalConsulta p={p} consultaExistente={consultaAEditar} modoEdicion
         onClose={()=>setConsultaAEditar(null)} onSave={editConsulta}/>}
-      {agendarCita && <ModalAgendarCita p={p} consulta={agendarCita} gcalEventos={gcalEventos}
-        onClose={()=>setAgendarCita(null)}/>}
+      {/* Entry unificado (Fase C): "Siguiente →" de la consulta agenda la próxima cita.
+          ModalAgendarCita (viejo) queda en el código pero ya no se usa. */}
+      {agendarCita && <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
+        onClose={()=>setAgendarCita(null)} onCreada={()=>setAgendarCita(null)}/>}
       {showR && <ModalReceta p={p} firmaB64={firmaB64} onClose={()=>setShowR(false)} onSave={addReceta}/>}
       {showL && <ModalLabs p={p} onClose={()=>setShowL(false)} onSave={addLabs}/>}
+      {/* Entry unificado (Fase C): botón "Agendar" del expediente. ModalAgenda (viejo) ya no se usa. */}
       {showAgenda && (
-        <ModalAgenda
-          pacientes={pacientes||[p]}
-          paciente={p}
-          onClose={()=>setShowAgenda(false)}
-          onAgendar={(pac, fecha, hora, tipoCita, duracion) => {
-            // Agregar como cita pendiente en consultas
-            const citaNueva = {
-              id: crypto.randomUUID(),
-              fecha: fecha,
-              hora: hora,
-              proxCita: fecha,
-              proxHora: hora,
-              tipoCita: tipoCita,
-              duracion: duracion,
-              esSoloCita: true,
-              nota: "Cita agendada"
-            };
-            const pacActualizado = {
-              ...p,
-              consultas: [...(p.consultas||[]), citaNueva]
-            };
-            try { onUpdate(pacActualizado); } catch(e) { console.error("Error onUpdate:", e); }
-            setShowAgenda(false);
-
-            // Confirmación WhatsApp (protegido)
-            if (p.telefono) {
-              try {
-                const fechaMx = new Date(fecha+"T00:00:00").toLocaleDateString("es-MX",{
-                  weekday:"long",day:"numeric",month:"long",year:"numeric"
-                });
-                const msg = `Hola ${p.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
-                setTimeout(()=>{
-                  try { enviarWA(p.telefono, msg); }
-                  catch(e) { console.warn("WA falló:", e); }
-                }, 300);
-              } catch(e) { console.warn("Error preparando WA:", e); }
-            }
-            // Crear en Google Calendar automáticamente si está conectado (PROTEGIDO contra crashes)
-            try {
-              if (typeof crearEventoGCal === "function") {
-                const titulo = buildGCalTitulo(pacActualizado, tipoCita);
-                const colorId = tipoCita === "primera" ? "9" : "2";
-                const resultado = crearEventoGCal(p.nombre, p.telefono, fecha, hora, tipoCita, duracion, titulo, colorId);
-                if (resultado && typeof resultado.then === "function") {
-                  resultado.catch(e => console.warn("GCal falló (no crítico):", e));
-                }
-              }
-            } catch(e) { console.warn("Error GCal (no crítico):", e); }
-            try { onCitaAgendada && onCitaAgendada({nombre: p.nombre, telefono: p.telefono, fecha, hora, tipoCita, duracion}); }
-            catch(e) { console.warn("onCitaAgendada falló:", e); }
-          }}
-        />
+        <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
+          onClose={()=>setShowAgenda(false)} onCreada={()=>setShowAgenda(false)}/>
       )}
       {showLabs && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
@@ -6139,6 +6092,196 @@ const fmtCitaHmo = (iso) => {
     weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
 };
 const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG", cita_rapida:"RÁPIDA" };
+const DOSIS_INICIALES = { MOUN:["2.5mg"], WEG:["0.25mg","0.5mg"] };
+
+// C2 — Sugerencia de dosis (solo ayuda editable) para una cita de seguimiento.
+// Devuelve { med, dosis, accion:'subir'|'mantener', texto } o null si no hay datos suficientes.
+const sugerirDosisSeguimiento = (pac) => {
+  if (!pac) return null;
+  const glp = (pac.ci && pac.ci.glp1) || "";
+  if (!glp) return null;
+  const med = abrevMed(glp);
+  const escala = DOSIS_POR_MED[med];
+  if (!escala) return null;
+  const dm = glp.match(/([\d.]+\s*mg)/i);
+  const dosisAct = dm ? dm[1].replace(/\s+/g,"") : null;
+  if (!dosisAct || !escala.includes(dosisAct)) return null;
+  const idx = escala.indexOf(dosisAct);
+  const subir = escala[Math.min(idx+1, escala.length-1)];
+
+  const comps = [...(pac.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
+  const ult = comps[comps.length-1], pen = comps[comps.length-2];
+  const pUlt = ult ? parseFloat(ult.peso) : NaN;
+  const pPen = pen ? parseFloat(pen.peso) : NaN;
+
+  // 1) Está bajando (≥1 kg desde la medición anterior) → MANTENER (no escalar si funciona)
+  if (!isNaN(pUlt) && !isNaN(pPen) && (pPen - pUlt) >= 1.0) {
+    return { med, dosis: dosisAct, accion:"mantener", texto:`mantener ${dosisAct} (bajando ${(pPen-pUlt).toFixed(1)} kg)` };
+  }
+  // 2) Dosis inicial → SUBIR al siguiente escalón
+  if ((DOSIS_INICIALES[med]||[]).includes(dosisAct) && subir !== dosisAct) {
+    return { med, dosis: subir, accion:"subir", texto:`subir a ${subir} (dosis inicial)` };
+  }
+  // 3) Estancado ≥2 meses (sin bajar) → SUBIR
+  if (!isNaN(pUlt) && !isNaN(pPen) && ult && pen && subir !== dosisAct) {
+    const dias = (parseFechaClinica(ult.fecha) - parseFechaClinica(pen.fecha)) / 86400000;
+    if (dias >= 55 && (pPen - pUlt) < 0.5) {
+      return { med, dosis: subir, accion:"subir", texto:`subir a ${subir} (estancado ~2 meses)` };
+    }
+  }
+  return null;
+};
+
+// C1 — Formulario UNIFICADO de agendar. Único punto para crear cualquier cita (todos los entry points lo abren).
+const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null, onClose, onCreada }) => {
+  const tipoInicial = tipoSugerido
+    || (pacientePre && (pacientePre.consultas||[]).filter(c=>!c.esSoloCita).length>0 ? "seguimiento" : "primera_vez");
+  const [tipo,setTipo]       = useState(tipoInicial);
+  const [pacienteLink,setPacienteLink] = useState(pacientePre||null);
+  const [nombre,setNombre]   = useState(pacientePre?.nombre || "");
+  const [telefono,setTelefono] = useState(pacientePre?.telefono || "");
+  const [edad,setEdad]       = useState(pacientePre?.edad || "");
+  const [med,setMed]         = useState("");
+  const [dosis,setDosis]     = useState("");
+  const [origen,setOrigen]   = useState("");
+  const [fecha,setFecha]     = useState(hoy());
+  const [hora,setHora]       = useState("");
+  const [guardando,setGuardando] = useState(false);
+  const [mostrarSug,setMostrarSug] = useState(false);
+
+  const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
+
+  // Prefijar medicamento/dosis cuando se elige paciente o cambia a seguimiento
+  useEffect(()=>{
+    if (tipo==="seguimiento" && pacienteLink) {
+      const glp = (pacienteLink.ci && pacienteLink.ci.glp1) || "";
+      const medAct = glp ? abrevMed(glp) : "";
+      const dmAct = glp.match(/([\d.]+\s*mg)/i);
+      const dosisAct = dmAct ? dmAct[1].replace(/\s+/g,"") : "";
+      const sug = sugerirDosisSeguimiento(pacienteLink);
+      if (medAct) setMed(medAct);
+      setDosis((sug && sug.dosis) || dosisAct || "");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[pacienteLink && pacienteLink.id, tipo]);
+
+  const dosisOpts = [{value:"",label:"—"},
+    ...(DOSIS_POR_MED[med]||[]).map(d=>({value:d,label:d.replace("mg"," mg")}))];
+
+  const cambiarMed = (v) => { setMed(v); if (!DOSIS_POR_MED[v] || !DOSIS_POR_MED[v].includes(dosis)) setDosis(""); };
+
+  const pacFiltrados = (!pacientePre && nombre.trim())
+    ? (pacientes||[]).filter(pp=>pp && pp.nombre && pp.nombre.toLowerCase().includes(nombre.trim().toLowerCase())).slice(0,6)
+    : [];
+
+  const elegirPaciente = (pp) => {
+    setPacienteLink(pp); setNombre(pp.nombre||""); setTelefono(pp.telefono||""); setEdad(pp.edad||"");
+    setMostrarSug(false);
+  };
+
+  const guardar = async () => {
+    const faltan = [];
+    if (!nombre.trim()) faltan.push("nombre");
+    if (!fecha) faltan.push("fecha");
+    if (!hora) faltan.push("hora");
+    if (tipo==="primera_vez") { if(!telefono.trim()) faltan.push("teléfono"); if(!String(edad).trim()) faltan.push("edad"); }
+    if (tipo==="seguimiento") { if(!med) faltan.push("medicamento"); if(!dosis) faltan.push("dosis"); if(!origen) faltan.push("origen"); }
+    if (faltan.length) { alert("Faltan campos obligatorios para "+TIPO_ABREV_CITA[tipo]+": "+faltan.join(", ")); return; }
+    setGuardando(true);
+    try {
+      // Resolver pacienteId: link explícito, o coincidencia exacta por nombre
+      let pacienteId = pacienteLink?.id || null;
+      if (!pacienteId) {
+        const existente = (pacientes||[]).find(pp=>pp.nombre && pp.nombre.trim().toLowerCase()===nombre.trim().toLowerCase());
+        if (existente) pacienteId = existente.id;
+      }
+      // C3 — Alta de paciente al agendar primera vez si no existe
+      if (tipo==="primera_vez" && !pacienteId) {
+        const nuevo = { id:crypto.randomUUID(), nombre:nombre.trim(), telefono:telefono.trim(), edad:String(edad).trim(),
+          sexo:"", fechaInicio:hoy(), consultas:[], composicion:[], recetas:[], laboratorios:[], resultadosLabs:[], esShellRapido:true };
+        try { const saved = await savePaciente(nuevo); pacienteId = (saved && saved.id) || nuevo.id; }
+        catch(e){ console.error("alta paciente:",e); alert("⚠️ No se pudo crear el paciente."); setGuardando(false); return; }
+      }
+      // C4 — Guardado unificado: construirCitaV2 (genera título) + crearCita
+      const cita = construirCitaV2({ pacienteId, pacienteNombre:nombre.trim(), tipo,
+        medicamento: med||null, dosis: med?(dosis||null):null, origen: origen||null, fecha, hora });
+      cita.pendienteSincronizar = true; // Google Calendar se conecta en Fase D2
+      await crearCita(cita);
+      // TODO Fase D2: crear el evento en el calendario dedicado (agendarCitaV2) y enlazar googleEventId
+      onCreada && onCreada(cita);
+      onClose();
+    } catch(e){ console.error("guardar cita v2:",e); alert("⚠️ No se pudo guardar la cita."); }
+    finally { setGuardando(false); }
+  };
+
+  const esPrim = tipo==="primera_vez";
+  return (
+    <Modal title="🗓 Agendar cita" onClose={onClose} color={C.azul}>
+      <div style={{padding:14}}>
+        <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={[
+          {value:"primera_vez",label:"Primera vez"},
+          {value:"seguimiento",label:"Seguimiento"},
+          {value:"cita_rapida",label:"Cita rápida"}]}/>
+
+        <div style={{position:"relative"}}>
+          <Inp label={"Nombre del paciente"+(esPrim?"":" *")} value={nombre}
+            onChange={v=>{ setNombre(v); setPacienteLink(null); setMostrarSug(true); }}/>
+          {mostrarSug && pacFiltrados.length>0 && (
+            <div style={{position:"absolute",zIndex:10,left:0,right:0,background:"white",
+              border:"1px solid "+C.grisMedio,borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,.12)",
+              marginTop:-6,maxHeight:180,overflow:"auto"}}>
+              {pacFiltrados.map(pp=>(
+                <div key={pp.id} onClick={()=>elegirPaciente(pp)}
+                  style={{padding:"8px 12px",cursor:"pointer",fontSize:12,borderBottom:"1px solid "+C.gris}}>
+                  <b>{pp.nombre}</b>{pp.telefono?` · ${pp.telefono}`:""}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {pacienteLink && <div style={{fontSize:10,color:C.verde,marginTop:-6,marginBottom:8}}>
+          ✓ Vinculado al expediente de {pacienteLink.nombre}</div>}
+
+        {esPrim && (
+          <Row>
+            <Inp label="Teléfono *" value={telefono} onChange={setTelefono} tipo="tel"/>
+            <Inp label="Edad *" value={edad} onChange={setEdad} tipo="number"/>
+            <div/>
+          </Row>
+        )}
+
+        <Row>
+          <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
+            {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
+          <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
+          <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
+            {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
+        </Row>
+        {sugerencia && (
+          <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#EFF6FF",
+            border:"1px solid #BFDBFE",fontSize:11,color:"#1E40AF"}}>
+            💡 Sugerencia: {sugerencia.texto} — puedes cambiarla libremente.
+          </div>
+        )}
+
+        <Row>
+          <Inp label="Fecha * (Hermosillo)" value={fecha} onChange={setFecha} tipo="date"/>
+          <Inp label="Hora * (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
+          <div style={{flex:1,display:"flex",alignItems:"flex-end",paddingBottom:12}}>
+            <span style={{fontSize:10,color:C.suave}}>Duración: {esPrim?"60":"30"} min (automática)</span>
+          </div>
+        </Row>
+
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+          <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
+          <Btn onClick={guardar} color={C.azul} icon="✓" disabled={guardando}>
+            {guardando?"Guardando…":"Agendar"}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+};
 
 const ModalEditarCitaAdmin = ({cita, onClose, onSaved}) => {
   const ini = isoAInputsHmo(cita.inicio);
@@ -7596,54 +7739,14 @@ export default function App() {
       {showOrdenRapida && (
         <OrdenRapida onClose={()=>setShowOrdenRapida(false)} firmaB64={firmaB64}/>
       )}
+      {/* Entry unificado (Fase C): sidebar "Agendar cita" y "Agendar cita" del dashboard/pacientes.
+          ModalAgenda (viejo) queda en el código pero ya no se usa. */}
       {agendarPara !== false && (
-        <ModalAgenda
+        <ModalAgendarCitaV2
           pacientes={pacientes}
-          paciente={agendarPara}
-          gcalEventos={gcalEventos}
+          pacientePre={agendarPara || null}
           onClose={()=>setAgendarPara(false)}
-          onAgendar={async (pac, fecha, hora, tipoCita, duracion) => {
-            try {
-              const citaNueva = {
-                id: crypto.randomUUID(),
-                fecha, hora, proxCita: fecha, proxHora: hora,
-                tipoCita, duracion, esSoloCita: true, nota: "Cita agendada"
-              };
-              const pacFinal = {...pac, consultas: [...(pac.consultas||[]), citaNueva]};
-              setAgendarPara(false);
-              try {
-                await savePaciente(pacFinal);
-                await cargarPacientes();
-              } catch(e) {
-                console.error("Error guardando paciente en Supabase:", e);
-                alert("⚠️ No se pudo guardar en la base de datos. Revisa tu conexión.");
-                return;
-              }
-              try { setUltimaCita({nombre: pacFinal.nombre, telefono: pacFinal.telefono, fecha, hora, tipoCita, duracion}); }
-              catch(e) { console.warn("setUltimaCita falló:", e); }
-              if (pacFinal.telefono) {
-                try {
-                  const fechaMx = new Date(fecha+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-                  const msg = `Hola ${pacFinal.nombre}, te confirmo tu cita programada para el ${fechaMx} a las ${hora} hrs.\n\nTe espero en el consultorio.\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
-                  setTimeout(()=>{ try { enviarWA(pacFinal.telefono, msg); } catch(e) { console.warn("WhatsApp falló:", e); } }, 300);
-                } catch(e) { console.warn("Error preparando WhatsApp:", e); }
-              }
-              try {
-                if (typeof crearEventoGCal === "function") {
-                  const titulo = buildGCalTitulo(pacFinal, tipoCita);
-                  const colorId = tipoCita === "primera" ? "9" : "2";
-                  const resultado = crearEventoGCal(pacFinal.nombre, pacFinal.telefono, fecha, hora, tipoCita, duracion, titulo, colorId);
-                  if (resultado && typeof resultado.then === "function") {
-                    resultado.catch(e => console.warn("Google Calendar falló (no crítico):", e));
-                  }
-                }
-              } catch(e) { console.warn("Error con Google Calendar (no crítico):", e); }
-            } catch(errGlobal) {
-              console.error("Error general agendando cita:", errGlobal);
-              alert("⚠️ Hubo un problema al agendar. La cita pudo no haberse guardado. Revisa y vuelve a intentar.");
-              setAgendarPara(false);
-            }
-          }}
+          onCreada={()=>{ setAgendarPara(false); cargarPacientes(); }}
         />
       )}
     </>
