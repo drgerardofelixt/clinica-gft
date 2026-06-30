@@ -290,6 +290,17 @@ const normDate = (f) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(f)) return f.split("-").reverse().join("/");
   return f;
 };
+// Convierte DD/MM/YYYY o D/M/YYYY (formato Tanita, día PRIMERO) a ISO YYYY-MM-DD para inputs type=date.
+// Si ya viene en ISO la deja igual. Si no puede parsear devuelve "".
+const toISODate = (f) => {
+  if (!f) return "";
+  const s = String(f).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return "";
+  const [, d, mo, y] = m;
+  return `${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
+};
 // Convierte una fecha clínica (YYYY-MM-DD o DD/MM/YYYY) a timestamp para ordenar cronológicamente
 const parseFechaClinica = (f) => {
   if (!f) return 0;
@@ -2478,7 +2489,7 @@ const TanitaUp = ({nombre, onApply}) => {
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"4px 12px",
               fontSize:10.5,marginBottom:8}}>
               {[
-                ["Fecha",data.fecha||"—"],
+                ["Fecha",data.fecha||"⚠️ no detectada — ajústala al guardar"],
                 ["Peso",data.peso!=null?data.peso+" kg":"❌"],
                 ["% Grasa",data.grasaCorporal!=null?data.grasaCorporal+"%":"❌"],
                 ["Músculo",data.masaMuscular!=null?data.masaMuscular+" kg":"❌"],
@@ -3135,7 +3146,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   const applyTanita = (d) => {
     const s = (v) => v!=null?String(v):"";
     setF(x=>({...x,
-      fecha:d.fecha||x.fecha, hora:d.hora||x.hora,
+      fecha:toISODate(d.fecha)||x.fecha, hora:d.hora||x.hora,
       peso:d.peso!=null?String(d.peso):x.peso,
       comp:{
         peso:s(d.peso), grasa:s(d.grasaCorporal),
@@ -3893,6 +3904,27 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       fecha: d.fecha,
       id: d.id,
     };
+    const tieneComp = comp.peso || comp.grasa || comp.musculo;
+    // Detección de duplicado: ¿ya existe una medición de composición para esta misma fecha?
+    const fechaNorm = normDate(comp.fecha);
+    const dup = tieneComp && (p.composicion||[]).find(c => (c.peso||c.grasa) && normDate(c.fecha) === fechaNorm);
+    if (dup) {
+      const reemplazar = confirm(
+        `Ya existe una medición registrada para el ${fechaNorm}.\n\n`+
+        `Aceptar = Reemplazar los valores con los de este PDF\n`+
+        `Cancelar = No guardar la medición`
+      );
+      if (!reemplazar) return; // Cancelar: no se guarda nada
+      // Reemplazar: actualiza el registro existente en su sitio (NO agrega uno nuevo) y lo vincula a esta consulta
+      const composicion = (p.composicion||[]).map(c =>
+        ((c.peso||c.grasa) && normDate(c.fecha) === fechaNorm) ? { ...comp } : c
+      );
+      onUpdate({...p,
+        consultas:[...(p.consultas||[]),d],
+        composicion,
+      });
+      return;
+    }
     onUpdate({...p,
       consultas:[...(p.consultas||[]),d],
       composicion:[...(p.composicion||[]),comp],
