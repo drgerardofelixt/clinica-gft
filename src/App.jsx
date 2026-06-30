@@ -345,7 +345,10 @@ const gcalOcupadasEnFecha = (gcalEventos, fechaSel) => (gcalEventos||[]).flatMap
 });
 const fmtFLargo = (f) => {
   if (!f) return "";
-  return new Date(f+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
+  const iso = toISODate(f) || f; // acepta DD/MM/YYYY (formato Tanita) además de ISO
+  const d = new Date(iso+"T12:00:00");
+  if (isNaN(d.getTime())) return normDate(f); // fallback legible si no se puede parsear
+  return d.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
 };
 const calcIMC = (p,t) => {
   if (!p||!t) return "";
@@ -3589,6 +3592,32 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
   });
   const PASOS=["Identificación","Antecedentes","Exploración","Labs","Diagnóstico"];
 
+  // Guarda el paciente. En ALTA (sin pac) crea además la consulta inicial en p.consultas
+  // con la misma estructura que una consulta regular, vinculada por id a la composición inicial,
+  // para que aparezca en la pestaña Evolución y en el Expediente completo.
+  const guardarPaciente = () => {
+    if (!f.sexo) { alert("Selecciona el sexo del paciente antes de guardar (paso Identificación)."); setStep(0); return; }
+    if (pac) { onSave(f); return; } // edición: NO crear consulta inicial (evita duplicados)
+    const arr = [...(f.composicion||[])];
+    const compInicial = arr.length ? arr[arr.length-1] : null;
+    const cid = (compInicial && compInicial.id) || crypto.randomUUID();
+    // Vincula la composición inicial con el mismo id que la consulta
+    if (compInicial && !compInicial.id) arr[arr.length-1] = {...compInicial, id:cid};
+    const consultaInicial = {
+      id: cid,
+      fecha: (compInicial && compInicial.fecha) || f.fechaInicio || hoy(),
+      hora: (compInicial && compInicial.hora) || f.horaRegistro || ahora(),
+      peso: (compInicial && compInicial.peso) || "",
+      ca: "", ta: f.ci.ta||"", fc: f.ci.fc||"", spo2: f.ef.spo2||"",
+      glucosaCapilar: f.ef.glucosaCapilar||"",
+      subjetivo: f.motivoConsulta||"", efectos: "", respuesta: "",
+      plan: f.pronostico||"", cambioDosis: "", origenMed: "",
+      medicamento: f.ci.glp1||"", dosis: f.ci.dosis||"",
+      comp: compInicial ? {...compInicial} : {},
+    };
+    onSave({...f, composicion: arr, consultas: [...(f.consultas||[]), consultaInicial]});
+  };
+
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
@@ -3709,7 +3738,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                     composicion: [
                       ...(x.composicion||[]),
                       {
-                        fecha: d.fecha || hoy(),
+                        fecha: toISODate(d.fecha) || hoy(),
                         hora: d.hora || ahora(),
                         peso: ss(d.peso), grasa: ss(d.grasaCorporal),
                         musculo: ss(d.masaMuscular), agua: ss(d.aguaCorporal),
@@ -3731,7 +3760,8 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                     → los recuadros se refrescan al instante, sin cerrar/reabrir el modal. */}
                 {(() => {
                   const arr = f.composicion || [];
-                  const ult = arr[arr.length - 1];
+                  const lastIdx = arr.length - 1;
+                  const ult = arr[lastIdx];
                   if (!ult || !(ult.peso || ult.grasa)) return null;
                   const cajas = [
                     ["PESO", ult.peso, "kg"], ["% GRASA", ult.grasa, "%"], ["MÚSCULO", ult.musculo, "kg"],
@@ -3749,8 +3779,24 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                           </div>
                         ))}
                       </div>
-                      <div style={{fontSize:9,color:C.verde,fontWeight:700,textAlign:"center",marginTop:6}}>
-                        ✓ Medición del {fmtF(ult.fecha)} aplicada
+                      <div style={{marginTop:8,display:"flex",alignItems:"center",justifyContent:"center",
+                        gap:8,flexWrap:"wrap"}}>
+                        <span style={{fontSize:10,color:C.verde,fontWeight:700}}>✓ Medición aplicada — fecha:</span>
+                        <input type="date" value={toISODate(ult.fecha)}
+                          onChange={e=>{
+                            const nueva = e.target.value;
+                            if (!nueva) return;
+                            // Validación de duplicado: ¿la fecha coincide con OTRA medición ya guardada?
+                            const dup = (f.composicion||[]).some((c,idx)=>
+                              idx!==lastIdx && (c.peso||c.grasa) && normDate(c.fecha)===normDate(nueva));
+                            if (dup) { alert(`Ya existe una medición registrada para el ${normDate(nueva)}.\nElige otra fecha.`); return; }
+                            setF(x=>{
+                              const comp=[...(x.composicion||[])];
+                              if (comp.length) comp[comp.length-1]={...comp[comp.length-1],fecha:nueva};
+                              return {...x,composicion:comp};
+                            });
+                          }}
+                          style={{fontSize:11,padding:"3px 6px",border:"1px solid "+C.grisMedio,borderRadius:6}}/>
                       </div>
                     </div>
                   );
@@ -3846,10 +3892,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
           <Btn onClick={()=>setStep(s=>Math.max(0,s-1))} color={C.suave} outline icon="←">Anterior</Btn>
           {step<PASOS.length-1
             ? <Btn onClick={()=>setStep(s=>Math.min(PASOS.length-1,s+1))} icon="→">Siguiente</Btn>
-            : <Btn onClick={()=>{
-                if (!f.sexo) { alert("Selecciona el sexo del paciente antes de guardar (paso Identificación)."); setStep(0); return; }
-                onSave(f);
-              }} color={C.verde} icon="✓">Guardar paciente</Btn>}
+            : <Btn onClick={guardarPaciente} color={C.verde} icon="✓">Guardar paciente</Btn>}
         </div>
       </div>
     </div>
