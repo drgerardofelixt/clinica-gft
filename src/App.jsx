@@ -1364,7 +1364,7 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, p
 
 // ── DOCUMENTOS CLÍNICOS ────────────────────────────────────────
 const DocHC = ({p}) => {
-  const ul = (p.consultas||[]).filter(c=>!c.esSoloCita);
+  const ul = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica);
   const uc = ul[ul.length-1]||{};
   return (
     <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
@@ -1403,6 +1403,88 @@ const DocHC = ({p}) => {
       <Firma/>
       <FooterDoc/>
     </div>
+  );
+};
+
+// Expediente completo: TODAS las consultas en orden cronológico, multipágina (.pdf-page = 1 hoja carta).
+const DocExpediente = ({p}) => {
+  const consultas = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica);
+  // Agrupa en páginas de 3 consultas para respetar el patrón .pdf-page (1 = 1 hoja carta)
+  const POR_PAGINA = 3;
+  const paginas = [];
+  for (let i=0;i<consultas.length;i+=POR_PAGINA) paginas.push(consultas.slice(i,i+POR_PAGINA));
+  if (paginas.length===0) paginas.push([]); // sin consultas → 1 página con mensaje
+
+  const fila = (c, idx) => {
+    const imc = c.imc || calcIMC(c.peso, p.talla) || "—";
+    const objO = [
+      c.glucosaCapilar && ("Glucosa cap. "+c.glucosaCapilar),
+      c.efectos && ("Efectos: "+c.efectos),
+    ].filter(Boolean).join(" · ") || "—";
+    const anaA = [
+      c.respuesta && ("Respuesta: "+c.respuesta),
+      c.cambioDosis,
+    ].filter(Boolean).join(" · ") || "—";
+    return (
+      <div key={c.id||idx} style={{marginBottom:14,paddingBottom:12,borderBottom:"1px solid "+C.grisMedio}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
+          <div style={{background:C.azul,color:"#fff",fontWeight:800,fontSize:11,
+            padding:"3px 10px",borderRadius:12}}>📅 {fmtFecha(c.fecha)}{c.hora?" · "+c.hora:""}</div>
+          {c.medicamento && <div style={{fontSize:10,color:C.suave}}>💊 {c.medicamento}{c.dosis?" · "+c.dosis:""}</div>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:6}}>
+          <CF l="Peso" v={c.peso?c.peso+" kg":"—"}/>
+          <CF l="IMC" v={imc}/>
+          <CF l="Circ. Abd." v={c.ca?c.ca+" cm":"—"}/>
+          <CF l="TA" v={c.ta||"—"}/>
+          <CF l="FC" v={c.fc||"—"}/>
+          <CF l="SpO₂" v={c.spo2||"—"}/>
+        </div>
+        <div style={{fontSize:10.5,lineHeight:1.5}}>
+          <div><b style={{color:C.azul}}>S:</b> {c.subjetivo||c.motivo||"—"}</div>
+          <div><b style={{color:C.azul}}>O:</b> {objO}</div>
+          <div><b style={{color:C.azul}}>A:</b> {anaA}</div>
+          <div><b style={{color:C.azul}}>P:</b> {c.plan||"—"}</div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {paginas.map((grupo, pi) => (
+        <div key={pi} className="pdf-page" style={{width:"816px",height:"1056px",overflow:"hidden",
+          padding:"56px 64px",boxSizing:"border-box",display:"flex",flexDirection:"column",
+          fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.6,background:"#fff"}}>
+          <div style={{paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
+            <img src={IMG_LOGO} alt="Logo" style={{height:64,width:"auto",display:"block",marginBottom:8}}/>
+            <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul}}>
+              EXPEDIENTE COMPLETO
+              {paginas.length>1 && <span style={{fontSize:10,color:C.suave,fontWeight:600}}>{"  ·  Hoja "+(pi+1)+" de "+paginas.length}</span>}
+            </div>
+          </div>
+          {pi===0 && (
+            <G4>
+              <CF l="Nombre" v={p.nombre} span={2}/>
+              <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
+              <CF l="Sexo" v={p.sexo}/>
+              <CF l="Talla" v={p.talla?p.talla+" cm":"—"}/>
+              <CF l="Teléfono" v={p.telefono}/>
+              <CF l="Consultas" v={String(consultas.length)}/>
+            </G4>
+          )}
+          <div style={{flex:1,overflow:"hidden"}}>
+            {grupo.length===0
+              ? <div style={{textAlign:"center",color:C.suave,padding:"40px 0"}}>Sin consultas registradas</div>
+              : grupo.map((c,idx)=>fila(c, pi*POR_PAGINA+idx))}
+          </div>
+          <div style={{paddingTop:6,borderTop:"1px solid #E2E8F0",textAlign:"center",fontSize:9,color:"#94A3B8"}}>
+            <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
+            <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+          </div>
+        </div>
+      ))}
+    </>
   );
 };
 
@@ -4677,9 +4759,14 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             <div style={{display:"flex",justifyContent:"space-between",
               alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
               <div style={{fontWeight:800,color:C.azul,fontSize:14}}>Expediente clínico</div>
-              <Btn onClick={()=>setDoc({tipo:"hc"})} outline color={C.azul} icon="📄">
-                Ver / Imprimir completo
-              </Btn>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <Btn onClick={()=>setDoc({tipo:"hc"})} outline color={C.azul} icon="📄">
+                  Historia Clínica
+                </Btn>
+                <Btn onClick={()=>setDoc({tipo:"expediente"})} color={C.azul} icon="🗂️">
+                  Expediente completo
+                </Btn>
+              </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               {[
@@ -4782,7 +4869,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       )}
       {doc && (
         <PrintModal
-          titulo={{hc:"Historia Clínica",nota:"Nota de Evolución",receta:"Receta Médica",labs:"Orden de Labs",progreso:"Reporte de Progreso"}[doc.tipo]}
+          titulo={{hc:"Historia Clínica",expediente:"Expediente Completo",nota:"Nota de Evolución",receta:"Receta Médica",labs:"Orden de Labs",progreso:"Reporte de Progreso"}[doc.tipo]}
           onClose={()=>{setDoc(null); setConFirmaLabs(false);}}
           onWAConPDF={doc.tipo==="progreso"?waProgresoConPDF:null}
           pdfFilename={doc.tipo==="progreso"?`Reporte_${sanitizeFilename(p.nombre||"Paciente")}_${new Date().toLocaleDateString("es-MX",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"-")}.pdf`:undefined}
@@ -4796,6 +4883,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             </label>
           ) : null}>
           {doc.tipo==="hc" && <DocHC p={p}/>}
+          {doc.tipo==="expediente" && <DocExpediente p={p}/>}
           {doc.tipo==="nota" && <DocNota p={p} consulta={doc.consulta}/>}
           {doc.tipo==="receta" && <DocReceta p={p} rec={doc.receta} firmaB64={firmaB64}/>}
           {doc.tipo==="labs" && <DocLabs p={p} labs={doc.labs} firmaB64={conFirmaLabs?firmaB64:null}/>}
