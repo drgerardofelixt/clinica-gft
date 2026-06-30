@@ -6114,15 +6114,16 @@ const sugerirDosisSeguimiento = (pac) => {
   const pUlt = ult ? parseFloat(ult.peso) : NaN;
   const pPen = pen ? parseFloat(pen.peso) : NaN;
 
-  // 1) Está bajando (≥1 kg desde la medición anterior) → MANTENER (no escalar si funciona)
+  // 1) PRIORIDAD MÁXIMA — Dosis inicial (WEG 0.25/0.5, MOUN 2.5) → SIEMPRE subir,
+  //    sin importar si está bajando o estancado (criterio del doctor).
+  if ((DOSIS_INICIALES[med]||[]).includes(dosisAct) && subir !== dosisAct) {
+    return { med, dosis: subir, accion:"subir", texto:`subir a ${subir} (dosis inicial — casi siempre se sube)` };
+  }
+  // 2) Bajando (≥1 kg desde la medición anterior) y NO es dosis inicial → MANTENER
   if (!isNaN(pUlt) && !isNaN(pPen) && (pPen - pUlt) >= 1.0) {
     return { med, dosis: dosisAct, accion:"mantener", texto:`mantener ${dosisAct} (bajando ${(pPen-pUlt).toFixed(1)} kg)` };
   }
-  // 2) Dosis inicial → SUBIR al siguiente escalón
-  if ((DOSIS_INICIALES[med]||[]).includes(dosisAct) && subir !== dosisAct) {
-    return { med, dosis: subir, accion:"subir", texto:`subir a ${subir} (dosis inicial)` };
-  }
-  // 3) Estancado ≥2 meses (sin bajar) → SUBIR
+  // 3) Estancado ≥~2 meses (sin bajar) y NO es dosis inicial → SUBIR
   if (!isNaN(pUlt) && !isNaN(pPen) && ult && pen && subir !== dosisAct) {
     const dias = (parseFechaClinica(ult.fecha) - parseFechaClinica(pen.fecha)) / 86400000;
     if (dias >= 55 && (pPen - pUlt) < 0.5) {
