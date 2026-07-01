@@ -7094,7 +7094,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 {[
                   {l:"Pacientes",   v:pacientes.length, unit:"total",      color:"var(--gft-accent)",   action:()=>setContentView("pacientes")},
                   {l:"Consultas",   v:totalC,            unit:"total",      color:"var(--gft-success)",  action:()=>setContentView("pacientes")},
-                  {l:"Citas hoy",   v:citasHoy.length,   unit:"programadas",color:"var(--gft-warning)",  action:()=>setContentView("agenda")},
+                  {l:"Citas hoy",   v:citasV2Hoy.length, unit:"programadas",color:"var(--gft-warning)",  action:()=>setContentView("agenda")},
                   {l:"Labs vencen", v:labsHoy.length,    unit:"pendientes", color:"var(--gft-danger)",   action:()=>{setLabsFilter(true);setContentView("pacientes");}},
                 ].map(s=>(
                   <div key={s.l} className="gft-stat"
@@ -7204,8 +7204,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       const d = minAhora - (h*60+m);
                       return { r: (d>=0&&d<=60) ? 0 : (d<0 ? 1 : 2), d };
                     };
-                    const citaHoy = citasHoy
-                      .filter(c => (c.tipo==="app"||c.tipo==="gcal") && c.pac)
+                    const citaHoy = citasV2Hoy
+                      .map(c => ({ ...c, hora: isoAInputsHmo(c.inicio).hora, pac: pacById(c.pacienteId) }))
+                      .filter(c => c.pac)  // solo citas con expediente vinculado
                       .reduce((mejor, c) => {
                         if (!mejor) return c;
                         const a = rank(c.hora), b = rank(mejor.hora);
@@ -7321,31 +7322,34 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                     </div>
                   </div>
 
-                  {/* Cola del día — debajo de Paciente actual y Google Calendar */}
+                  {/* Cola del día — desde la tabla `citas` (v2), misma fuente que Agenda/Calendario */}
                   <div className="gft-panel">
                     <div className="gft-panel__header">
                       <div className="gft-panel__title">Cola del día</div>
-                      {citasHoy.length>0&&<span className="gft-panel__count">{citasHoy.length}</span>}
+                      {citasV2Hoy.length>0&&<span className="gft-panel__count">{citasV2Hoy.length}</span>}
                     </div>
-                    {citasHoy.length===0 ? (
+                    {citasV2Hoy.length===0 ? (
                       <div className="gft-panel__empty">Sin citas hoy</div>
-                    ) : citasHoy.map((c,i)=>{
-                      const chipColor=c.tipo==="gcal"?"#4285F4":c.tipoCita==="primera"?"var(--gft-success)":"var(--gft-accent)";
+                    ) : citasV2Hoy.map((c,i)=>{
+                      const hora=isoAInputsHmo(c.inicio).hora;
+                      const pac=pacById(c.pacienteId);
+                      const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const medTxt=c.medicamento?[c.medicamento,c.dosis].filter(Boolean).join(" "):"";
                       return (
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,
-                          padding:"9px 0",borderBottom:i<citasHoy.length-1?"1px solid var(--gft-border)":"none",
-                          cursor:c.pac?"pointer":"default"}}
-                          onClick={()=>c.pac&&onVer(c.pac)}>
+                        <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,
+                          padding:"9px 0",borderBottom:i<citasV2Hoy.length-1?"1px solid var(--gft-border)":"none",
+                          cursor:pac?"pointer":"default"}}
+                          onClick={()=>pac&&onVer(pac)}>
                           <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
-                            color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
+                            color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
                           <div style={{flex:1,minWidth:0}}>
-                            <div title={c.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
+                            <div title={c.pacienteNombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}</div>
                             <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
-                              {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
+                              {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
                             </div>
                           </div>
-                          {c.pac&&<span style={{fontSize:12,color:"var(--gft-accent)",flexShrink:0}}>→</span>}
+                          {pac&&<span style={{fontSize:12,color:"var(--gft-accent)",flexShrink:0}}>→</span>}
                         </div>
                       );
                     })}
@@ -7355,32 +7359,35 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
                 {/* ── Columna derecha (panels) ── */}
                 <div>
-                  {/* Pacientes de mañana */}
+                  {/* Pacientes de mañana — desde la tabla `citas` (v2) */}
                   <div className="gft-panel">
                     <div className="gft-panel__header">
                       <div className="gft-panel__title">Pacientes de mañana</div>
-                      {citasManana.length>0&&<span className="gft-panel__count">{citasManana.length}</span>}
+                      {citasV2Manana.length>0&&<span className="gft-panel__count">{citasV2Manana.length}</span>}
                     </div>
-                    {citasManana.length===0 ? (
+                    {citasV2Manana.length===0 ? (
                       <div className="gft-panel__empty">Sin citas programadas para mañana</div>
-                    ) : citasManana.map((c,i)=>{
-                      const chipColor=c.tipo==="gcal"?"#4285F4":c.tipoCita==="primera"?"var(--gft-success)":"var(--gft-accent)";
+                    ) : citasV2Manana.map((c,i)=>{
+                      const {fecha,hora}=isoAInputsHmo(c.inicio);
+                      const pac=pacById(c.pacienteId);
+                      const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const medTxt=c.medicamento?[c.medicamento,c.dosis].filter(Boolean).join(" "):"";
                       return (
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:10,
-                          padding:"9px 0",borderBottom:i<citasManana.length-1?"1px solid var(--gft-border)":"none"}}>
+                        <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,
+                          padding:"9px 0",borderBottom:i<citasV2Manana.length-1?"1px solid var(--gft-border)":"none"}}>
                           <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
-                            color:chipColor,minWidth:44,textAlign:"center"}}>{c.hora||"—"}</div>
+                            color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
                           <div style={{flex:1,minWidth:0}}>
-                            <div title={c.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
+                            <div title={c.pacienteNombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}</div>
                             <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
-                              {c.tipo==="gcal"?"Google Cal":c.tipoCita==="primera"?"Primera vez":"Seguimiento"}
+                              {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
                             </div>
                           </div>
-                          {c.pac&&(c.pac.telefono?(
+                          {pac&&(pac.telefono?(
                             <button className="gft-btn gft-btn--secondary gft-btn--sm"
                               style={{flexShrink:0,fontSize:11}}
-                              onClick={e=>{e.stopPropagation();enviarRecordatorio(c);}}>
+                              onClick={e=>{e.stopPropagation();enviarRecordatorio({pac, fecha, hora});}}>
                               📱 Recordatorio
                             </button>
                           ):(
