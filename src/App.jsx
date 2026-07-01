@@ -798,6 +798,60 @@ const leerEventosOcupado = async ({ desde, hasta } = {}) => {
   } catch(e){ console.warn("leerEventosOcupado:", e); return []; }
 };
 
+// ── DIAGNÓSTICO — Comparar calendario principal de Google vs tabla `citas` (SOLO LECTURA) ─────
+// Paleta de colorId de eventos de Google (para que el doctor distinga verde=paciente de otros).
+const COLOR_GCAL = { "1":"Lavanda","2":"Verde (Sage)","3":"Morado (Grape)","4":"Rosa (Flamingo)",
+  "5":"Amarillo (Banana)","6":"Naranja (Tangerine)","7":"Azul (Peacock)","8":"Gris (Graphite)",
+  "9":"Azul (Blueberry)","10":"Verde (Basil)","11":"Rojo (Tomato)" };
+const _normNombre = (s) => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+  .replace(/[^a-z\s]/g," ").replace(/\s+/g," ").trim();
+const _palabrasNombre = (s) => _normNombre(s).split(" ").filter(w=>w.length>=3);
+const _nombresCompatibles = (a,b) => {
+  const pa=_palabrasNombre(a), pb=_palabrasNombre(b);
+  if(!pa.length||!pb.length) return false;
+  const setB=new Set(pb);
+  const comunes=pa.filter(w=>setB.has(w)).length;
+  return comunes>=2 || (comunes>=1 && (pa.length===1||pb.length===1));
+};
+
+// Compara el calendario "primary" (My calendar) contra la tabla `citas` desde el 1-jul-2026.
+// NO crea/edita/borra nada: solo lee ambas fuentes y devuelve el diagnóstico. Defensivo.
+const compararConGoogle = async () => {
+  if (!isGoogleAuthorized()) return { conectado:false };
+  const desde = "2026-07-01T00:00:00-07:00";
+  const hasta = new Date(Date.now() + 90*24*60*60*1000).toISOString();
+  let eventos = [], citas = [];
+  try { eventos = await leerEventosDeCalendario("primary", { timeMin:desde, timeMax:hasta }); }
+  catch(e){ console.warn("comparar/eventos:", e); return { conectado:true, error:"No se pudieron leer los eventos de Google." }; }
+  try { citas = await listarCitas({ desde, hasta }); }
+  catch(e){ console.warn("comparar/citas:", e); return { conectado:true, error:"No se pudieron leer las citas de la tabla." }; }
+
+  const citasIdx = citas.map(c=>({ nombre:c.pacienteNombre, t:new Date(c.inicio).getTime(), inicio:c.inicio }));
+  const evsIdx = eventos.filter(e=>e.start?.dateTime).map(e=>({ e, t:new Date(e.start.dateTime).getTime(), nombre:e.summary||"" }));
+
+  const usados = new Set();
+  const faltantes = [];
+  let coincidencias = 0;
+  for (const ev of evsIdx) {
+    const mi = citasIdx.findIndex((ci,idx)=> !usados.has(idx)
+      && Math.abs(ci.t-ev.t) <= 5*60000 && _nombresCompatibles(ci.nombre, ev.nombre));
+    if (mi >= 0) { coincidencias++; usados.add(mi); }
+    else {
+      const {fecha,hora} = isoAInputsHmo(ev.e.start.dateTime);
+      faltantes.push({ summary: ev.e.summary || "(sin título)", fecha, hora,
+        colorId: ev.e.colorId || null,
+        color: ev.e.colorId ? (COLOR_GCAL[ev.e.colorId] || ("color "+ev.e.colorId)) : "color del calendario" });
+    }
+  }
+  const soloApp = citasIdx.filter((_,idx)=>!usados.has(idx)).map(ci=>{
+    const {fecha,hora} = isoAInputsHmo(ci.inicio);
+    return { nombre:ci.nombre, fecha, hora };
+  });
+  faltantes.sort((a,b)=>(a.fecha+a.hora).localeCompare(b.fecha+b.hora));
+  soloApp.sort((a,b)=>(a.fecha+a.hora).localeCompare(b.fecha+b.hora));
+  return { conectado:true, coincidencias, faltantes, soloApp, totalGoogle:evsIdx.length, totalTabla:citas.length };
+};
+
 // Instante exacto (ms) de una fecha+hora local de Hermosillo (UTC-7 fijo). Para comparación idempotente.
 const _instanteHermosillo = (fecha, hora) => new Date(`${fecha}T${(hora||"00:00")}:00-07:00`).getTime();
 
@@ -6588,9 +6642,83 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar}) => {
   );
 };
 
+// Modal de diagnóstico: resultado de compararConGoogle (solo lectura).
+const ModalCompararGoogle = ({ data, onClose }) => {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:4200,
+      overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
+      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:640,overflow:"hidden",
+        boxShadow:"0 20px 60px rgba(0,0,0,0.25)",margin:"24px 0"}}>
+        <div style={{background:C.azul,padding:"14px 22px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:14}}>🔍 Comparación con Google Calendar</div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",
+            fontSize:20,cursor:"pointer",borderRadius:8,padding:"2px 10px"}}>×</button>
+        </div>
+        <div style={{padding:22,maxHeight:"74vh",overflow:"auto"}}>
+          {!data ? (
+            <div style={{textAlign:"center",color:C.suave,padding:30}}>Comparando…</div>
+          ) : !data.conectado ? (
+            <div style={{textAlign:"center",color:C.suave,padding:30}}>Conecta Google Calendar para comparar.</div>
+          ) : data.error ? (
+            <div style={{textAlign:"center",color:C.rojo,padding:30}}>⚠️ {data.error}</div>
+          ) : (
+            <>
+              <div style={{fontSize:12,color:C.suave,marginBottom:14}}>
+                Calendario principal (My calendar): <b>{data.totalGoogle}</b> eventos con hora ·
+                Tabla de citas: <b>{data.totalTabla}</b> · Coincidencias: <b style={{color:C.verde}}>{data.coincidencias}</b>
+              </div>
+
+              <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:6}}>
+                🟢 Faltantes en la app ({data.faltantes.length})
+              </div>
+              <div style={{fontSize:11,color:C.suave,marginBottom:8}}>
+                Eventos en Google que NO están en la tabla. Revisa el color: verde = paciente; otros colores pueden ser personales.
+              </div>
+              {data.faltantes.length===0 ? (
+                <div style={{fontSize:12,color:C.verde,marginBottom:16}}>✓ No falta ninguno.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:18}}>
+                  {data.faltantes.map((f,i)=>(
+                    <div key={i} style={{border:"1px solid "+C.grisMedio,borderRadius:8,padding:"8px 10px",fontSize:12}}>
+                      <div style={{fontWeight:700,color:C.texto}}>{f.summary}</div>
+                      <div style={{fontSize:11,color:C.suave,marginTop:2}}>
+                        {fmtF(f.fecha)} · {f.hora} · <b>{f.color}</b>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:6}}>
+                📄 Solo en la app ({data.soloApp.length})
+              </div>
+              <div style={{fontSize:11,color:C.suave,marginBottom:8}}>
+                Citas de la tabla sin evento equivalente en Google (informativo).
+              </div>
+              {data.soloApp.length===0 ? (
+                <div style={{fontSize:12,color:C.suave}}>—</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {data.soloApp.map((s,i)=>(
+                    <div key={i} style={{fontSize:12,color:C.texto}}>
+                      • {s.nombre} <span style={{color:C.suave}}>— {fmtF(s.fecha)} · {s.hora}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AdminCitas = () => {
   const [citas,setCitas] = useState([]);
   const [cargando,setCargando] = useState(true);
+  const [comparacion,setComparacion] = useState(null); // resultado de compararConGoogle
+  const [comparando,setComparando] = useState(false);
   const [editar,setEditar] = useState(null);
   const [sincronizando,setSincronizando] = useState(false);
 
@@ -6612,6 +6740,14 @@ const AdminCitas = () => {
       await cargar();
     } catch(e){ console.error("sincronizar:",e); alert("⚠️ Falló la sincronización."); }
     finally { setSincronizando(false); }
+  };
+
+  // 🔍 Diagnóstico solo lectura: compara "My calendar" de Google contra la tabla.
+  const comparar = async () => {
+    setComparando(true); setComparacion(null);
+    try { setComparacion(await compararConGoogle()); }
+    catch(e){ console.error("comparar:",e); setComparacion({ conectado:true, error:"Falló la comparación." }); }
+    finally { setComparando(false); }
   };
 
   // Detección de duplicados: instante de inicio idéntico o a ±5 min de otra cita
@@ -6638,12 +6774,17 @@ const AdminCitas = () => {
           {nPendientes>0 && <span style={{color:"var(--gft-warning)"}}> · {nPendientes} sin sincronizar</span>}
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={comparar} disabled={comparando}>
+            {comparando ? "Comparando…" : "🔍 Comparar con Google Calendar"}
+          </button>
           <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={sincronizar} disabled={sincronizando}>
             {sincronizando ? "Sincronizando…" : "☁️ Sincronizar pendientes con Google"}
           </button>
           <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={cargar}>↻ Refrescar</button>
         </div>
       </div>
+
+      {comparacion && <ModalCompararGoogle data={comparacion} onClose={()=>setComparacion(null)}/>}
 
       {!cargando && citas.length===0 && (
         <div style={{textAlign:"center",padding:"60px 20px",color:"var(--gft-text-muted)"}}>
