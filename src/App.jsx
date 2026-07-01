@@ -814,6 +814,46 @@ const _nombresCompatibles = (a,b) => {
   return comunes>=2 || (comunes>=1 && (pa.length===1||pb.length===1));
 };
 
+// Parsea el título de un evento de Google → campos estructurados de cita (ayuda, no perfecto).
+// Ej: "Martha ... Dancil - 2da MOUN FARM" → {nombre, tipo:seguimiento, numeroVisita:2, medicamento:MOUN, origen:FARM}
+const parseTituloCita = (titulo) => {
+  const t = (titulo||"").trim();
+  // Nombre = primer segmento antes de un separador ( - — – · . ); el resto son datos.
+  const partes = t.split(/\s*[-—–·]\s*|\s+\.\s+/).map(s=>s.trim()).filter(Boolean);
+  const nombre = (partes[0] || t).trim();
+  const restoU = partes.slice(1).join(" ").toUpperCase();
+
+  // Número de visita: ordinal (2da, 3ra, 4ta, 1era…). Un número suelto NO es visita (es dosis).
+  let numeroVisita = null;
+  const mv = restoU.match(/\b(\d+)\s*(?:DA|RA|ERA|TA|TO|VA|º|°)\b/);
+  if (mv) numeroVisita = parseInt(mv[1]);
+
+  // Medicamento
+  let medicamento = null;
+  if (/MOUN|TIRZ/.test(restoU)) medicamento = "MOUN";
+  else if (/WEG|SEMA|OZEM/.test(restoU)) medicamento = "WEG";
+
+  // Dosis: quitar primero el ordinal para no confundirlo; luego buscar número (con o sin MG).
+  let restoDosis = restoU;
+  if (mv) restoDosis = restoDosis.replace(mv[0], " ");
+  let dosis = null;
+  const md = restoDosis.match(/(\d+(?:\.\d+)?)\s*MG/) || restoDosis.match(/\b(\d+(?:\.\d+)?)\b/);
+  if (md) {
+    const val = md[1] + "mg"; // normaliza al formato del selector (5mg, 1.7mg, 2.5mg)
+    dosis = (medicamento && DOSIS_POR_MED[medicamento] && !DOSIS_POR_MED[medicamento].includes(val)) ? val : val;
+  }
+
+  // Origen
+  let origen = null;
+  if (/FARM/.test(restoU)) origen = "FARM";
+  else if (/CONS/.test(restoU)) origen = "CONS";
+
+  // Tipo: PRIMERA → primera_vez; en cualquier otro caso seguimiento (default).
+  const tipo = /PRIMERA/.test(restoU) ? "primera_vez" : "seguimiento";
+
+  return { nombre, tipo, medicamento, dosis: medicamento ? dosis : null, origen, numeroVisita };
+};
+
 // Compara el calendario "primary" (My calendar) contra la tabla `citas` desde el 1-jul-2026.
 // NO crea/edita/borra nada: solo lee ambas fuentes y devuelve el diagnóstico. Defensivo.
 const compararConGoogle = async () => {
@@ -6643,11 +6683,52 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar}) => {
 };
 
 // Modal de diagnóstico: resultado de compararConGoogle (solo lectura).
-const ModalCompararGoogle = ({ data, onClose }) => {
+const ModalCompararGoogle = ({ data, pacientes=[], onClose, onImportado }) => {
+  // Filas de revisión (una por faltante), con campos parseados + checkbox (marcado por defecto).
+  const [filas, setFilas] = useState(() => (data?.faltantes||[]).map(f => ({
+    ...parseTituloCita(f.summary), summary:f.summary, fecha:f.fecha, hora:f.hora, color:f.color, incluir:true,
+  })));
+  const [importando, setImportando] = useState(false);
+  const seleccion = filas.filter(f=>f.incluir).length;
+  const toggle = (i) => setFilas(fs=>fs.map((x,idx)=>idx===i?{...x,incluir:!x.incluir}:x));
+
+  const importar = async () => {
+    const sel = filas.filter(f=>f.incluir);
+    if (!sel.length) return;
+    setImportando(true);
+    let importadas=0, saltadas=0, sinPac=0;
+    let tabla=[];
+    try { tabla = await listarCitas({}); } catch(e){ console.warn("importar/listar:", e); }
+    const inst = (fecha,hora)=> new Date(`${fecha}T${(hora||"00:00")}:00-07:00`).getTime();
+    const existentes = tabla.map(c=>({ t:new Date(c.inicio).getTime(), nombre:c.pacienteNombre }));
+    for (const f of sel) {
+      const ti = inst(f.fecha, f.hora);
+      // Idempotente: si ya hay una cita con mismo nombre + hora (±5 min), se salta.
+      const dup = existentes.some(e=> Math.abs(e.t-ti)<=5*60000 && _nombresCompatibles(e.nombre, f.nombre));
+      if (dup) { saltadas++; continue; }
+      const pac = (pacientes||[]).find(pp=>pp.nombre && pp.nombre.trim().toLowerCase()===f.nombre.trim().toLowerCase());
+      if (!pac) sinPac++;
+      try {
+        const cita = construirCitaV2({ pacienteId: pac?pac.id:null, pacienteNombre:f.nombre, tipo:f.tipo,
+          medicamento:f.medicamento||null, dosis:f.medicamento?(f.dosis||null):null, origen:f.origen||null,
+          numeroVisita:f.numeroVisita, fecha:f.fecha, hora:f.hora });
+        cita.pendienteSincronizar = true; // se sincroniza al Consultorio con el botón de sincronizar
+        await crearCita(cita);
+        existentes.push({ t:ti, nombre:f.nombre }); // evita duplicar dentro del mismo lote
+        importadas++;
+      } catch(e){ console.warn("importar/crear:", e); }
+    }
+    setImportando(false);
+    alert(`Importadas ${importadas} cita(s). ${saltadas} ya existían (saltadas). ${sinPac} sin paciente vinculado.`);
+    onImportado && onImportado();
+    onClose();
+  };
+
+  const cel = { padding:"5px 6px", fontSize:11, borderBottom:"1px solid "+C.gris, textAlign:"left" };
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:4200,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:640,overflow:"hidden",
+      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:760,overflow:"hidden",
         boxShadow:"0 20px 60px rgba(0,0,0,0.25)",margin:"24px 0"}}>
         <div style={{background:C.azul,padding:"14px 22px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{color:"white",fontWeight:800,fontSize:14}}>🔍 Comparación con Google Calendar</div>
@@ -6668,24 +6749,44 @@ const ModalCompararGoogle = ({ data, onClose }) => {
                 Tabla de citas: <b>{data.totalTabla}</b> · Coincidencias: <b style={{color:C.verde}}>{data.coincidencias}</b>
               </div>
 
-              <div style={{fontWeight:800,color:C.azul,fontSize:13,marginBottom:6}}>
-                🟢 Faltantes en la app ({data.faltantes.length})
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
+                <div style={{fontWeight:800,color:C.azul,fontSize:13}}>🟢 Faltantes en la app ({filas.length}) — revisa antes de importar</div>
+                <Btn onClick={importar} color={C.verde} icon="📥" disabled={importando||seleccion===0}>
+                  {importando ? "Importando…" : `Importar ${seleccion} seleccionada(s)`}
+                </Btn>
               </div>
               <div style={{fontSize:11,color:C.suave,marginBottom:8}}>
-                Eventos en Google que NO están en la tabla. Revisa el color: verde = paciente; otros colores pueden ser personales.
+                Desmarca lo que NO sea paciente (ej. eventos personales). Lo que no se pudo parsear queda vacío y se ajusta luego con “Editar”.
               </div>
-              {data.faltantes.length===0 ? (
+              {filas.length===0 ? (
                 <div style={{fontSize:12,color:C.verde,marginBottom:16}}>✓ No falta ninguno.</div>
               ) : (
-                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:18}}>
-                  {data.faltantes.map((f,i)=>(
-                    <div key={i} style={{border:"1px solid "+C.grisMedio,borderRadius:8,padding:"8px 10px",fontSize:12}}>
-                      <div style={{fontWeight:700,color:C.texto}}>{f.summary}</div>
-                      <div style={{fontSize:11,color:C.suave,marginTop:2}}>
-                        {fmtF(f.fecha)} · {f.hora} · <b>{f.color}</b>
-                      </div>
-                    </div>
-                  ))}
+                <div style={{overflowX:"auto",marginBottom:18}}>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead>
+                      <tr style={{background:C.gris}}>
+                        {["","Nombre","Tipo","Med","Dosis","Origen","Visita","Fecha","Hora","Color"].map((h,i)=>(
+                          <th key={i} style={{...cel,fontWeight:700,color:C.suave,whiteSpace:"nowrap"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filas.map((f,i)=>(
+                        <tr key={i} style={{opacity:f.incluir?1:0.45}}>
+                          <td style={cel}><input type="checkbox" checked={f.incluir} onChange={()=>toggle(i)}/></td>
+                          <td style={{...cel,fontWeight:700,color:C.texto}} title={f.summary}>{f.nombre}</td>
+                          <td style={cel}>{TIPO_ABREV_CITA[f.tipo]||f.tipo}</td>
+                          <td style={cel}>{f.medicamento||"—"}</td>
+                          <td style={cel}>{f.dosis||"—"}</td>
+                          <td style={cel}>{f.origen||"—"}</td>
+                          <td style={cel}>{f.numeroVisita??"—"}</td>
+                          <td style={{...cel,whiteSpace:"nowrap"}}>{fmtF(f.fecha)}</td>
+                          <td style={cel}>{f.hora}</td>
+                          <td style={{...cel,color:C.suave,whiteSpace:"nowrap"}}>{f.color}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
 
@@ -6714,7 +6815,7 @@ const ModalCompararGoogle = ({ data, onClose }) => {
   );
 };
 
-const AdminCitas = () => {
+const AdminCitas = ({ pacientes=[] }) => {
   const [citas,setCitas] = useState([]);
   const [cargando,setCargando] = useState(true);
   const [comparacion,setComparacion] = useState(null); // resultado de compararConGoogle
@@ -6784,7 +6885,8 @@ const AdminCitas = () => {
         </div>
       </div>
 
-      {comparacion && <ModalCompararGoogle data={comparacion} onClose={()=>setComparacion(null)}/>}
+      {comparacion && <ModalCompararGoogle data={comparacion} pacientes={pacientes}
+        onClose={()=>setComparacion(null)} onImportado={cargar}/>}
 
       {!cargando && citas.length===0 && (
         <div style={{textAlign:"center",padding:"60px 20px",color:"var(--gft-text-muted)"}}>
@@ -7854,7 +7956,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
             );
           })()}
 
-          {contentView==="admincitas" && <AdminCitas/>}
+          {contentView==="admincitas" && <AdminCitas pacientes={pacientes}/>}
 
         </main>
       </div>
