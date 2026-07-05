@@ -625,7 +625,7 @@ const buildGCalTitulo = (pac, tipoCita) => {
 
 // ── AGENDA v2 — Modelo de cita + identidad única ─────────────────────────────
 // FASE A: solo define el modelo y los helpers. La UI (ModalAgenda/Calendario) se migra en Fase D.
-const TIPOS_CITA_V2 = ["primera_vez","seguimiento","cita_rapida"];
+const TIPOS_CITA_V2 = ["primera_vez","seguimiento"];
 const ESTADOS_CITA_V2 = ["agendada","confirmada","cancelada","completada"];
 
 // Calcula el fin (ISO local naive YYYY-MM-DDTHH:MM:00) sumando la duración al inicio.
@@ -644,7 +644,7 @@ const generarTituloCita = (cita) => {
   if (!cita) return "";
   const ordinal = (n) => { const x=parseInt(n); if(!x) return null;
     return x===1?"1ra":x===2?"2da":x===3?"3ra":x===4?"4ta":x===5?"5ta":x+"a"; };
-  const tipoAbrev = { primera_vez:"PRIM", seguimiento:"SEG", cita_rapida:"RÁPIDA" };
+  const tipoAbrev = { primera_vez:"PRIM", seguimiento:"SEG" };
   const med = cita.medicamento ? [cita.medicamento, cita.dosis].filter(Boolean).join(" ") : null;
   return [
     cita.pacienteNombre || null,
@@ -748,7 +748,7 @@ const citaAEvento = (cita) => ({
     + (cita.origen ? ` · ${cita.origen}` : ""),
   inicioISO: cita.inicio,
   finISO: cita.fin,
-  colorId: cita.tipo==="primera_vez" ? "9" : cita.tipo==="cita_rapida" ? "5" : "2",
+  colorId: cita.tipo==="primera_vez" ? "9" : "2",
   location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
 });
 
@@ -1001,7 +1001,7 @@ const compararConGoogle = async () => {
 const _instanteHermosillo = (fecha, hora) => new Date(`${fecha}T${(hora||"00:00")}:00-07:00`).getTime();
 
 // ── Confirmación de cita por WhatsApp (una sola función, reutilizada por auto-envío y botón) ──
-const TIPO_LEGIBLE_CITA = { primera_vez:"primera vez", seguimiento:"seguimiento", cita_rapida:"consulta" };
+const TIPO_LEGIBLE_CITA = { primera_vez:"primera vez", seguimiento:"seguimiento" };
 const construirMsgConfirmacion = (cita, nombre) => {
   const { fecha } = isoAInputsHmo(cita.inicio);
   const fechaLarga = fecha
@@ -6466,7 +6466,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, pacById}) => {
         </div>
         <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)",textTransform:"capitalize"}}>{tituloRango}</div>
         <div style={{marginLeft:"auto",display:"flex",gap:12,fontSize:11,color:"var(--gft-text-muted)"}}>
-          {[["Primera vez",COLOR_TIPO_CITA.primera_vez],["Seguimiento",COLOR_TIPO_CITA.seguimiento],["Rápida",COLOR_TIPO_CITA.cita_rapida]].map(([l,col])=>(
+          {[["Primera vez",COLOR_TIPO_CITA.primera_vez],["Seguimiento",COLOR_TIPO_CITA.seguimiento]].map(([l,col])=>(
             <span key={l}><span style={{display:"inline-block",width:10,height:10,borderRadius:3,background:col,marginRight:4}}/>{l}</span>
           ))}
         </div>
@@ -6506,8 +6506,8 @@ const fmtCitaHmo = (iso) => {
   return d.toLocaleString("es-MX",{timeZone:"America/Hermosillo",
     weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
 };
-const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG", cita_rapida:"RÁPIDA" };
-const COLOR_TIPO_CITA = { primera_vez:"var(--gft-accent)", seguimiento:"var(--gft-success)", cita_rapida:"#8B5CF6" };
+const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG" };
+const COLOR_TIPO_CITA = { primera_vez:"var(--gft-accent)", seguimiento:"var(--gft-success)" };
 const DOSIS_INICIALES = { MOUN:["2.5mg"], WEG:["0.25mg","0.5mg"] };
 
 // C2 — Sugerencia de dosis (solo ayuda editable) para una cita de seguimiento.
@@ -6676,8 +6676,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       <div style={{padding:14}}>
         <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={[
           {value:"primera_vez",label:"Primera vez"},
-          {value:"seguimiento",label:"Seguimiento"},
-          {value:"cita_rapida",label:"Cita rápida"}]}/>
+          {value:"seguimiento",label:"Seguimiento"}]}/>
 
         <div style={{position:"relative"}}>
           <Inp label={"Nombre del paciente"+(esPrim?"":" *")} value={nombre}
@@ -6748,7 +6747,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
 const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) => {
   const ini = isoAInputsHmo(cita.inicio);
   const [nombre,setNombre] = useState(cita.pacienteNombre||"");
-  const [tipo,setTipo]     = useState(cita.tipo||"seguimiento");
+  const [tipo,setTipo]     = useState(cita.tipo==="primera_vez" ? "primera_vez" : "seguimiento"); // degrada cita_rapida vieja → seguimiento
   const [med,setMed]       = useState(cita.medicamento||"");
   const [dosis,setDosis]   = useState(cita.dosis||"");
   const [origen,setOrigen] = useState(cita.origen||"");
@@ -6814,8 +6813,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
           <Row>
             <Sel label="Tipo" value={tipo} onChange={setTipo} opts={[
               {value:"primera_vez",label:"Primera vez"},
-              {value:"seguimiento",label:"Seguimiento"},
-              {value:"cita_rapida",label:"Cita rápida"}]}/>
+              {value:"seguimiento",label:"Seguimiento"}]}/>
             <Sel label="Estado" value={estado} onChange={setEstado} opts={[
               {value:"agendada",label:"Agendada"},{value:"confirmada",label:"Confirmada"},
               {value:"cancelada",label:"Cancelada"},{value:"completada",label:"Completada"}]}/>
@@ -7177,7 +7175,7 @@ const calcEstadisticas = (pacientes, citas) => {
   const programadasMes = citas.filter(c => mesDe(c.inicio)===mesActual && c.estado!=="cancelada").length;
 
   // Historial mes-con-mes de CITAS, meses CONTINUOS desde la más antigua hasta el mes actual.
-  const vacio = (m) => ({ mes:m, atendidas:0, programadas:0, primera_vez:0, seguimiento:0, cita_rapida:0, MOUN:0, WEG:0 });
+  const vacio = (m) => ({ mes:m, atendidas:0, programadas:0, primera_vez:0, seguimiento:0, MOUN:0, WEG:0 });
   const meses = {}; let minMes = null;
   citas.forEach(c => {
     const m = mesDe(c.inicio); if (!m) return;
@@ -7185,7 +7183,8 @@ const calcEstadisticas = (pacientes, citas) => {
     if (c.estado==="completada") meses[m].atendidas++;
     if (c.estado!=="cancelada") {
       meses[m].programadas++;
-      if (meses[m][c.tipo]!=null) meses[m][c.tipo]++;
+      const tk = c.tipo==="primera_vez" ? "primera_vez" : "seguimiento"; // cita_rapida vieja cuenta como seguimiento
+      meses[m][tk]++;
       if (c.medicamento==="MOUN") meses[m].MOUN++; else if (c.medicamento==="WEG") meses[m].WEG++;
     }
     if (!minMes || m < minMes) minMes = m;
@@ -7482,7 +7481,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const CalendarioGrid = () => (
     <div className="gft-card" style={{padding:"14px 12px"}}>
       <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap"}}>
-        {[{color:"var(--gft-accent)",label:"Primera vez"},{color:"var(--gft-success)",label:"Seguimiento"},{color:"#8B5CF6",label:"Cita rápida"}].map(l=>(
+        {[{color:"var(--gft-accent)",label:"Primera vez"},{color:"var(--gft-success)",label:"Seguimiento"}].map(l=>(
           <div key={l.label} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--gft-text-muted)"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:l.color,flexShrink:0}}/>
             {l.label}
@@ -7527,7 +7526,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                           const {hora}=isoAInputsHmo(c.inicio);
                           return (
                             <div key={ci} style={{fontSize:7,lineHeight:1.3,padding:"1px 3px",borderRadius:2,
-                              background:c.tipo==="primera_vez"?"var(--gft-accent-dim)":c.tipo==="cita_rapida"?"rgba(139,92,246,0.18)":"var(--gft-success-dim)",
+                              background:c.tipo==="primera_vez"?"var(--gft-accent-dim)":"var(--gft-success-dim)",
                               color:chipColor,fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
                               {hora?hora+" ":""}{c.pacienteNombre}
                             </div>
@@ -7564,7 +7563,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 <div style={{flex:1,minWidth:110}}>
                   <div style={{fontWeight:700,fontSize:13,color:"var(--gft-text)"}}>{c.pacienteNombre}</div>
                   <div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                    <span style={{background:c.tipo==="primera_vez"?"var(--gft-accent-dim)":c.tipo==="cita_rapida"?"rgba(139,92,246,0.18)":"var(--gft-success-dim)",
+                    <span style={{background:c.tipo==="primera_vez"?"var(--gft-accent-dim)":"var(--gft-success-dim)",
                       color:chipColor,borderRadius:10,padding:"2px 9px",fontSize:10,fontWeight:700}}>{TIPO_ABREV_CITA[c.tipo]||c.tipo}</span>
                     {medTxt && <span style={{fontSize:10,color:"var(--gft-text-muted)"}}>{medTxt}</span>}
                     {c.origen && <span style={{fontSize:10,color:"#92400E",fontWeight:700}}>{c.origen}</span>}
@@ -8462,8 +8461,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                         <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
                         <Tooltip contentStyle={tipStyle}/><Legend wrapperStyle={{fontSize:10}}/>
                         <Bar dataKey="primera_vez" stackId="t" name="Primera vez" fill="#1B3F8B"/>
-                        <Bar dataKey="seguimiento" stackId="t" name="Seguimiento" fill="#1D9E75"/>
-                        <Bar dataKey="cita_rapida" stackId="t" name="Rápida" fill="#8B5CF6" radius={[4,4,0,0]}/>
+                        <Bar dataKey="seguimiento" stackId="t" name="Seguimiento" fill="#1D9E75" radius={[4,4,0,0]}/>
                       </BarChart>
                     </Grafica>
 
