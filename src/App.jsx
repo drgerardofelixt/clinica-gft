@@ -2822,15 +2822,15 @@ const DocProgreso = ({p}) => {
   const sMusc  = serie(c=>c.musculo);
   const sCA    = caConsultas.map(c=>({f:normDate(c.fecha), v:parseFloat(c.ca)})).filter(d=>!isNaN(d.v));
   const yScale = (arr) => { const vs=arr.map(d=>d.v), min=Math.min(...vs), max=Math.max(...vs), rng=(max-min)||1;
-    return v => 58 - ((v-min)/rng)*36; };
+    return v => 42 - ((v-min)/rng)*26; };
   const Sparkline = ({arr, color, decimals=1, sufijo=""}) => {
-    if(!arr.length) return <div style={{fontSize:9,color:C.suave,padding:"18px 0"}}>Sin datos suficientes</div>;
-    const W=320, H=66, pad=20, ys=yScale(arr);
+    if(!arr.length) return <div style={{fontSize:9,color:C.suave,padding:"14px 0"}}>Sin datos suficientes</div>;
+    const W=320, H=50, pad=20, ys=yScale(arr);
     const xx = i => arr.length===1 ? W/2 : pad + (i/(arr.length-1))*(W-pad*2);
     const pts = arr.map((d,i)=>({x:xx(i), y:ys(d.v), f:d.f, v:d.v}));
     const path = pts.map((pt,i)=>(i===0?"M":"L")+pt.x.toFixed(1)+","+pt.y.toFixed(1)).join(" ");
     return (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:66,display:"block"}}>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:50,display:"block"}}>
         {pts.length>1 && <path d={path} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>}
         {pts.map((pt,i)=>(
           <g key={i}>
@@ -2842,9 +2842,9 @@ const DocProgreso = ({p}) => {
       </svg>
     );
   };
-  // Sparkline compacto (tarjeta ~133px): solo línea + punto final, sin etiquetas. Degrada seguro.
+  // Sparkline ancho compacto para filas segmentales: solo línea + punto inicio/fin, sin etiquetas. Degrada seguro.
   const SparkMini = ({arr, color}) => {
-    const W=120, H=30, pad=5;
+    const W=280, H=30, pad=6;
     const clean = (arr||[]).filter(d=>d && !isNaN(d.v));
     if(!clean.length) return (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:30,display:"block"}}>
@@ -2856,10 +2856,11 @@ const DocProgreso = ({p}) => {
     const xx = i => clean.length===1 ? W/2 : pad + (i/(clean.length-1))*(W-pad*2);
     const pts = clean.map((d,i)=>({x:xx(i), y:ys(d.v)}));
     const path = pts.map((pt,i)=>(i===0?"M":"L")+pt.x.toFixed(1)+","+pt.y.toFixed(1)).join(" ");
-    const last = pts[pts.length-1];
+    const first = pts[0], last = pts[pts.length-1];
     return (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:30,display:"block"}}>
         {pts.length>1 && <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+        {pts.length>1 && <circle cx={first.x} cy={first.y} r="2.4" fill="#fff" stroke={color} strokeWidth="1.4"/>}
         <circle cx={last.x} cy={last.y} r="2.6" fill={color}/>
       </svg>
     );
@@ -3058,8 +3059,8 @@ const DocProgreso = ({p}) => {
       <Encabezado/>
       <Banda derecha={`${n} MEDICIÓN${n!==1?"ES":""} · ${normDate(primera?.fecha)} → ${normDate(ultima?.fecha)}`}/>
 
-      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:10}}>Tu evolución, mes a mes</div>
-      <div style={{marginBottom:16}}>
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>Tu evolución, mes a mes</div>
+      <div style={{marginBottom:12}}>
         {[
           {label:"Peso", v:ultima?.peso, u:"kg", arr:sPeso, chg:pesoChange, baja:true, color:"#1B3F8B", dec:1},
           {label:"Grasa corporal", v:ultima?.grasa, u:"%", arr:sGrasa, chg:grasaChange, baja:true, color:"#E0A45F", dec:1},
@@ -3070,10 +3071,10 @@ const DocProgreso = ({p}) => {
           const flecha = m.chg==null?"":(m.chg<0?"▼":"▲");
           const bcol = bueno==null?C.suave:(bueno?"#1D9E75":"#D85A30");
           return (
-            <div key={i} style={{display:"flex",alignItems:"center",gap:14,background:"#F4F6FB",borderRadius:11,padding:"12px 16px",marginBottom:9}}>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:14,background:"#F4F6FB",borderRadius:11,padding:"8px 16px",marginBottom:7}}>
               <div style={{width:172,flexShrink:0}}>
                 <div style={{fontSize:10,fontWeight:700,color:C.suave,letterSpacing:"0.3px"}}>{m.label.toUpperCase()}</div>
-                <div className="d" style={{fontSize:26,fontWeight:700,color:C.azul,lineHeight:1.05}}>
+                <div className="d" style={{fontSize:24,fontWeight:700,color:C.azul,lineHeight:1.05}}>
                   {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:12,color:C.suave}}> {m.u}</span></div>
                 {m.chg!=null
                   ? <div style={{fontSize:11,fontWeight:700,color:bcol,marginTop:2}}>{flecha} {Math.abs(m.chg)} {m.u} <span style={{color:C.suave,fontWeight:600}}>vs. inicio</span></div>
@@ -3086,24 +3087,53 @@ const DocProgreso = ({p}) => {
       </div>
 
       {hasSegmental&&(
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>Detalle por zona del cuerpo</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:9}}>
-            {SEGS.map((s,i)=>{
-              const md=difNum(segAct[s.mKey],segRef[s.mKey]);
-              const gd=difNum(segAct[s.gKey],segRef[s.gKey]);
-              return (
-                <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:"11px 9px",textAlign:"center"}}>
-                  <div style={{fontSize:9,fontWeight:700,color:C.texto,marginBottom:5}}>{s.label}</div>
-                  <div style={{marginBottom:5}}><SparkMini arr={serie(c=>c[s.mKey])} color="#1D9E75"/></div>
-                  <div style={{fontSize:8,color:C.suave,marginBottom:1}}>MÚSCULO</div>
-                  <div style={{marginBottom:6}}><SegCell val={md} rawAct={segAct[s.mKey]} positiveGood={true} unit="kg"/></div>
-                  <div style={{fontSize:8,color:C.suave,marginBottom:1}}>GRASA</div>
-                  <div><SegCell val={gd} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/></div>
-                </div>
-              );
-            })}
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:6}}>Detalle por zona del cuerpo</div>
+          {/* Encabezados de columna */}
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 3px",fontSize:8,fontWeight:700,color:C.suave,letterSpacing:"0.3px",textTransform:"uppercase"}}>
+            <div style={{width:92,flexShrink:0}}>Zona</div>
+            <div style={{width:74,flexShrink:0,textAlign:"right"}}>Inicio</div>
+            <div style={{flex:1,textAlign:"center"}}>Evolución (músculo)</div>
+            <div style={{width:74,flexShrink:0}}>Actual</div>
+            <div style={{width:62,flexShrink:0,textAlign:"right"}}>Cambio</div>
           </div>
+          {SEGS.map((s,i)=>{
+            const sm  = serie(c=>c[s.mKey]);                 // serie de músculo de esta zona (ordenada por fecha)
+            const ini = sm[0], act = sm[sm.length-1];
+            const md  = (sm.length>=2) ? parseFloat((act.v-ini.v).toFixed(1)) : null;
+            const gd  = difNum(segAct[s.gKey],segRef[s.gKey]);
+            return (
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#F4F6FB",borderRadius:10,padding:"7px 12px",marginBottom:6}}>
+                {/* Zona + cambio de grasa */}
+                <div style={{width:92,flexShrink:0}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.texto}}>{s.label}</div>
+                  <div style={{fontSize:8.5,color:C.suave,marginTop:1}}>Grasa: <SegCell val={gd} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/></div>
+                </div>
+                {/* Inicio */}
+                <div style={{width:74,flexShrink:0,textAlign:"right"}}>
+                  {ini
+                    ? <><div style={{fontSize:11,fontWeight:700,color:C.texto,lineHeight:1.1}}>{ini.v.toFixed(1)} kg</div><div style={{fontSize:8,color:C.suave}}>{(ini.f||"").slice(0,5)}</div></>
+                    : <span style={{fontSize:10,color:C.suave}}>—</span>}
+                </div>
+                {/* Evolución (gráfica ancha de músculo) */}
+                <div style={{flex:1,minWidth:0}}>
+                  {sm.length>=2
+                    ? <SparkMini arr={sm} color="#1D9E75"/>
+                    : <div style={{fontSize:9,color:C.suave,textAlign:"center"}}>—</div>}
+                </div>
+                {/* Actual */}
+                <div style={{width:74,flexShrink:0}}>
+                  {act
+                    ? <><div style={{fontSize:11,fontWeight:700,color:C.texto,lineHeight:1.1}}>{act.v.toFixed(1)} kg</div><div style={{fontSize:8,color:C.suave}}>{(act.f||"").slice(0,5)}</div></>
+                    : <span style={{fontSize:10,color:C.suave}}>—</span>}
+                </div>
+                {/* Cambio total */}
+                <div style={{width:62,flexShrink:0,textAlign:"right"}}>
+                  <SegCell val={md} rawAct={act?act.v:null} positiveGood={true} unit="kg"/>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
