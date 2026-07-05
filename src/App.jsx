@@ -2492,9 +2492,12 @@ const DocProgreso = ({p}) => {
     c.musculoTronco, c.musculoBI, c.musculoBD, c.musculoPI, c.musculoPD,
     c.grasaTronco, c.grasaBI, c.grasaBD, c.grasaPI, c.grasaPD,
   ].some(v => v!=null && v!=="");
-  const segRef = comps.find(tieneSeg);                  // primera medición con datos reales
-  const segAct = [...comps].reverse().find(tieneSeg);   // última medición con datos reales
+  const segsConDatos = comps.filter(tieneSeg);          // todas las mediciones con segmental, en orden
+  const segRef = segsConDatos[0];                       // primera medición con datos reales (inicio)
+  const segAct = segsConDatos[segsConDatos.length-1];   // última medición con datos reales (actual)
+  const segPrev = segsConDatos.length>=2 ? segsConDatos[segsConDatos.length-2] : null; // penúltima (mes ant.)
   const hasSegmental = segRef && segAct && segRef!==segAct;
+  const mostrarMesAnt = segsConDatos.length>=3;         // con solo 2 mediciones, "mes ant." == "total" → se omite
   // Equilibrio izq/der (músculo kg) sobre la última medición con segmentales — independiente de hasSegmental (basta 1 medición)
   const equilibrioPar = (lKey, rKey, etiqueta) => {
     if(!segAct) return null;
@@ -3091,26 +3094,31 @@ const DocProgreso = ({p}) => {
           <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:6}}>Detalle por zona del cuerpo</div>
           {/* Encabezados de columna */}
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 3px",fontSize:8,fontWeight:700,color:C.suave,letterSpacing:"0.3px",textTransform:"uppercase"}}>
-            <div style={{width:92,flexShrink:0}}>Zona</div>
-            <div style={{width:74,flexShrink:0,textAlign:"right"}}>Inicio</div>
+            <div style={{width:104,flexShrink:0}}>Zona / grasa</div>
+            <div style={{width:66,flexShrink:0,textAlign:"right"}}>Inicio</div>
             <div style={{flex:1,textAlign:"center"}}>Evolución (músculo)</div>
-            <div style={{width:74,flexShrink:0}}>Actual</div>
-            <div style={{width:62,flexShrink:0,textAlign:"right"}}>Cambio</div>
+            <div style={{width:66,flexShrink:0}}>Actual</div>
+            <div style={{width:98,flexShrink:0,textAlign:"right"}}>Cambio músculo</div>
           </div>
           {SEGS.map((s,i)=>{
             const sm  = serie(c=>c[s.mKey]);                 // serie de músculo de esta zona (ordenada por fecha)
             const ini = sm[0], act = sm[sm.length-1];
-            const md  = (sm.length>=2) ? parseFloat((act.v-ini.v).toFixed(1)) : null;
-            const gd  = difNum(segAct[s.gKey],segRef[s.gKey]);
+            // Dos cambios: vs inicio (total) y vs medición anterior (mes ant.), músculo y grasa
+            const mdTotal = difNum(segAct[s.mKey], segRef[s.mKey]);
+            const mdPrev  = segPrev ? difNum(segAct[s.mKey], segPrev[s.mKey]) : null;
+            const gdTotal = difNum(segAct[s.gKey], segRef[s.gKey]);
+            const gdPrev  = segPrev ? difNum(segAct[s.gKey], segPrev[s.gKey]) : null;
             return (
               <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#F4F6FB",borderRadius:10,padding:"7px 12px",marginBottom:6}}>
-                {/* Zona + cambio de grasa */}
-                <div style={{width:92,flexShrink:0}}>
+                {/* Zona + cambios de grasa (mes ant. / total) */}
+                <div style={{width:104,flexShrink:0}}>
                   <div style={{fontSize:10,fontWeight:700,color:C.texto}}>{s.label}</div>
-                  <div style={{fontSize:8.5,color:C.suave,marginTop:1}}>Grasa: <SegCell val={gd} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/></div>
+                  {mostrarMesAnt &&
+                    <div style={{fontSize:8,color:C.suave,marginTop:2,lineHeight:1.3}}>Gr. mes ant.: <SegCell val={gdPrev} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/></div>}
+                  <div style={{fontSize:8,color:C.suave,marginTop:1,lineHeight:1.3}}>Gr. total: <SegCell val={gdTotal} rawAct={segAct[s.gKey]} positiveGood={false} unit="%"/></div>
                 </div>
                 {/* Inicio */}
-                <div style={{width:74,flexShrink:0,textAlign:"right"}}>
+                <div style={{width:66,flexShrink:0,textAlign:"right"}}>
                   {ini
                     ? <><div style={{fontSize:11,fontWeight:700,color:C.texto,lineHeight:1.1}}>{ini.v.toFixed(1)} kg</div><div style={{fontSize:8,color:C.suave}}>{(ini.f||"").slice(0,5)}</div></>
                     : <span style={{fontSize:10,color:C.suave}}>—</span>}
@@ -3122,14 +3130,16 @@ const DocProgreso = ({p}) => {
                     : <div style={{fontSize:9,color:C.suave,textAlign:"center"}}>—</div>}
                 </div>
                 {/* Actual */}
-                <div style={{width:74,flexShrink:0}}>
+                <div style={{width:66,flexShrink:0}}>
                   {act
                     ? <><div style={{fontSize:11,fontWeight:700,color:C.texto,lineHeight:1.1}}>{act.v.toFixed(1)} kg</div><div style={{fontSize:8,color:C.suave}}>{(act.f||"").slice(0,5)}</div></>
                     : <span style={{fontSize:10,color:C.suave}}>—</span>}
                 </div>
-                {/* Cambio total */}
-                <div style={{width:62,flexShrink:0,textAlign:"right"}}>
-                  <SegCell val={md} rawAct={act?act.v:null} positiveGood={true} unit="kg"/>
+                {/* Cambio músculo (mes ant. / total) */}
+                <div style={{width:98,flexShrink:0,textAlign:"right",lineHeight:1.3}}>
+                  {mostrarMesAnt &&
+                    <div style={{fontSize:8,color:C.suave}}>Mes ant. <SegCell val={mdPrev} rawAct={segAct[s.mKey]} positiveGood={true} unit="kg"/></div>}
+                  <div style={{fontSize:8,color:C.suave}}>Total <SegCell val={mdTotal} rawAct={segAct[s.mKey]} positiveGood={true} unit="kg"/></div>
                 </div>
               </div>
             );
