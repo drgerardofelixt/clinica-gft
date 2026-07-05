@@ -72,6 +72,33 @@ export const setConfig = async (clave, valor) => {
   if (error) throw error
 }
 
+// ── ESTADÍSTICAS MENSUALES (snapshot re-generable por mes) ─────────────────────
+export const guardarSnapshotMes = async (mes, datos) => {
+  const { error } = await supabase
+    .from('estadisticas_mensuales')
+    .upsert({ mes, datos, actualizado: new Date().toISOString() }, { onConflict: 'mes' })
+  if (error) throw error
+}
+
+export const listarSnapshots = async () => {
+  const { data, error } = await supabase
+    .from('estadisticas_mensuales')
+    .select('mes, datos, actualizado')
+    .order('mes', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+export const obtenerSnapshot = async (mes) => {
+  const { data, error } = await supabase
+    .from('estadisticas_mensuales')
+    .select('mes, datos, actualizado')
+    .eq('mes', mes)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
 // ── CITAS (Agenda v2) ──────────────────────────────────────────
 // Hermosillo es UTC-7 fijo (sin horario de verano). Convertimos ISO local naive → instante exacto.
 const aOffsetHermosillo = (iso) => {

@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles } from "./googleCalendar.js";
-import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId } from "./supabase.js";
+import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -7149,15 +7149,27 @@ const calcEstadisticas = (pacientes, citas) => {
   // Tratamientos (de tratamientoEfectivo): dos cortes — entre activos y entre todos.
   const cuentaTrat = (lista) => {
     let moun=0, weg=0, sinMed=0, cons=0, farm=0, sinOri=0;
+    let cm=0, cw=0, fm=0, fw=0; // cruce: consultorio×mounjaro/wegovy, farmacia×mounjaro/wegovy
     lista.forEach(p => {
       const t = tratamientoEfectivo(p);
       if (t.medicamento==="MOUN") moun++; else if (t.medicamento==="WEG") weg++; else sinMed++;
       if (t.origen==="CONS") cons++; else if (t.origen==="FARM") farm++; else sinOri++;
+      // Cruce: solo si tiene AMBOS (medicamento y origen definidos).
+      if (t.origen==="CONS" && t.medicamento==="MOUN") cm++;
+      else if (t.origen==="CONS" && t.medicamento==="WEG") cw++;
+      else if (t.origen==="FARM" && t.medicamento==="MOUN") fm++;
+      else if (t.origen==="FARM" && t.medicamento==="WEG") fw++;
     });
-    return { moun, weg, sinMed, cons, farm, sinOri, total: lista.length };
+    return { moun, weg, sinMed, cons, farm, sinOri, cm, cw, fm, fw, total: lista.length };
   };
   const tratTotales = cuentaTrat(pacientes);
   const tratActivos = cuentaTrat(pacientes.filter(p => activoSet.has(p.id)));
+  const cruce = {
+    consultorio_mounjaro_activos: tratActivos.cm, consultorio_mounjaro_totales: tratTotales.cm,
+    consultorio_wegovy_activos:   tratActivos.cw, consultorio_wegovy_totales:   tratTotales.cw,
+    farmacia_mounjaro_activos:    tratActivos.fm, farmacia_mounjaro_totales:    tratTotales.fm,
+    farmacia_wegovy_activos:      tratActivos.fw, farmacia_wegovy_totales:      tratTotales.fw,
+  };
 
   // Actividad de citas (todas tienen inicio válido).
   const atendidasTotal = citas.filter(c => c.estado==="completada").length;
@@ -7197,8 +7209,42 @@ const calcEstadisticas = (pacientes, citas) => {
     if (!c.esSoloCita) { if (parseFechaClinica(c.fecha) > 0) consultasConFecha++; else consultasSinFecha++; }
   }));
 
-  return { activos, inactivos, totales, tratActivos, tratTotales,
+  return { activos, inactivos, totales, tratActivos, tratTotales, cruce,
     atendidasMes, atendidasTotal, programadasMes, historial, consultasConFecha, consultasSinFecha };
+};
+
+// Snapshot (foto del estado ACTUAL) para un mes, reutilizando calcEstadisticas. No incluye citas (dinámicas).
+const generarSnapshotMes = (mes, pacientes, citas) => {
+  const e = calcEstadisticas(pacientes, citas);
+  return {
+    generado: new Date().toISOString(),
+    pacientes: { activos:e.activos, inactivos:e.inactivos, totales:e.totales },
+    tratamientos: {
+      mounjaro_activos:e.tratActivos.moun,   mounjaro_totales:e.tratTotales.moun,
+      wegovy_activos:e.tratActivos.weg,       wegovy_totales:e.tratTotales.weg,
+      sin_trat_activos:e.tratActivos.sinMed,  sin_trat_totales:e.tratTotales.sinMed,
+      consultorio_activos:e.tratActivos.cons, consultorio_totales:e.tratTotales.cons,
+      farmacia_activos:e.tratActivos.farm,    farmacia_totales:e.tratTotales.farm,
+      sin_origen_activos:e.tratActivos.sinOri, sin_origen_totales:e.tratTotales.sinOri,
+    },
+    cruce: e.cruce,
+  };
+};
+
+// Mes YYYY-MM anterior al dado.
+const mesAnterior = (mes) => { let [y,m]=mes.split("-").map(Number); m--; if(m<1){m=12;y--;} return `${y}-${String(m).padStart(2,"0")}`; };
+
+// Automático: si el mes ANTERIOR al actual no tiene snapshot, lo crea (foto actual). NUNCA pisa uno existente. Graceful.
+const autogenerarSnapshotFaltante = async () => {
+  try {
+    const mesActual = isoAInputsHmo(new Date().toISOString()).fecha.slice(0,7);
+    const prevMes = mesAnterior(mesActual);
+    const snaps = await listarSnapshots();
+    if (snaps.some(s => s.mes === prevMes)) return false; // ya existe → no pisar
+    const [pacientes, citas] = await Promise.all([getPacientes(), listarCitas({})]);
+    await guardarSnapshotMes(prevMes, generarSnapshotMes(prevMes, pacientes, citas));
+    return true;
+  } catch(e) { console.warn("autogenerar snapshot (no crítico):", e); return false; }
 };
 
 const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
@@ -7318,6 +7364,25 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [avisoSync, setAvisoSync] = useState("");    // toast discreto de cambios traídos de Google
   const recargarCitas = async () => { try { setCitasV2(await listarCitas({})); } catch(e){ console.error("listarCitas:",e); } };
   useEffect(()=>{ recargarCitas(); },[]);
+
+  // Estadísticas — snapshots mensuales de pacientes (Fase 2).
+  const [snapshots, setSnapshots] = useState([]);
+  const [mesSnap, setMesSnap] = useState(isoAInputsHmo(new Date().toISOString()).fecha.slice(0,7));
+  const [guardandoSnap, setGuardandoSnap] = useState(false);
+  const cargarSnapshots = async () => { try { setSnapshots(await listarSnapshots()); } catch(e){ console.warn("listarSnapshots:",e); } };
+  // Al montar: auto-crea el snapshot del mes anterior si falta (nunca pisa), luego carga la lista.
+  useEffect(()=>{ (async()=>{ await autogenerarSnapshotFaltante(); await cargarSnapshots(); })(); },[]);
+  // Botón manual: genera/regenera el snapshot del mes elegido con el estado ACTUAL (upsert = sobrescribe).
+  const cerrarMes = async () => {
+    if (!confirm(`Se generará/regenerará el snapshot de ${mesSnap} con el estado actual de pacientes. ¿Continuar?`)) return;
+    setGuardandoSnap(true);
+    try {
+      await guardarSnapshotMes(mesSnap, generarSnapshotMes(mesSnap, pacientes, citasV2));
+      await cargarSnapshots();
+      alert(`📸 Snapshot de ${mesSnap} guardado.`);
+    } catch(e){ console.error("cerrarMes:",e); alert("⚠️ No se pudo guardar el snapshot."); }
+    finally { setGuardandoSnap(false); }
+  };
 
   // B3 — Polling: en Agenda/Calendario, importa cambios de Google y refresca (silencioso, defensivo).
   const importarSilencioso = async () => {
@@ -8321,6 +8386,34 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       </tbody>
                     </table>
                   </div>
+
+                  {/* 🔀 Cruce Origen × Medicamento */}
+                  <div style={{fontWeight:800,fontSize:13,color:"var(--gft-text-2)",margin:"14px 0 8px"}}>🔀 Origen × Medicamento</div>
+                  <div className="gft-card" style={{padding:0,overflow:"hidden"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                      <thead>
+                        <tr style={{background:"var(--gft-surface2)"}}>
+                          <th style={{textAlign:"left",padding:"10px 14px",fontSize:11,color:"var(--gft-text-muted)",fontWeight:700}}>Combinación</th>
+                          <th style={{textAlign:"center",padding:"10px 14px",fontSize:11,color:"var(--gft-text-muted)",fontWeight:700}}>Activos</th>
+                          <th style={{textAlign:"center",padding:"10px 14px",fontSize:11,color:"var(--gft-text-muted)",fontWeight:700}}>Totales</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          ["Consultorio · Mounjaro","consultorio_mounjaro"],
+                          ["Consultorio · Wegovy","consultorio_wegovy"],
+                          ["Farmacia · Mounjaro","farmacia_mounjaro"],
+                          ["Farmacia · Wegovy","farmacia_wegovy"],
+                        ].map(([l,k])=>(
+                          <tr key={k} style={{borderTop:"1px solid var(--gft-border)"}}>
+                            <td style={{padding:"9px 14px",color:"var(--gft-text)"}}>{l}</td>
+                            <td style={{padding:"9px 14px",textAlign:"center",fontWeight:800,fontFamily:"var(--gft-font-data)",color:"var(--gft-success)"}}>{est.cruce[k+"_activos"]}</td>
+                            <td style={{padding:"9px 14px",textAlign:"center",fontWeight:800,fontFamily:"var(--gft-font-data)",color:"var(--gft-text)"}}>{est.cruce[k+"_totales"]}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 {/* 📅 Grupo 3 — Actividad */}
@@ -8384,6 +8477,75 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       </BarChart>
                     </Grafica>
                   </>)}
+                </div>
+
+                {/* 📸 Grupo 5 — Historial de pacientes (snapshots mensuales) */}
+                <div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:10}}>
+                    <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)"}}>📸 Historial de pacientes (snapshots)</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <input type="month" value={mesSnap} onChange={e=>setMesSnap(e.target.value)}
+                        style={{fontSize:12,padding:"5px 8px",border:"1px solid var(--gft-border)",borderRadius:8,background:"var(--gft-surface)",color:"var(--gft-text)"}}/>
+                      <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={cerrarMes} disabled={guardandoSnap}>
+                        {guardandoSnap?"Guardando…":"📸 Cerrar/regenerar mes"}
+                      </button>
+                    </div>
+                  </div>
+                  {snapshots.length<=1 ? (
+                    <div className="gft-card" style={{textAlign:"center",padding:26,color:"var(--gft-text-muted)"}}>
+                      Aún acumulando datos; el historial aparecerá al cerrar meses. ({snapshots.length} snapshot{snapshots.length===1?"":"s"} hasta ahora.)
+                    </div>
+                  ) : (()=>{
+                    const histPac = snapshots.map(s=>{
+                      const d=s.datos||{}, t=d.tratamientos||{}, cr=d.cruce||{};
+                      const [yy,mm]=s.mes.split("-").map(Number);
+                      return { mes:s.mes, label:new Date(yy,mm-1,1).toLocaleDateString("es-MX",{month:"short",year:"numeric"}),
+                        activos:(d.pacientes&&d.pacientes.activos)||0,
+                        mounjaro:t.mounjaro_activos||0, wegovy:t.wegovy_activos||0,
+                        farmacia:t.farmacia_activos||0, consultorio:t.consultorio_activos||0,
+                        cm:cr.consultorio_mounjaro_activos||0, cw:cr.consultorio_wegovy_activos||0,
+                        fm:cr.farmacia_mounjaro_activos||0, fw:cr.farmacia_wegovy_activos||0 };
+                    });
+                    return (<>
+                      <Grafica titulo="Pacientes activos por mes">
+                        <LineChart data={histPac}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                          <Tooltip contentStyle={tipStyle}/>
+                          <Line type="monotone" dataKey="activos" name="Activos" stroke="#1D9E75" strokeWidth={2.5} dot={{r:3,fill:"#1D9E75"}}/>
+                        </LineChart>
+                      </Grafica>
+                      <Grafica titulo="Medicamento por mes (activos)">
+                        <BarChart data={histPac}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                          <Tooltip contentStyle={tipStyle}/><Legend wrapperStyle={{fontSize:10}}/>
+                          <Bar dataKey="mounjaro" stackId="m" name="Mounjaro" fill="#5B8DB8"/>
+                          <Bar dataKey="wegovy" stackId="m" name="Wegovy" fill="#8B5CF6" radius={[4,4,0,0]}/>
+                        </BarChart>
+                      </Grafica>
+                      <Grafica titulo="Origen por mes (activos)">
+                        <BarChart data={histPac}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                          <Tooltip contentStyle={tipStyle}/><Legend wrapperStyle={{fontSize:10}}/>
+                          <Bar dataKey="consultorio" stackId="o" name="Consultorio" fill="#1B3F8B"/>
+                          <Bar dataKey="farmacia" stackId="o" name="Farmacia" fill="#E0A45F" radius={[4,4,0,0]}/>
+                        </BarChart>
+                      </Grafica>
+                      <Grafica titulo="Cruce origen × medicamento por mes (activos)">
+                        <BarChart data={histPac}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                          <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                          <Tooltip contentStyle={tipStyle}/><Legend wrapperStyle={{fontSize:10}}/>
+                          <Bar dataKey="cm" stackId="x" name="Cons·MOUN" fill="#1B3F8B"/>
+                          <Bar dataKey="cw" stackId="x" name="Cons·WEG" fill="#5B8DB8"/>
+                          <Bar dataKey="fm" stackId="x" name="Farm·MOUN" fill="#E0A45F"/>
+                          <Bar dataKey="fw" stackId="x" name="Farm·WEG" fill="#8B5CF6" radius={[4,4,0,0]}/>
+                        </BarChart>
+                      </Grafica>
+                    </>);
+                  })()}
                 </div>
               </div>
             );
