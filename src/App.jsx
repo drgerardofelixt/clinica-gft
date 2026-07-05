@@ -7126,10 +7126,30 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const citasV2Hoy = (citasV2Dia[hoyStr]||[]).slice().sort(ordCita);
   const citasV2Manana = (citasV2Dia[mananaStr]||[]).slice().sort(ordCita);
   const pacById = (id) => pacientes.find(pp=>pp.id===id) || null;
+  // TAREA 1 — Contadores de consultas ATENDIDAS (estado 'completada') desde la tabla `citas`.
+  const _mesActualHmo = isoAInputsHmo(new Date().toISOString()).fecha.slice(0,7); // YYYY-MM en Hermosillo
+  const atendidasMes = citasV2.filter(c=>c.estado==="completada" && isoAInputsHmo(c.inicio).fecha.slice(0,7)===_mesActualHmo).length;
+  const atendidasTotal = citasV2.filter(c=>c.estado==="completada").length;
+  // Pendientes de hoy (no terminadas ni canceladas) para el contador de la Cola del día.
+  const pendientesHoy = citasV2Hoy.filter(c=>c.estado!=="completada" && c.estado!=="cancelada").length;
   const borrarCitaV2 = async (c) => {
     if (!confirm(`¿Borrar la cita de ${c.pacienteNombre} del ${fmtCitaHmo(c.inicio)}?`)) return;
     try { await borrarCita(c.id); await pushBorrarEventoGCal(c); setCitaEditar(null); recargarCitas(); }
     catch(e){ console.error("borrarCita:",e); alert("⚠️ No se pudo borrar la cita."); }
+  };
+  // TAREA 2 — Marcar terminada (mantiene el evento de Google; la consulta SÍ ocurrió).
+  const terminarCita = async (c) => {
+    try { await actualizarCita(c.id, { estado:"completada" }); recargarCitas(); }
+    catch(e){ console.error("terminar:",e); alert("⚠️ No se pudo marcar como terminada."); }
+  };
+  // TAREA 2 — Cancelar: cambia estado (conserva la fila) y borra el evento en Google (graceful).
+  const cancelarCitaV2 = async (c) => {
+    if (!confirm(`¿Cancelar la cita de ${c.pacienteNombre}? Se borrará su evento en Google Calendar (el registro se conserva).`)) return;
+    try {
+      await actualizarCita(c.id, { estado:"cancelada" }); // Supabase primero
+      await pushBorrarEventoGCal(c);                        // luego Google (no crítico)
+      recargarCitas();
+    } catch(e){ console.error("cancelar:",e); alert("⚠️ No se pudo cancelar la cita."); }
   };
 
   const enviarRecordatorio = (c) => {
@@ -7371,10 +7391,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               {/* Stats row */}
               <div className="gft-dash-stats">
                 {[
-                  {l:"Pacientes",   v:pacientes.length, unit:"total",      color:"var(--gft-accent)",   action:()=>setContentView("pacientes")},
-                  {l:"Consultas",   v:totalC,            unit:"total",      color:"var(--gft-success)",  action:()=>setContentView("pacientes")},
-                  {l:"Citas hoy",   v:citasV2Hoy.length, unit:"programadas",color:"var(--gft-warning)",  action:()=>setContentView("agenda")},
-                  {l:"Labs vencen", v:labsHoy.length,    unit:"pendientes", color:"var(--gft-danger)",   action:()=>{setLabsFilter(true);setContentView("pacientes");}},
+                  {l:"Pacientes",              v:pacientes.length, unit:"total",       color:"var(--gft-accent)",  action:()=>setContentView("pacientes")},
+                  {l:"Atendidas este mes",     v:atendidasMes,     unit:"completadas", color:"var(--gft-success)", action:()=>setContentView("agenda")},
+                  {l:"Atendidas en total",     v:atendidasTotal,   unit:"histórico",   color:"var(--gft-warning)", action:()=>setContentView("agenda")},
+                  {l:"Labs vencen",            v:labsHoy.length,   unit:"pendientes",  color:"var(--gft-danger)",  action:()=>{setLabsFilter(true);setContentView("pacientes");}},
                 ].map(s=>(
                   <div key={s.l} className="gft-stat"
                     style={{borderTop:`2px solid ${s.color}`,cursor:"pointer",
@@ -7605,7 +7625,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                   <div className="gft-panel">
                     <div className="gft-panel__header">
                       <div className="gft-panel__title">Cola del día</div>
-                      {citasV2Hoy.length>0&&<span className="gft-panel__count">{citasV2Hoy.length}</span>}
+                      {pendientesHoy>0&&<span className="gft-panel__count" title="Pendientes de hoy">{pendientesHoy}</span>}
                     </div>
                     {citasV2Hoy.length===0 ? (
                       <div className="gft-panel__empty">Sin citas hoy</div>
@@ -7614,24 +7634,40 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       const pac=pacById(c.pacienteId);
                       const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
                       const medTxt=c.medicamento?[c.medicamento,c.dosis].filter(Boolean).join(" "):"";
+                      const terminada = c.estado==="completada";
+                      const cancelada = c.estado==="cancelada";
                       return (
                         <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,
                           padding:"9px 0",borderBottom:i<citasV2Hoy.length-1?"1px solid var(--gft-border)":"none",
-                          cursor:pac?"pointer":"default"}}
+                          cursor:pac?"pointer":"default",opacity:terminada?0.55:1}}
                           onClick={()=>pac&&onVer(pac)}>
                           <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
                             color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
                           <div style={{flex:1,minWidth:0}}>
                             <div title={c.pacienteNombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}</div>
+                              textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:cancelada?"line-through":"none"}}>{c.pacienteNombre}</div>
                             <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
                               {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
                             </div>
                           </div>
-                          <button title="Enviar confirmación por WhatsApp" className="gft-btn gft-btn--secondary gft-btn--sm"
-                            style={{flexShrink:0,fontSize:11}}
-                            onClick={e=>{e.stopPropagation(); enviarConfirmacionCita(c, pac);}}>📱</button>
-                          {pac&&<span style={{fontSize:12,color:"var(--gft-accent)",flexShrink:0}}>→</span>}
+                          {terminada ? (
+                            <span style={{flexShrink:0,fontSize:10,fontWeight:700,color:"var(--gft-success)",
+                              background:"var(--gft-success-dim)",borderRadius:10,padding:"2px 9px"}}>Terminada ✓</span>
+                          ) : cancelada ? (
+                            <span style={{flexShrink:0,fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",
+                              background:"var(--gft-surface2)",borderRadius:10,padding:"2px 9px"}}>Cancelada</span>
+                          ) : (
+                            <div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                              <button title="Marcar terminada" className="gft-btn gft-btn--secondary gft-btn--sm"
+                                style={{fontSize:11}} onClick={()=>terminarCita(c)}>✅</button>
+                              <button title="Cancelar cita" className="gft-btn gft-btn--secondary gft-btn--sm"
+                                style={{fontSize:11}} onClick={()=>cancelarCitaV2(c)}>❌</button>
+                              <button title="Reagendar" className="gft-btn gft-btn--secondary gft-btn--sm"
+                                style={{fontSize:11}} onClick={()=>setCitaEditar(c)}>🔄</button>
+                              <button title="Enviar confirmación por WhatsApp" className="gft-btn gft-btn--secondary gft-btn--sm"
+                                style={{fontSize:11}} onClick={()=>enviarConfirmacionCita(c, pac)}>📱</button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
