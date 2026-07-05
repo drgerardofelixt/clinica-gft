@@ -410,6 +410,29 @@ const actualizarTratamientoPaciente = async (paciente, cambios) => {
   } catch(e) { console.warn("actualizarTratamientoPaciente (no crítico):", e); }
 };
 
+// ── FASE 3 — Lectura: p.tratamiento como fuente de verdad, con fallback legacy p.ci.glp1 ──
+const MED_NOMBRE = { MOUN:"Mounjaro", WEG:"Wegovy" };
+const ORIGEN_NOMBRE = { FARM:"Farmacia", CONS:"Consultorio" };
+// Resuelve el tratamiento efectivo del paciente: p.tratamiento (principal) o fallback legacy p.ci.glp1 (canónico).
+const tratamientoEfectivo = (p) => {
+  const t = p && p.tratamiento;
+  if (t && t.medicamento) return { medicamento: t.medicamento, dosis: t.dosis||null, origen: t.origen||null };
+  const glp = (p && p.ci && p.ci.glp1) || "";
+  if (!glp) return { medicamento:null, dosis:null, origen:null };
+  const dm = glp.match(/([\d.]+\s*mg)/i);
+  return { medicamento: _canonMed(glp), dosis: _canonDosis(dm ? dm[1] : ((p.ci && p.ci.dosis) || null)), origen: null };
+};
+// Solo el nombre del medicamento ("Mounjaro"/"Wegovy"/"") — para pills/chips.
+const medLegibleCorto = (trat) => (trat && trat.medicamento) ? (MED_NOMBRE[trat.medicamento] || trat.medicamento) : "";
+// Texto legible completo: "Mounjaro 5mg" (y "· Farmacia" si conOrigen). "" si no hay medicamento.
+const formatearTratamiento = (trat, { conOrigen=false } = {}) => {
+  if (!trat || !trat.medicamento) return "";
+  let s = MED_NOMBRE[trat.medicamento] || trat.medicamento;
+  if (trat.dosis) s += " " + trat.dosis;
+  if (conOrigen && trat.origen) s += " · " + (ORIGEN_NOMBRE[trat.origen] || trat.origen);
+  return s;
+};
+
 // FASE 2 — Migración: puebla p.tratamiento de todos los pacientes desde su CITA MÁS RECIENTE con medicamento
 // (fallback: última consulta con medicamento). Idempotente y conservador: no pisa un tratamiento ajustado a
 // mano más reciente que la fuente. Reusa mergeTratamiento/actualizarTratamientoPaciente (Fase 1). Lee datos FRESCOS.
@@ -2240,8 +2263,9 @@ const DocProgreso = ({p}) => {
   // Consulta más reciente (real, por fecha clínica) para tratamiento actual
   const ultimaConsulta = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica).slice(-1)[0];
   const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
-  const med   = ultimaConsulta?.medicamento || p.ci?.glp1 || p.ci?.medicamento || null;
-  const dosis = ultimaConsulta?.dosis || p.ci?.dosis || null;
+  const _tEf  = tratamientoEfectivo(p);
+  const med   = ultimaConsulta?.medicamento || medLegibleCorto(_tEf) || null;
+  const dosis = ultimaConsulta?.dosis || _tEf.dosis || null;
   const esMujer = /mujer|femenino|^f$/i.test(p.sexo||"");
 
   const pesoDif    = difStr(ultima?.peso, primera?.peso);
@@ -5003,7 +5027,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
               <div className="gft-patient-info__name">{p.nombre}</div>
               <div className="gft-patient-info__sub">
                 {p.edad} años · {p.sexo} · {p.talla} cm
-                {(p.ci?.glp1||p.ci?.medicamento)?` · ${p.ci.glp1||p.ci.medicamento}`:""}
+                {(()=>{ const t=formatearTratamiento(tratamientoEfectivo(p)); return t?` · ${t}`:""; })()}
               </div>
               <div style={{marginTop:6,fontSize:11,color:"var(--gft-text-muted)"}}>Exp: {(p.id||"").slice(-6).toUpperCase()}</div>
             </div>
@@ -5633,7 +5657,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                 {t:"Identificación",rows:[["Nombre",p.nombre],["Edad",p.edad+" años"],["Sexo",p.sexo],["Talla",p.talla+" cm"]]},
                 {t:"Antecedentes",rows:[["Enf. crónicas",p.ant&&p.ant.cronicas],["Alergias",p.ant&&p.ant.alergias],["Medicamentos",p.ant&&p.ant.medicamentos]]},
                 {t:"Metabólicos",rows:[["HTA",p.meta&&p.meta.hta],["DM2",p.meta&&p.meta.dm2],["Dislipidemias",p.meta&&p.meta.dislipidemias]]},
-                {t:"Tratamiento",rows:[["GLP-1",p.ci&&p.ci.glp1],["Grado",p.ci&&p.ci.grado],["Objetivo",p.pesoObjetivo+" kg"]]},
+                {t:"Tratamiento",rows:[["Medicamento",formatearTratamiento(tratamientoEfectivo(p),{conOrigen:true})],["Grado",p.ci&&p.ci.grado],["Objetivo",p.pesoObjetivo+" kg"]]},
               ].map(g=>(
                 <div key={g.t}>
                   <div style={{fontSize:10,fontWeight:800,color:C.verde,letterSpacing:1,
@@ -6490,13 +6514,12 @@ const DOSIS_INICIALES = { MOUN:["2.5mg"], WEG:["0.25mg","0.5mg"] };
 // Devuelve { med, dosis, accion:'subir'|'mantener', texto } o null si no hay datos suficientes.
 const sugerirDosisSeguimiento = (pac) => {
   if (!pac) return null;
-  const glp = (pac.ci && pac.ci.glp1) || "";
-  if (!glp) return null;
-  const med = abrevMed(glp);
+  const t = tratamientoEfectivo(pac);   // fuente de verdad (canónico MOUN/WEG + "5mg"), con fallback legacy
+  const med = t.medicamento;
+  if (!med) return null;
   const escala = DOSIS_POR_MED[med];
   if (!escala) return null;
-  const dm = glp.match(/([\d.]+\s*mg)/i);
-  const dosisAct = dm ? dm[1].replace(/\s+/g,"") : null;
+  const dosisAct = t.dosis;
   if (!dosisAct || !escala.includes(dosisAct)) return null;
   const idx = escala.indexOf(dosisAct);
   const subir = escala[Math.min(idx+1, escala.length-1)];
@@ -6570,13 +6593,11 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   // Prefijar medicamento/dosis cuando se elige paciente o cambia a seguimiento
   useEffect(()=>{
     if (tipo==="seguimiento" && pacienteLink) {
-      const glp = (pacienteLink.ci && pacienteLink.ci.glp1) || "";
-      const medAct = glp ? abrevMed(glp) : "";
-      const dmAct = glp.match(/([\d.]+\s*mg)/i);
-      const dosisAct = dmAct ? dmAct[1].replace(/\s+/g,"") : "";
+      const t = tratamientoEfectivo(pacienteLink); // canónico, casa directo con los selects de la cita
       const sug = sugerirDosisSeguimiento(pacienteLink);
-      if (medAct) setMed(medAct);
-      setDosis((sug && sug.dosis) || dosisAct || "");
+      if (t.medicamento) setMed(t.medicamento);
+      setDosis((sug && sug.dosis) || t.dosis || "");
+      if (t.origen) setOrigen(t.origen);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[pacienteLink && pacienteLink.id, tipo]);
@@ -7682,7 +7703,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                             <div style={{fontSize:16,fontWeight:700,color:"var(--gft-text)",fontFamily:"var(--gft-font-display)",
                               overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pac.nombre}</div>
                             <div style={{fontSize:12,color:"var(--gft-text-muted)",marginTop:2}}>
-                              {pac.edad} años · {pac.sexo}{pac.ci?.glp1?" · "+pac.ci.glp1.split(" ")[0]:""}
+                              {pac.edad} años · {pac.sexo}{(()=>{ const m=medLegibleCorto(tratamientoEfectivo(pac)); return m?" · "+m:""; })()}
                             </div>
                             {citaHoy?.hora && (
                               <div style={{fontSize:11,color:"var(--gft-accent)",marginTop:4,fontWeight:600}}>
@@ -8052,7 +8073,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                           <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
                             {uc?.peso&&<span className="gft-pill gft-pill--blue">{uc.peso} kg</span>}
                             {perd&&parseFloat(perd)>0&&<span className="gft-pill gft-pill--green">↓ {perd} kg</span>}
-                            {p.ci?.glp1&&<span className="gft-pill gft-pill--purple">{p.ci.glp1.split(" ")[0]}</span>}
+                            {medLegibleCorto(tratamientoEfectivo(p))&&<span className="gft-pill gft-pill--purple">{medLegibleCorto(tratamientoEfectivo(p))}</span>}
                             {al.nivel==="amarillo"&&<span className="gft-pill gft-pill--amber">⚠️ Labs {90-al.dias}d</span>}
                             {al.nivel==="rojo"&&<span className="gft-pill gft-pill--red">🚨 Labs vencidos</span>}
                           </div>
