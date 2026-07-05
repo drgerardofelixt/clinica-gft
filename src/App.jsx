@@ -2961,9 +2961,10 @@ const DocProgreso = ({p}) => {
         {/* Fila 1 — Composición corporal */}
         <div style={{fontSize:9,fontWeight:700,color:C.suave,letterSpacing:.4,margin:"14px 0 6px"}}>COMPOSICIÓN CORPORAL</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:9}}>
-          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0",textAlign:"center"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>PESO META (IMC SALUDABLE)</div>
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{pesoObj}<span style={{fontSize:11,color:C.suave}}> kg</span></div>
+            <div style={{fontSize:8,color:C.suave,marginTop:2}}>Basado en IMC saludable (OMS)</div>
           </div>
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>METABOLISMO BASAL</div>
