@@ -364,6 +364,52 @@ const abrevMed = (med) => {
   return med.replace(/[^a-zA-Z]/g,"").slice(0,4).toUpperCase();
 };
 
+// ── TRATAMIENTO ACTUAL (fuente de verdad p.tratamiento) — Fase 1: solo escritura ──
+// Normaliza cualquier formato (cita, consulta full-name, alta) al canónico MOUN/WEG · "5mg" · FARM/CONS.
+const _canonMed = (m) => {
+  if (!m) return null;
+  const u = String(m).toUpperCase();
+  if (/MOUN|TIRZ/.test(u)) return "MOUN";
+  if (/WEG|SEMA|OZEM/.test(u)) return "WEG";
+  return null; // desconocido → no forzamos (no pisamos con basura)
+};
+const _canonOrigen = (o) => {
+  if (!o) return null;
+  const u = String(o).toUpperCase();
+  if (u.startsWith("FARM")) return "FARM";      // "FARM" o "Farmacia"
+  if (u.startsWith("CONS") || u.startsWith("CON")) return "CONS"; // "CONS" o "Consultorio" o "CON"
+  return null;
+};
+const _canonDosis = (d) => {
+  if (!d) return null;
+  const s = String(d).trim();
+  if (/^\d+(\.\d+)?\s*mg$/i.test(s)) return s.replace(/\s+/g,"").toLowerCase(); // "5 mg"→"5mg"
+  const num = s.match(/^(\d+(?:\.\d+)?)$/);
+  if (num) return num[1] + "mg"; // "5"→"5mg"
+  return s; // texto libre → conservar tal cual (no perder el dato)
+};
+// Fusiona el tratamiento actual con cambios, SOLO pisando campos que traigan valor (nunca borra con null).
+const mergeTratamiento = (actual, cambios) => {
+  const med = _canonMed(cambios && cambios.medicamento);
+  const dos = _canonDosis(cambios && cambios.dosis);
+  const ori = _canonOrigen(cambios && cambios.origen);
+  const next = { ...(actual || {}) };
+  if (med) next.medicamento = med;
+  if (dos) next.dosis = dos;
+  if (ori) next.origen = ori;
+  next.actualizado = new Date().toISOString();
+  return next;
+};
+// Persiste el tratamiento en el paciente (para escritores de CITA). Seguro si no hay paciente. Graceful.
+const actualizarTratamientoPaciente = async (paciente, cambios) => {
+  try {
+    if (!paciente || !paciente.id) return;                 // cita rápida sin expediente → no hace nada
+    if (!(cambios && (cambios.medicamento || cambios.dosis || cambios.origen))) return;
+    const next = mergeTratamiento(paciente.tratamiento, cambios);
+    await savePaciente({ ...paciente, tratamiento: next });
+  } catch(e) { console.warn("actualizarTratamientoPaciente (no crítico):", e); }
+};
+
 // Slots de GCal ocupados en una fecha dada (reusa el array gcalEventos ya cargado a nivel App)
 const gcalOcupadasEnFecha = (gcalEventos, fechaSel) => (gcalEventos||[]).flatMap(ev => {
   const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
@@ -4099,7 +4145,10 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
   // para que aparezca en la pestaña Evolución y en el Expediente completo.
   const guardarPaciente = () => {
     if (!f.sexo) { alert("Selecciona el sexo del paciente antes de guardar (paso Identificación)."); setStep(0); return; }
-    if (pac) { onSave(f); return; } // edición: NO crear consulta inicial (evita duplicados)
+    // Fase 1 — Tratamiento actual desde el alta/edición (medicamento=GLP-1 full; dosis extraída del nombre o del campo). Sin origen en el alta.
+    const _dosisAlta = (((f.ci.glp1||"").match(/([\d.]+\s*mg)/i)||[])[1]) || f.ci.dosis || null;
+    const _tratAlta = f.ci.glp1 ? { tratamiento: mergeTratamiento(f.tratamiento, { medicamento: f.ci.glp1, dosis: _dosisAlta, origen: null }) } : {};
+    if (pac) { onSave({...f, ..._tratAlta}); return; } // edición: NO crear consulta inicial (evita duplicados)
     const arr = [...(f.composicion||[])];
     const compInicial = arr.length ? arr[arr.length-1] : null;
     const cid = (compInicial && compInicial.id) || crypto.randomUUID();
@@ -4117,7 +4166,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
       medicamento: f.ci.glp1||"", dosis: f.ci.dosis||"",
       comp: compInicial ? {...compInicial} : {},
     };
-    onSave({...f, composicion: arr, consultas: [...(f.consultas||[]), consultaInicial]});
+    onSave({...f, composicion: arr, consultas: [...(f.consultas||[]), consultaInicial], ..._tratAlta});
   };
 
   return (
@@ -4571,6 +4620,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       fecha: d.fecha,
       id: d.id,
     };
+    // Fase 1 — Actualiza el tratamiento actual desde esta consulta (si trae medicamento). No pisa si no hay.
+    const tratUpd = d.medicamento
+      ? { tratamiento: mergeTratamiento(p.tratamiento, { medicamento: d.medicamento, dosis: d.dosis, origen: d.origenMed }) }
+      : {};
     const tieneComp = comp.peso || comp.grasa || comp.musculo;
     // Detección de duplicado: ¿ya existe una medición de composición para esta misma fecha?
     const fechaNorm = normDate(comp.fecha);
@@ -4589,12 +4642,14 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       onUpdate({...p,
         consultas:[...(p.consultas||[]),d],
         composicion,
+        ...tratUpd,
       });
       return true;
     }
     onUpdate({...p,
       consultas:[...(p.consultas||[]),d],
       composicion:[...(p.composicion||[]),comp],
+      ...tratUpd,
     });
     // No se cierra aquí: ModalConsulta continúa al flujo reporte → próxima cita y cierra al final (o con X).
     return true;
@@ -4613,9 +4668,13 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const composicion = yaExiste
       ? (p.composicion||[]).map(c => sameComp(c) ? comp : c)
       : (tieneComp ? [...(p.composicion||[]), comp] : (p.composicion||[]));
+    const tratUpd = d.medicamento
+      ? { tratamiento: mergeTratamiento(p.tratamiento, { medicamento: d.medicamento, dosis: d.dosis, origen: d.origenMed }) }
+      : {};
     onUpdate({...p,
       consultas:(p.consultas||[]).map(c => c.id===d.id ? d : c),
       composicion,
+      ...tratUpd,
     });
     setConsultaAEditar(null);
   };
@@ -6537,6 +6596,11 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       } else {
         alert("Cita agendada. Sin teléfono para enviar confirmación.");
       }
+      // Fase 1 — Actualiza el tratamiento actual del paciente desde esta cita (fuente de verdad). No crítico.
+      if (cita.medicamento) {
+        const pacTrat = pacienteLink || (pacientes||[]).find(pp=>pp.id===pacienteId) || null;
+        actualizarTratamientoPaciente(pacTrat, { medicamento: cita.medicamento, dosis: cita.dosis, origen: cita.origen });
+      }
       // D2-A — Escritura a Google (no crítica): crear evento en el calendario dedicado y enlazar googleEventId.
       const gc = await pushCrearEventoGCal(creada);
       if (gc && gc.googleEventId) {
@@ -6624,7 +6688,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   );
 };
 
-const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar}) => {
+const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) => {
   const ini = isoAInputsHmo(cita.inicio);
   const [nombre,setNombre] = useState(cita.pacienteNombre||"");
   const [tipo,setTipo]     = useState(cita.tipo||"seguimiento");
@@ -6662,6 +6726,11 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar}) => {
     cambios.tituloGenerado = generarTituloCita({ ...cita, ...cambios });
     try {
       await actualizarCita(cita.id, cambios); // incrementa version + ultima_modificacion (Fase B)
+      // Fase 1 — Actualiza el tratamiento actual del paciente vinculado desde esta edición. No crítico.
+      if (med) {
+        const pacTrat = (pacientes||[]).find(pp=>pp.id===cita.pacienteId) || null;
+        actualizarTratamientoPaciente(pacTrat, { medicamento: med, dosis, origen });
+      }
       // D2-A — Reflejar en Google si la cita ya está enlazada (no crítico).
       if (cita.googleEventId) {
         const ok = await pushActualizarEventoGCal({ ...cita, ...cambios });
@@ -6974,7 +7043,7 @@ const AdminCitas = ({ pacientes=[] }) => {
         })}
       </div>
 
-      {editar && <ModalEditarCitaAdmin cita={editar} onClose={()=>setEditar(null)}
+      {editar && <ModalEditarCitaAdmin cita={editar} pacientes={pacientes} onClose={()=>setEditar(null)}
         onSaved={()=>{ setEditar(null); cargar(); }}/>}
     </>
   );
@@ -8053,6 +8122,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
       {citaEditar && (
         <ModalEditarCitaAdmin
           cita={citaEditar}
+          pacientes={pacientes}
           onClose={()=>setCitaEditar(null)}
           onSaved={()=>{ setCitaEditar(null); recargarCitas(); }}
           onBorrar={()=>borrarCitaV2(citaEditar)}
