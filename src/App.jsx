@@ -2495,6 +2495,22 @@ const DocProgreso = ({p}) => {
   const segRef = comps.find(tieneSeg);                  // primera medición con datos reales
   const segAct = [...comps].reverse().find(tieneSeg);   // última medición con datos reales
   const hasSegmental = segRef && segAct && segRef!==segAct;
+  // Equilibrio izq/der (músculo kg) sobre la última medición con segmentales — independiente de hasSegmental (basta 1 medición)
+  const equilibrioPar = (lKey, rKey, etiqueta) => {
+    if(!segAct) return null;
+    const l=parseFloat(segAct[lKey]), r=parseFloat(segAct[rKey]);
+    if(isNaN(l)||isNaN(r)||l<=0||r<=0) return null;            // falta un lado → no se muestra
+    const difPct = Math.round(Math.abs(l-r)/Math.max(l,r)*100);
+    const lado = l>r ? "Izq." : "Der.";                        // lado más fuerte
+    let nivel, color;
+    if(difPct<10){ nivel="equilibrado"; color="#1D9E75"; }
+    else if(difPct<15){ nivel="leve diferencia"; color="#E0A45F"; }
+    else { nivel="desequilibrio notable"; color="#D85A30"; }
+    return { etiqueta, difPct, lado, nivel, color };
+  };
+  const equilBrazos  = equilibrioPar("musculoBI","musculoBD","🦾 Brazos");
+  const equilPiernas = equilibrioPar("musculoPI","musculoPD","🦵 Piernas");
+  const hayEquilibrio = !!(equilBrazos || equilPiernas);
   // val = difNum result (number or null); null = dato ausente → "—"; 0 = sin cambio → "= X"
   const SegCell = ({val, rawAct, positiveGood, unit}) => {
     if(val==null) {
@@ -2826,6 +2842,28 @@ const DocProgreso = ({p}) => {
       </svg>
     );
   };
+  // Sparkline compacto (tarjeta ~133px): solo línea + punto final, sin etiquetas. Degrada seguro.
+  const SparkMini = ({arr, color}) => {
+    const W=120, H=30, pad=5;
+    const clean = (arr||[]).filter(d=>d && !isNaN(d.v));
+    if(!clean.length) return (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:30,display:"block"}}>
+        <line x1={pad} y1={H/2} x2={W-pad} y2={H/2} stroke={C.grisMedio} strokeWidth="1" strokeDasharray="2 3"/>
+      </svg>
+    );
+    const vs=clean.map(d=>d.v), min=Math.min(...vs), max=Math.max(...vs), rng=(max-min)||1;
+    const ys = v => (H-6) - ((v-min)/rng)*(H-12);
+    const xx = i => clean.length===1 ? W/2 : pad + (i/(clean.length-1))*(W-pad*2);
+    const pts = clean.map((d,i)=>({x:xx(i), y:ys(d.v)}));
+    const path = pts.map((pt,i)=>(i===0?"M":"L")+pt.x.toFixed(1)+","+pt.y.toFixed(1)).join(" ");
+    const last = pts[pts.length-1];
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:30,display:"block"}}>
+        {pts.length>1 && <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+        <circle cx={last.x} cy={last.y} r="2.6" fill={color}/>
+      </svg>
+    );
+  };
 
   const fechaHoy = new Date().toLocaleDateString("es-MX",{day:"numeric",month:"long",year:"numeric"});
   const imcZona = zonaDe(ultima?.imc, ZONAS_IMC);
@@ -3056,7 +3094,8 @@ const DocProgreso = ({p}) => {
               const gd=difNum(segAct[s.gKey],segRef[s.gKey]);
               return (
                 <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:"11px 9px",textAlign:"center"}}>
-                  <div style={{fontSize:9,fontWeight:700,color:C.texto,marginBottom:7}}>{s.label}</div>
+                  <div style={{fontSize:9,fontWeight:700,color:C.texto,marginBottom:5}}>{s.label}</div>
+                  <div style={{marginBottom:5}}><SparkMini arr={serie(c=>c[s.mKey])} color="#1D9E75"/></div>
                   <div style={{fontSize:8,color:C.suave,marginBottom:1}}>MÚSCULO</div>
                   <div style={{marginBottom:6}}><SegCell val={md} rawAct={segAct[s.mKey]} positiveGood={true} unit="kg"/></div>
                   <div style={{fontSize:8,color:C.suave,marginBottom:1}}>GRASA</div>
@@ -3064,6 +3103,24 @@ const DocProgreso = ({p}) => {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {hayEquilibrio && (
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>Equilibrio izquierda / derecha</div>
+          <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
+            {[equilBrazos, equilPiernas].filter(Boolean).map((e,i)=>(
+              <div key={i} style={{flex:"1 1 45%",minWidth:180,background:"#F4F6FB",borderRadius:10,padding:"9px 12px",display:"flex",alignItems:"center",gap:8}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:e.color,flexShrink:0}}/>
+                <div style={{fontSize:10.5,color:C.texto}}>
+                  <span style={{fontWeight:700}}>{e.etiqueta}: </span>
+                  <span style={{color:e.color,fontWeight:700}}>{e.nivel}</span>
+                  {e.difPct>=10 && <span style={{color:C.suave}}> — {e.lado} {e.difPct}% mayor</span>}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
