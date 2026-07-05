@@ -15,7 +15,7 @@ import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
-import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
 
 // ── ASSETS ──────────────────────────────────────────────────
@@ -7122,6 +7122,85 @@ const AdminCitas = ({ pacientes=[] }) => {
   );
 };
 
+// ── ESTADÍSTICAS — helper único de conteo (LECTURA). Compartido por Dashboard y la sección 📊. ──
+// Fechas en Hermosillo. Excluye consultas con fecha vacía del bucketizado (parseFechaClinica('')===0).
+const calcEstadisticas = (pacientes, citas) => {
+  pacientes = pacientes || []; citas = citas || [];
+  const hace60 = Date.now() - 60*24*60*60*1000;
+  const mesActual = isoAInputsHmo(new Date().toISOString()).fecha.slice(0,7); // YYYY-MM Hermosillo
+  const mesDe = (iso) => { const f = isoAInputsHmo(iso).fecha; return f ? f.slice(0,7) : null; };
+
+  // Citas por paciente (para actividad)
+  const citasPorPac = {};
+  citas.forEach(c => { if (c.pacienteId) (citasPorPac[c.pacienteId]=citasPorPac[c.pacienteId]||[]).push(c); });
+
+  // Paciente ACTIVO: ≥1 cita o consulta real (fecha válida) en los últimos 60 días.
+  const activoSet = new Set();
+  pacientes.forEach(p => {
+    const cs = citasPorPac[p.id] || [];
+    const porCita = cs.some(c => new Date(c.inicio).getTime() >= hace60);
+    const porCons = (p.consultas||[]).some(c => !c.esSoloCita && parseFechaClinica(c.fecha) > 0 && parseFechaClinica(c.fecha) >= hace60);
+    if (porCita || porCons) activoSet.add(p.id);
+  });
+  const activos = activoSet.size;
+  const totales = pacientes.length;
+  const inactivos = totales - activos;
+
+  // Tratamientos (de tratamientoEfectivo): dos cortes — entre activos y entre todos.
+  const cuentaTrat = (lista) => {
+    let moun=0, weg=0, sinMed=0, cons=0, farm=0, sinOri=0;
+    lista.forEach(p => {
+      const t = tratamientoEfectivo(p);
+      if (t.medicamento==="MOUN") moun++; else if (t.medicamento==="WEG") weg++; else sinMed++;
+      if (t.origen==="CONS") cons++; else if (t.origen==="FARM") farm++; else sinOri++;
+    });
+    return { moun, weg, sinMed, cons, farm, sinOri, total: lista.length };
+  };
+  const tratTotales = cuentaTrat(pacientes);
+  const tratActivos = cuentaTrat(pacientes.filter(p => activoSet.has(p.id)));
+
+  // Actividad de citas (todas tienen inicio válido).
+  const atendidasTotal = citas.filter(c => c.estado==="completada").length;
+  const atendidasMes   = citas.filter(c => c.estado==="completada" && mesDe(c.inicio)===mesActual).length;
+  const programadasMes = citas.filter(c => mesDe(c.inicio)===mesActual && c.estado!=="cancelada").length;
+
+  // Historial mes-con-mes de CITAS, meses CONTINUOS desde la más antigua hasta el mes actual.
+  const vacio = (m) => ({ mes:m, atendidas:0, programadas:0, primera_vez:0, seguimiento:0, cita_rapida:0, MOUN:0, WEG:0 });
+  const meses = {}; let minMes = null;
+  citas.forEach(c => {
+    const m = mesDe(c.inicio); if (!m) return;
+    if (!meses[m]) meses[m] = vacio(m);
+    if (c.estado==="completada") meses[m].atendidas++;
+    if (c.estado!=="cancelada") {
+      meses[m].programadas++;
+      if (meses[m][c.tipo]!=null) meses[m][c.tipo]++;
+      if (c.medicamento==="MOUN") meses[m].MOUN++; else if (c.medicamento==="WEG") meses[m].WEG++;
+    }
+    if (!minMes || m < minMes) minMes = m;
+  });
+  const historial = [];
+  if (minMes) {
+    let [y,mo] = minMes.split("-").map(Number);
+    const [ay,am] = mesActual.split("-").map(Number);
+    while (y < ay || (y===ay && mo <= am)) {
+      const key = `${y}-${String(mo).padStart(2,"0")}`;
+      const row = meses[key] || vacio(key);
+      row.label = new Date(y, mo-1, 1).toLocaleDateString("es-MX",{month:"short",year:"numeric"});
+      historial.push(row);
+      mo++; if (mo>12){ mo=1; y++; }
+    }
+  }
+
+  // Informativo: consultas reales con/sin fecha (cubo "Sin fecha").
+  let consultasConFecha=0, consultasSinFecha=0;
+  pacientes.forEach(p => (p.consultas||[]).forEach(c => {
+    if (!c.esSoloCita) { if (parseFechaClinica(c.fecha) > 0) consultasConFecha++; else consultasSinFecha++; }
+  }));
+
+  return { activos, inactivos, totales, tratActivos, tratTotales,
+    atendidasMes, atendidasTotal, programadasMes, historial, consultasConFecha, consultasSinFecha };
+};
+
 const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
@@ -7278,6 +7357,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const atendidasTotal = citasV2.filter(c=>c.estado==="completada").length;
   // Pendientes de hoy (no terminadas ni canceladas) para el contador de la Cola del día.
   const pendientesHoy = citasV2Hoy.filter(c=>c.estado!=="completada" && c.estado!=="cancelada").length;
+  // Estadísticas (LECTURA) — compartidas por los cuadros superiores y la sección 📊 Estadísticas.
+  const est = calcEstadisticas(pacientes, citasV2);
   const borrarCitaV2 = async (c) => {
     if (!confirm(`¿Borrar la cita de ${c.pacienteNombre} del ${fmtCitaHmo(c.inicio)}?`)) return;
     try { await borrarCita(c.id); await pushBorrarEventoGCal(c); setCitaEditar(null); recargarCitas(); }
@@ -7442,7 +7523,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       contentView==="calendario"?"Calendario":
                       contentView==="pacientes"?"Pacientes":
                       contentView==="citas"?"Modificar cita":
-                      contentView==="admincitas"?"Administrar citas":"Dashboard";
+                      contentView==="admincitas"?"Administrar citas":
+                      contentView==="stats"?"Estadísticas":"Dashboard";
 
   return (
     <div className="gft-layout">
@@ -7487,6 +7569,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           </button>
 
           <div className="gft-sidebar__section">SISTEMA</div>
+          <button className={"gft-sidebar__item"+(contentView==="stats"?" gft-sidebar__item--active":"")}
+            onClick={()=>setContentView("stats")}>
+            <span className="gft-sidebar__icon">📊</span>Estadísticas
+          </button>
           <button className="gft-sidebar__item" onClick={onAjustes}>
             <span className="gft-sidebar__icon">⚙️</span>Ajustes
           </button>
@@ -7537,10 +7623,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               {/* Stats row */}
               <div className="gft-dash-stats">
                 {[
-                  {l:"Pacientes",              v:pacientes.length, unit:"total",       color:"var(--gft-accent)",  action:()=>setContentView("pacientes")},
-                  {l:"Atendidas este mes",     v:atendidasMes,     unit:"completadas", color:"var(--gft-success)", action:()=>setContentView("agenda")},
-                  {l:"Atendidas en total",     v:atendidasTotal,   unit:"histórico",   color:"var(--gft-warning)", action:()=>setContentView("agenda")},
-                  {l:"Labs vencen",            v:labsHoy.length,   unit:"pendientes",  color:"var(--gft-danger)",  action:()=>{setLabsFilter(true);setContentView("pacientes");}},
+                  {l:"Pacientes activos",       v:est.activos,        unit:`de ${est.totales}`, color:"var(--gft-accent)",  action:()=>setContentView("stats")},
+                  {l:"Atendidos este mes",      v:est.atendidasMes,   unit:"completadas",       color:"var(--gft-success)", action:()=>setContentView("stats")},
+                  {l:"Atendidos en total",      v:est.atendidasTotal, unit:"histórico",         color:"var(--gft-warning)", action:()=>setContentView("stats")},
+                  {l:"Programadas del mes",     v:est.programadasMes, unit:"este mes",          color:"var(--gft-accent)",  action:()=>setContentView("agenda")},
                 ].map(s=>(
                   <div key={s.l} className="gft-stat"
                     style={{borderTop:`2px solid ${s.color}`,cursor:"pointer",
@@ -8178,6 +8264,130 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           })()}
 
           {contentView==="admincitas" && <AdminCitas pacientes={pacientes}/>}
+
+          {contentView==="stats" && (()=>{
+            const ejeStyle = { fontSize:9, fill:"var(--gft-text-muted)" };
+            const tipStyle = { fontSize:10, borderRadius:8, background:"var(--gft-surface)", border:"1px solid var(--gft-border)", color:"var(--gft-text)" };
+            const ult = est.historial[est.historial.length-1] || null;
+            const NumCard = ({label, valor, sub, color}) => (
+              <div className="gft-card" style={{textAlign:"center",padding:"16px 12px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--gft-text-muted)",textTransform:"uppercase",letterSpacing:".04em"}}>{label}</div>
+                <div style={{fontSize:34,fontWeight:800,color:color||"var(--gft-text)",fontFamily:"var(--gft-font-data)",lineHeight:1.1,marginTop:4}}>{valor}</div>
+                {sub!=null && <div style={{fontSize:11,color:"var(--gft-text-muted)",marginTop:2}}>{sub}</div>}
+              </div>
+            );
+            const Grafica = ({titulo, children, ref0}) => (
+              <div className="gft-card" style={{padding:14,marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:800,color:"var(--gft-text-2)",marginBottom:8}}>{titulo}</div>
+                <ResponsiveContainer width="100%" height={220}>{children}</ResponsiveContainer>
+                {ref0}
+              </div>
+            );
+            return (
+              <div style={{display:"flex",flexDirection:"column",gap:20}}>
+                {/* 👥 Grupo 1 — Pacientes */}
+                <div>
+                  <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)",marginBottom:10}}>👥 Pacientes</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+                    <NumCard label="Activos" valor={est.activos} sub="últimos 60 días" color="var(--gft-success)"/>
+                    <NumCard label="Inactivos" valor={est.inactivos} sub="sin actividad reciente" color="var(--gft-warning)"/>
+                    <NumCard label="Totales" valor={est.totales} sub="en el sistema" color="var(--gft-accent)"/>
+                  </div>
+                </div>
+
+                {/* 💊 Grupo 2 — Tratamientos (Activos vs Totales) */}
+                <div>
+                  <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)",marginBottom:10}}>💊 Tratamientos</div>
+                  <div className="gft-card" style={{padding:0,overflow:"hidden"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                      <thead>
+                        <tr style={{background:"var(--gft-surface2)"}}>
+                          <th style={{textAlign:"left",padding:"10px 14px",fontSize:11,color:"var(--gft-text-muted)",fontWeight:700}}>Métrica</th>
+                          <th style={{textAlign:"center",padding:"10px 14px",fontSize:11,color:"var(--gft-text-muted)",fontWeight:700}}>Activos</th>
+                          <th style={{textAlign:"center",padding:"10px 14px",fontSize:11,color:"var(--gft-text-muted)",fontWeight:700}}>Totales</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          ["Con Mounjaro","moun"],["Con Wegovy","weg"],["Sin tratamiento","sinMed"],
+                          ["Compran en Consultorio","cons"],["Compran en Farmacia","farm"],["Sin origen","sinOri"],
+                        ].map(([l,k])=>(
+                          <tr key={k} style={{borderTop:"1px solid var(--gft-border)"}}>
+                            <td style={{padding:"9px 14px",color:"var(--gft-text)"}}>{l}</td>
+                            <td style={{padding:"9px 14px",textAlign:"center",fontWeight:800,fontFamily:"var(--gft-font-data)",color:"var(--gft-success)"}}>{est.tratActivos[k]}</td>
+                            <td style={{padding:"9px 14px",textAlign:"center",fontWeight:800,fontFamily:"var(--gft-font-data)",color:"var(--gft-text)"}}>{est.tratTotales[k]}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 📅 Grupo 3 — Actividad */}
+                <div>
+                  <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)",marginBottom:10}}>📅 Actividad</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+                    <NumCard label="Atendidos este mes" valor={est.atendidasMes} sub="citas completadas" color="var(--gft-success)"/>
+                    <NumCard label="Atendidos en total" valor={est.atendidasTotal} sub="histórico" color="var(--gft-warning)"/>
+                    <NumCard label="Programadas del mes" valor={est.programadasMes} sub="sin canceladas" color="var(--gft-accent)"/>
+                  </div>
+                  {est.consultasSinFecha>0 && (
+                    <div style={{fontSize:11,color:"var(--gft-text-muted)",marginTop:8}}>
+                      Nota: {est.consultasConFecha} consultas con fecha · <b>{est.consultasSinFecha} sin fecha</b> (excluidas del historial mensual).
+                    </div>
+                  )}
+                </div>
+
+                {/* 📈 Grupo 4 — Historial de citas mes-con-mes */}
+                <div>
+                  <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)",marginBottom:10}}>📈 Historial de citas (mes con mes)</div>
+                  {est.historial.length===0 ? (
+                    <div className="gft-card" style={{textAlign:"center",padding:30,color:"var(--gft-text-muted)"}}>Aún no hay citas para graficar.</div>
+                  ) : (<>
+                    <Grafica titulo="Citas atendidas por mes"
+                      ref0={ult&&<div style={{fontSize:11,color:"var(--gft-text-muted)",marginTop:6}}>Último mes ({ult.label}): <b>{ult.atendidas}</b> atendidas de <b>{ult.programadas}</b> programadas.</div>}>
+                      <BarChart data={est.historial}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                        <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                        <Tooltip contentStyle={tipStyle}/>
+                        <Bar dataKey="atendidas" name="Atendidas" fill="#1D9E75" radius={[4,4,0,0]}/>
+                      </BarChart>
+                    </Grafica>
+
+                    <Grafica titulo="Consultas programadas por mes (sin canceladas)">
+                      <LineChart data={est.historial}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                        <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                        <Tooltip contentStyle={tipStyle}/>
+                        <Line type="monotone" dataKey="programadas" name="Programadas" stroke="#3B82F6" strokeWidth={2.5} dot={{r:3,fill:"#3B82F6"}}/>
+                      </LineChart>
+                    </Grafica>
+
+                    <Grafica titulo="Por tipo de cita por mes">
+                      <BarChart data={est.historial}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                        <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                        <Tooltip contentStyle={tipStyle}/><Legend wrapperStyle={{fontSize:10}}/>
+                        <Bar dataKey="primera_vez" stackId="t" name="Primera vez" fill="#1B3F8B"/>
+                        <Bar dataKey="seguimiento" stackId="t" name="Seguimiento" fill="#1D9E75"/>
+                        <Bar dataKey="cita_rapida" stackId="t" name="Rápida" fill="#8B5CF6" radius={[4,4,0,0]}/>
+                      </BarChart>
+                    </Grafica>
+
+                    <Grafica titulo="Por medicamento por mes">
+                      <BarChart data={est.historial}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                        <XAxis dataKey="label" tick={ejeStyle}/><YAxis allowDecimals={false} tick={ejeStyle}/>
+                        <Tooltip contentStyle={tipStyle}/><Legend wrapperStyle={{fontSize:10}}/>
+                        <Bar dataKey="MOUN" stackId="m" name="Mounjaro" fill="#5B8DB8"/>
+                        <Bar dataKey="WEG" stackId="m" name="Wegovy" fill="#8B5CF6" radius={[4,4,0,0]}/>
+                      </BarChart>
+                    </Grafica>
+                  </>)}
+                </div>
+              </div>
+            );
+          })()}
 
         </main>
       </div>
