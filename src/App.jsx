@@ -6730,6 +6730,90 @@ const sugerirDosisSeguimiento = (pac) => {
   return null;
 };
 
+// Tira de horarios libre/ocupado del día — vive dentro de ModalAgendarCitaV2 (aparece en los 3 puntos de entrada).
+// Reglas: L-V 9→18, Sáb 9→13, Dom cerrado · slots de 30 min · seguimiento 30 min (1 slot), primera vez 60 min (2 slots).
+const TiraHorarios = ({ fecha, tipo, citas=[], horaSel, onPick }) => {
+  if (!fecha) return (
+    <div style={{fontSize:11,color:C.suave,margin:"0 0 12px"}}>Selecciona una fecha para ver horarios.</div>
+  );
+  const d = new Date(`${fecha}T00:00:00`);
+  const dow = d.getDay();                 // 0=Domingo … 6=Sábado
+  const fechaLarga = d.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
+  if (dow === 0) return (
+    <div style={{margin:"0 0 12px",padding:"10px 12px",borderRadius:8,background:C.rojoPale,
+      border:"1px solid "+C.rojo+"30",fontSize:11,color:C.rojo,fontWeight:700,textAlign:"center"}}>
+      🚫 Domingo: sin atención
+    </div>
+  );
+  const iniBloque = 9*60;
+  const finBloque = dow===6 ? 13*60 : 18*60;   // Sáb 9→13, L-V 9→18 (continuo, incluye 13-16)
+  const esPrim = tipo==="primera_vez";
+  const z = n => String(n).padStart(2,"0");
+  const minToHhmm = n => `${z(Math.floor(n/60))}:${z(n%60)}`;
+  const tsDe = min => new Date(`${fecha}T${minToHhmm(min)}:00-07:00`).getTime();  // instante Hermosillo
+  // Cita (no cancelada) que solapa la media hora [min, min+30) — misma fórmula de overlap que 'choque'
+  const citaEnSlot = (min) => {
+    const a = tsDe(min), b = tsDe(min+30);
+    return citas.find(c=>{
+      const ci = new Date(c.inicio).getTime(), cf = new Date(c.fin).getTime();
+      if (isNaN(ci)||isNaN(cf)) return false;
+      return a < cf && b > ci;
+    }) || null;
+  };
+  const primerNombre = (n) => { const s=(n||"").trim().split(/\s+/)[0]||"—"; return s.length>10?s.slice(0,9)+"…":s; };
+
+  const slots = [];
+  for (let t=iniBloque; t<finBloque; t+=30) slots.push(t);   // último inicio válido = finBloque-30
+
+  return (
+    <div style={{margin:"0 0 12px"}}>
+      <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6,textTransform:"capitalize"}}>
+        🕐 {fechaLarga}
+        <span style={{fontWeight:600,color:C.suave,textTransform:"none"}}> · duración {esPrim?"60":"30"} min</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(82px,1fr))",gap:6,
+        maxHeight:180,overflow:"auto",padding:6,background:C.gris,borderRadius:8}}>
+        {slots.map(min=>{
+          const h = minToHhmm(min);
+          const citaAqui = citaEnSlot(min);
+          let estado, nombre=null;              // 'ocupado' | 'libre' | 'nodisp'
+          if (citaAqui) { estado="ocupado"; nombre=primerNombre(citaAqui.pacienteNombre); }
+          else if (esPrim) {
+            // Primera vez necesita ESTA media hora Y la siguiente libres, y que quepan 60 min en el bloque
+            const cabe = (min+60) <= finBloque;
+            estado = (cabe && !citaEnSlot(min+30)) ? "libre" : "nodisp";
+          } else {
+            estado = "libre";
+          }
+          const sel = h===horaSel;
+          const clickable = estado==="libre";
+          const st = sel
+            ? { bg:C.azul,      bd:C.azul,      col:"#fff" }
+            : estado==="ocupado" ? { bg:C.rojoPale, bd:C.rojo,     col:C.rojo }
+            : estado==="nodisp"  ? { bg:C.gris,     bd:C.grisMedio, col:C.suave }
+            :                      { bg:"white",    bd:C.verde,    col:C.verde };
+          return (
+            <button key={h} disabled={!clickable} onClick={()=>clickable&&onPick(h)}
+              title={estado==="ocupado"?`Ocupado: ${citaAqui.pacienteNombre}`:estado==="nodisp"?"No caben 60 min desde esta hora":"Disponible"}
+              style={{padding:"6px 4px",borderRadius:7,border:"1px solid "+st.bd,background:st.bg,color:st.col,
+                cursor:clickable?"pointer":"not-allowed",textAlign:"center",lineHeight:1.15,
+                opacity:estado==="nodisp"?0.6:1}}>
+              <div style={{fontSize:11,fontWeight:700}}>{h}</div>
+              {estado==="ocupado" && <div style={{fontSize:8,fontWeight:600,marginTop:1,overflow:"hidden",
+                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:12,marginTop:5,fontSize:9,color:C.suave}}>
+        <span><span style={{color:C.verde,fontWeight:900}}>■</span> Libre</span>
+        <span><span style={{color:C.rojo,fontWeight:900}}>■</span> Ocupado</span>
+        {esPrim && <span><span style={{color:C.grisMedio,fontWeight:900}}>■</span> No cabe 60 min</span>}
+      </div>
+    </div>
+  );
+};
+
 // C1 — Formulario UNIFICADO de agendar. Único punto para crear cualquier cita (todos los entry points lo abren).
 const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null, onClose, onCreada }) => {
   const tipoInicial = tipoSugerido
@@ -6747,8 +6831,19 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const [guardando,setGuardando] = useState(false);
   const [mostrarSug,setMostrarSug] = useState(false);
   const [ocupadoDia,setOcupadoDia] = useState([]); // bloques "ocupado" del día elegido (solo lectura)
+  const [citasDia,setCitasDia] = useState([]);     // citas del consultorio (tabla citas) del día, para la tira de horarios
 
   const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
+
+  // Carga las citas del consultorio del día elegido (no canceladas) para la tira de horarios libre/ocupado.
+  useEffect(()=>{
+    let activo = true;
+    if (!fecha) { setCitasDia([]); return; }
+    listarCitas({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
+      .then(cs=>{ if(activo) setCitasDia((cs||[]).filter(c=>c.estado!=="cancelada")); })
+      .catch(()=>{ if(activo) setCitasDia([]); });
+    return ()=>{ activo=false; };
+  },[fecha]);
 
   // B5 — Carga los bloques "ocupado" (calendarios personales) del día elegido para advertir traslapes.
   useEffect(()=>{
@@ -6908,6 +7003,9 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
             <span style={{fontSize:10,color:C.suave}}>Duración: {esPrim?"60":"30"} min (automática)</span>
           </div>
         </Row>
+
+        <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} horaSel={hora} onPick={setHora}/>
+
         {choque && (
           <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#FFF7ED",
             border:"1px solid #FDBA74",fontSize:11,color:"#9A3412"}}>
