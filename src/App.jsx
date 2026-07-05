@@ -2944,7 +2944,7 @@ const DocProgreso = ({p}) => {
               {label:'Saludable', min:pesoMin, max:pesoMax, color:'#1D9E75'},
               {label:'Sobrepeso', min:pesoMax, max:parseFloat((pesoMax+15).toFixed(1)), color:'#E0A45F'},
             ]}
-            valorHoy={ultima?.peso} valorMeta={pesoObj} valorObjetivo={objetivoValido?pObjetivo:null}
+            valorHoy={ultima?.peso} valorMeta={null} valorObjetivo={objetivoValido?pObjetivo:null}
             domMin={parseFloat((pesoMin-15).toFixed(1))} domMax={parseFloat((pesoMax+15).toFixed(1))} unidad="kg"
             etiquetaRango={`Rango saludable para tu estatura: ${pesoMin.toFixed(1)}–${pesoMax.toFixed(1)} kg`}/>
         </>) : ((ultima?.peso!=null && ultima?.peso!=="") && (
@@ -2966,14 +2966,14 @@ const DocProgreso = ({p}) => {
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{pesoObj}<span style={{fontSize:11,color:C.suave}}> kg</span></div>
             <div style={{fontSize:8,color:C.suave,marginTop:2}}>Basado en IMC saludable (OMS)</div>
           </div>
-          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0",textAlign:"center"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>METABOLISMO BASAL</div>
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{bmrAct!=null?bmrAct:"—"}<span style={{fontSize:11,color:C.suave}}> kcal/día</span></div>
             <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Energía que tu cuerpo usa en reposo.</div>
             <div style={{fontSize:8.5,fontWeight:700,color:C.verde,marginTop:3}}>Mantener tu masa muscular conserva alto este valor.</div>
           </div>
           {aguaAct!=null && (
-            <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+            <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0",textAlign:"center"}}>
               <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>AGUA CORPORAL</div>
               <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{aguaAct}<span style={{fontSize:11,color:C.suave}}>%</span></div>
               {(()=>{
