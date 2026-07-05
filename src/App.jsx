@@ -2539,8 +2539,21 @@ const DocProgreso = ({p}) => {
     return zonas.find(z => v >= z.min && v < z.max)
       || (v >= zonas[zonas.length-1].min ? zonas[zonas.length-1] : zonas[0]);
   };
-  const colorCintura = (v) => { const x=parseFloat(v); if(isNaN(x)) return C.suave;
-    return esMujer ? (x<80?"#1D9E75":x<88?"#E0A45F":"#D85A30") : (x<94?"#1D9E75":x<102?"#E0A45F":"#D85A30"); };
+  // Circunferencia abdominal — riesgo cardiometabólico IDF (latinoamericano), por sexo.
+  const ZONAS_CA = {
+    H: [
+      {label:'Saludable',  rango:'<90',    min:0,   max:90,  color:'#1D9E75'},
+      {label:'Precaución', rango:'90–101', min:90,  max:102, color:'#E0A45F'},
+      {label:'Elevado',    rango:'≥102',   min:102, max:300, color:'#D85A30'},
+    ],
+    M: [
+      {label:'Saludable',  rango:'<80',   min:0,   max:80,  color:'#1D9E75'},
+      {label:'Precaución', rango:'80–87', min:80,  max:88,  color:'#E0A45F'},
+      {label:'Elevado',    rango:'≥88',   min:88,  max:300, color:'#D85A30'},
+    ],
+  };
+  const zonaCA = (v) => zonaDe(v, ZONAS_CA[sexoKey]);
+  const colorCintura = (v) => { const z = zonaCA(v); return z ? z.color : C.suave; };
   const caChange = difNum(caAct, caIni);
 
   // Barra de rango con segmentos de ANCHO PROPORCIONAL al tamaño de zona + marcador blanco
@@ -2833,13 +2846,14 @@ const DocProgreso = ({p}) => {
           {l:"PESO", v:ultima?.peso, u:"kg", chip:zonaDe(ultima?.imc,ZONAS_IMC)?.color},
           {l:"GRASA", v:ultima?.grasa, u:"%", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color},
           {l:"MÚSCULO TOTAL", v:ultima?.musculo, u:"kg", chip:"#1D9E75"},
-          {l:"C. ABDOMINAL", v:caAct, u:"cm", chip:colorCintura(caAct)},
+          {l:"C. ABDOMINAL", v:caAct, u:"cm", chip:colorCintura(caAct), sub:zonaCA(caAct)?.label, subColor:colorCintura(caAct)},
         ].map((m,i)=>(
           <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"12px 13px",position:"relative"}}>
             <span style={{position:"absolute",top:11,right:11,width:9,height:9,borderRadius:"50%",background:m.chip||C.suave}}/>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>{m.l}</div>
             <div className="d" style={{fontSize:24,fontWeight:700,lineHeight:1.05,color:C.azul,marginTop:3}}>
               {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:12,fontWeight:600,color:C.suave}}> {m.u}</span></div>
+            {m.sub && <div style={{fontSize:8.5,fontWeight:700,color:m.subColor||C.suave,marginTop:2}}>{m.sub}</div>}
           </div>
         ))}
       </div>
@@ -2856,15 +2870,11 @@ const DocProgreso = ({p}) => {
         <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa visceral</div>
         <RangoGrad zonas={ZONAS_VISCERAL} valor={ultima?.visceral} domMin={1} domMax={20}/>
 
-        {(ultima?.musculo!=null && ultima?.musculo!=="") && (
-          <div style={{marginTop:2}}>
-            <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:4}}>Músculo total</div>
-            <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
-              <span className="d" style={{fontSize:24,fontWeight:700,color:'#1B3F8B'}}>{ultima.musculo}<span style={{fontSize:12,color:'#8A99AC',marginLeft:3}}>kg</span></span>
-              <span style={{fontSize:9,color:'#8A99AC'}}>Masa muscular total medida por la báscula (sin rango clínico estándar).</span>
-            </div>
-          </div>
-        )}
+        {ffmi!=null && (<>
+          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular (FFMI)</div>
+          <div style={{fontSize:12,color:'#8A99AC',marginBottom:10}}>Índice de masa libre de grasa, ajustado a tu estatura.</div>
+          <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"/>
+        </>)}
       </div>
 
       <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"13px 16px",marginBottom:16}}>
