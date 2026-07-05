@@ -2420,6 +2420,17 @@ const DocProgreso = ({p}) => {
   const bmrIni     = primera?.bmr!=null ? parseFloat(primera.bmr) : null;
   const bmrAct     = ultima?.bmr!=null  ? parseFloat(ultima.bmr)  : null;
 
+  // Meta de calorías a COMER (ingesta diaria para ~0.5 kg/sem) = BMR × factor actividad − 500, con piso de seguridad.
+  const FACTOR_ACT = { sedentario:1.2, ligero:1.375, moderado:1.55, intenso:1.725 };
+  const afPac = p.actividadFisica || {};
+  const nivelActValido = !!(afPac.hace && afPac.nivel && FACTOR_ACT[afPac.nivel]);
+  const nivelActUsado = nivelActValido ? afPac.nivel : "sedentario"; // default conservador
+  const factorAct = FACTOR_ACT[nivelActUsado] || 1.2;
+  const pisoKcal = esMujer ? 1200 : 1500;
+  const kcalBruto = bmrAct!=null ? Math.round((bmrAct*factorAct - 500)/10)*10 : null; // a decenas
+  const kcalObjetivo = kcalBruto!=null ? Math.max(kcalBruto, pisoKcal) : null;
+  const kcalEnPiso = kcalBruto!=null && kcalBruto < pisoKcal;
+
   // GoalBar — dot color by zone (red→yellow→green track), labels show inicio/meta
   const GoalBar = ({label, valIni, valAct, valMeta, unit="", lowerBetter=false}) => {
     const act  = valAct!=null  ? parseFloat(valAct)  : null;
@@ -2918,18 +2929,26 @@ const DocProgreso = ({p}) => {
             domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
             etiquetaRango={`Meta de grasa saludable para tu sexo: ${metaGrasaPct}%`}/>
         </>)}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:11,marginTop:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9,marginTop:14}}>
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>PESO META (IMC SALUDABLE)</div>
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{pesoObj}<span style={{fontSize:11,color:C.suave}}> kg</span></div>
           </div>
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>METABOLISMO BASAL</div>
-            <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{bmrAct!=null?bmrAct:"—"}<span style={{fontSize:11,color:C.suave}}> kcal</span></div>
-            <div style={{fontSize:9,color:C.suave,marginTop:1}}>Meta: {bmrObj} kcal</div>
-            {bmrAct!=null && (bmrAct>=bmrObj
-              ? <div style={{fontSize:8.5,fontWeight:700,color:C.verde,marginTop:3}}>Por encima de tu meta 👍</div>
-              : <div style={{fontSize:8.5,fontWeight:700,color:"#B9772E",marginTop:3}}>Acércate subiendo masa muscular</div>)}
+            <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{bmrAct!=null?bmrAct:"—"}<span style={{fontSize:11,color:C.suave}}> kcal/día</span></div>
+            <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Energía que tu cuerpo usa en reposo.</div>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.verde,marginTop:3}}>Mantener tu masa muscular conserva alto este valor.</div>
+          </div>
+          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>CALORÍAS OBJETIVO AL DÍA</div>
+            {kcalObjetivo!=null ? (<>
+              <div className="d" style={{fontSize:18,fontWeight:700,color:C.azul,marginTop:2}}>{kcalObjetivo-100}–{kcalObjetivo+100}<span style={{fontSize:11,color:C.suave}}> kcal/día</span></div>
+              <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Para perder ~0.5 kg por semana.</div>
+              <div style={{fontSize:8,color:C.suave,marginTop:2}}>Actividad: {nivelActUsado}{nivelActValido?"":" (por defecto)"}.{kcalEnPiso?" · mínimo seguro":""}</div>
+            </>) : (
+              <div className="d" style={{fontSize:20,fontWeight:700,color:C.suave,marginTop:2}}>—</div>
+            )}
           </div>
           {aguaAct!=null && (
             <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
