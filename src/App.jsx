@@ -2432,6 +2432,15 @@ const DocProgreso = ({p}) => {
   const kcalObjetivo = kcalBruto!=null ? Math.max(kcalBruto, pisoKcal) : null;
   const kcalEnPiso = kcalBruto!=null && kcalBruto < pisoKcal;
 
+  // Objetivo de peso capturado por el doctor (para la barra) y base de proteína (1.2–1.6 g/kg).
+  const pObjetivo = parseFloat(p.pesoObjetivo);
+  const objetivoValido = !isNaN(pObjetivo) && pObjetivo > 0;
+  const pesoBaseProt = objetivoValido ? pObjetivo
+    : (tallam>0 ? parseFloat((22*tallam*tallam).toFixed(1))
+    : ((ultima?.peso!=null && ultima?.peso!=="") ? parseFloat(ultima.peso) : null));
+  const protMin = pesoBaseProt!=null ? Math.round(pesoBaseProt*1.2) : null;
+  const protMax = pesoBaseProt!=null ? Math.round(pesoBaseProt*1.6) : null;
+
   // GoalBar — dot color by zone (red→yellow→green track), labels show inicio/meta
   const GoalBar = ({label, valIni, valAct, valMeta, unit="", lowerBetter=false}) => {
     const act  = valAct!=null  ? parseFloat(valAct)  : null;
@@ -2689,7 +2698,7 @@ const DocProgreso = ({p}) => {
   const pesoMax = tallaM>0 ? parseFloat((24.9*tallaM*tallaM).toFixed(1)) : null;
 
   // Barra de meta: degradado + marcador HOY (azul sólido) y META (verde punteado), línea HOY→META, etiqueta de rango.
-  const MetaBarra = ({ zonas, valorHoy, valorMeta, domMin, domMax, unidad='', etiquetaRango }) => {
+  const MetaBarra = ({ zonas, valorHoy, valorMeta, valorObjetivo=null, domMin, domMax, unidad='', etiquetaRango }) => {
     const vh = parseFloat(valorHoy);
     if (valorHoy == null || valorHoy === "" || isNaN(vh)) return null;
     const total = (domMax - domMin) || 1;
@@ -2713,18 +2722,22 @@ const DocProgreso = ({p}) => {
     const zonaHoy = zonas.find(z => vh >= z.min && vh < z.max) || zonas[zonas.length-1];
     // Si HOY y META están a <12 pp, sus etiquetas se enciman → META baja debajo de la barra
     const cercanos = pctMeta != null && Math.abs(pctHoy - pctMeta) < 12;
+    const vo = (valorObjetivo != null && valorObjetivo !== "") ? parseFloat(valorObjetivo) : NaN;
+    const pctObj = !isNaN(vo) ? Math.min(98, Math.max(2, ((vo - domMin) / total) * 100)) : null;
+    // Con objetivo del doctor presente, META baja siempre (deja el área de arriba solo para HOY).
+    const metaAbajo = pctMeta != null && (cercanos || pctObj != null);
     return (
       <div style={{marginBottom: 26}}>
-        {/* Etiquetas arriba: HOY siempre; META arriba SOLO si no están cercanos */}
+        {/* Etiquetas arriba: HOY siempre; META (guía) arriba solo si no baja */}
         <div style={{position:'relative', height:50, marginBottom:4}}>
           <div style={{position:'absolute', bottom:6, left:`${pctHoy}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
             <div style={{fontSize:10, color:'#8A99AC', letterSpacing:.5}}>HOY</div>
             <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
               {vh.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
           </div>
-          {pctMeta != null && !cercanos && (
+          {pctMeta != null && !metaAbajo && (
             <div style={{position:'absolute', bottom:6, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
-              <div style={{fontSize:10, color:'#1B3F8B', letterSpacing:.5, fontWeight:700}}>◆ META</div>
+              <div style={{fontSize:10, color:'#1B3F8B', letterSpacing:.5, fontWeight:700}}>◆ META (guía)</div>
               <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
                 {vm.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
             </div>
@@ -2736,25 +2749,40 @@ const DocProgreso = ({p}) => {
               left:`${Math.min(pctHoy,pctMeta)}%`, width:`${Math.abs(pctHoy-pctMeta)}%`,
               borderTop:'2px solid rgba(27,63,139,0.40)', zIndex:1}}/>
           )}
-          {/* META — rombo azul marino SÓLIDO (contrasta sobre cualquier zona; distinto del círculo HOY) */}
+          {/* META (guía) — rombo azul marino sólido */}
           {pctMeta != null && (
             <div style={{position:'absolute', top:'50%', left:`${pctMeta}%`, transform:'translate(-50%,-50%) rotate(45deg)',
               width:14, height:14, background:'#1B3F8B', border:'2px solid #fff',
               boxShadow:'0 0 0 1px #1B3F8B', boxSizing:'border-box', zIndex:3}}/>
+          )}
+          {/* MI OBJETIVO (doctor) — triángulo verde marca, distinto del círculo HOY y del rombo META */}
+          {pctObj != null && (
+            <div style={{position:'absolute', top:'50%', left:`${pctObj}%`, transform:'translate(-50%,-50%)',
+              width:0, height:0, borderLeft:'7px solid transparent', borderRight:'7px solid transparent',
+              borderBottom:'13px solid #1D9E75', filter:'drop-shadow(0 0 1.2px #fff)', zIndex:5}}/>
           )}
           {/* HOY — círculo azul marino relleno con aro blanco */}
           <div style={{position:'absolute', top:'50%', left:`${pctHoy}%`, transform:'translate(-50%,-50%)',
             width:18, height:18, borderRadius:'50%', background:'#1B3F8B', border:'3px solid #fff',
             boxShadow:'0 0 0 1px #1B3F8B', boxSizing:'border-box', zIndex:4}}/>
         </div>
-        {/* META abajo de la barra cuando están cercanos (evita encimar con HOY) */}
-        {pctMeta != null && cercanos && (
-          <div style={{position:'relative', height:34, marginTop:3, paddingBottom:8}}>
-            <div style={{position:'absolute', top:0, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
-              <div style={{fontSize:10, color:'#1B3F8B', letterSpacing:.5, fontWeight:700}}>◆ META</div>
-              <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
-                {vm.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
-            </div>
+        {/* Etiquetas abajo: META (si baja) y MI OBJETIVO (si existe), en filas separadas para no encimarse */}
+        {(metaAbajo || pctObj != null) && (
+          <div style={{position:'relative', height:(metaAbajo && pctObj!=null)?54:30, marginTop:3, paddingBottom:8}}>
+            {metaAbajo && (
+              <div style={{position:'absolute', top:0, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
+                <div style={{fontSize:10, color:'#1B3F8B', letterSpacing:.5, fontWeight:700}}>◆ META (guía)</div>
+                <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
+                  {vm.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
+              </div>
+            )}
+            {pctObj != null && (
+              <div style={{position:'absolute', top:(metaAbajo?24:0), left:`${pctObj}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
+                <div style={{fontSize:10, color:'#1D9E75', letterSpacing:.5, fontWeight:700}}>▲ MI OBJETIVO</div>
+                <div className="d" style={{fontSize:14, fontWeight:500, color:'#1D9E75'}}>
+                  {vo.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
+              </div>
+            )}
           </div>
         )}
         <div style={{display:'flex', justifyContent:'space-between', fontSize:11, color:'#A4AEBD', marginTop:7}}>
@@ -2916,7 +2944,7 @@ const DocProgreso = ({p}) => {
               {label:'Saludable', min:pesoMin, max:pesoMax, color:'#1D9E75'},
               {label:'Sobrepeso', min:pesoMax, max:parseFloat((pesoMax+15).toFixed(1)), color:'#E0A45F'},
             ]}
-            valorHoy={ultima?.peso} valorMeta={pesoObj}
+            valorHoy={ultima?.peso} valorMeta={pesoObj} valorObjetivo={objetivoValido?pObjetivo:null}
             domMin={parseFloat((pesoMin-15).toFixed(1))} domMax={parseFloat((pesoMax+15).toFixed(1))} unidad="kg"
             etiquetaRango={`Rango saludable para tu estatura: ${pesoMin.toFixed(1)}–${pesoMax.toFixed(1)} kg`}/>
         </>) : ((ultima?.peso!=null && ultima?.peso!=="") && (
@@ -2930,7 +2958,9 @@ const DocProgreso = ({p}) => {
             domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
             etiquetaRango={`Meta de grasa saludable para tu sexo: ${metaGrasaPct}%`}/>
         </>)}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9,marginTop:14}}>
+        {/* Fila 1 — Composición corporal */}
+        <div style={{fontSize:9,fontWeight:700,color:C.suave,letterSpacing:.4,margin:"14px 0 6px"}}>COMPOSICIÓN CORPORAL</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:9}}>
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>PESO META (IMC SALUDABLE)</div>
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{pesoObj}<span style={{fontSize:11,color:C.suave}}> kg</span></div>
@@ -2940,16 +2970,6 @@ const DocProgreso = ({p}) => {
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{bmrAct!=null?bmrAct:"—"}<span style={{fontSize:11,color:C.suave}}> kcal/día</span></div>
             <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Energía que tu cuerpo usa en reposo.</div>
             <div style={{fontSize:8.5,fontWeight:700,color:C.verde,marginTop:3}}>Mantener tu masa muscular conserva alto este valor.</div>
-          </div>
-          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
-            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>CALORÍAS OBJETIVO AL DÍA</div>
-            {kcalObjetivo!=null ? (<>
-              <div className="d" style={{fontSize:18,fontWeight:700,color:C.azul,marginTop:2}}>{kcalObjetivo-100}–{kcalObjetivo+100}<span style={{fontSize:11,color:C.suave}}> kcal/día</span></div>
-              <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Para perder ~0.5 kg por semana.</div>
-              <div style={{fontSize:8,color:C.suave,marginTop:2}}>Actividad: {nivelActUsado}{nivelActValido?"":" (por defecto)"}.{kcalEnPiso?" · mínimo seguro":""}</div>
-            </>) : (
-              <div className="d" style={{fontSize:20,fontWeight:700,color:C.suave,marginTop:2}}>—</div>
-            )}
           </div>
           {aguaAct!=null && (
             <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
@@ -2964,6 +2984,30 @@ const DocProgreso = ({p}) => {
               <div style={{fontSize:8,color:C.suave,marginTop:2}}>Rango saludable: {aguaZona.min}–{aguaZona.max}%</div>
             </div>
           )}
+        </div>
+        {/* Fila 2 — Alimentación diaria */}
+        <div style={{fontSize:9,fontWeight:700,color:C.suave,letterSpacing:.4,margin:"12px 0 6px"}}>ALIMENTACIÓN DIARIA</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:9}}>
+          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>CALORÍAS OBJETIVO AL DÍA</div>
+            {kcalObjetivo!=null ? (<>
+              <div className="d" style={{fontSize:18,fontWeight:700,color:C.azul,marginTop:2}}>{kcalObjetivo-100}–{kcalObjetivo+100}<span style={{fontSize:11,color:C.suave}}> kcal/día</span></div>
+              <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Para perder ~0.5 kg por semana.</div>
+              <div style={{fontSize:8,color:C.suave,marginTop:2}}>Actividad: {nivelActUsado}{nivelActValido?"":" (por defecto)"}.{kcalEnPiso?" · mínimo seguro":""}</div>
+            </>) : (
+              <div className="d" style={{fontSize:20,fontWeight:700,color:C.suave,marginTop:2}}>—</div>
+            )}
+          </div>
+          <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>PROTEÍNA DIARIA</div>
+            {(protMin!=null && protMax!=null) ? (<>
+              <div className="d" style={{fontSize:18,fontWeight:700,color:C.azul,marginTop:2}}>{protMin}–{protMax}<span style={{fontSize:11,color:C.suave}}> g/día</span></div>
+              <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Para proteger tu masa muscular.</div>
+              <div style={{fontSize:8,color:C.suave,marginTop:2}}>{objetivoValido?`Según tu objetivo (${pesoBaseProt} kg)`:`Según tu peso ideal (${pesoBaseProt} kg)`}</div>
+            </>) : (
+              <div className="d" style={{fontSize:20,fontWeight:700,color:C.suave,marginTop:2}}>—</div>
+            )}
+          </div>
         </div>
       </div>
 
