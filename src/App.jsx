@@ -895,6 +895,31 @@ const compararConGoogle = async () => {
 // Instante exacto (ms) de una fecha+hora local de Hermosillo (UTC-7 fijo). Para comparación idempotente.
 const _instanteHermosillo = (fecha, hora) => new Date(`${fecha}T${(hora||"00:00")}:00-07:00`).getTime();
 
+// ── Confirmación de cita por WhatsApp (una sola función, reutilizada por auto-envío y botón) ──
+const TIPO_LEGIBLE_CITA = { primera_vez:"primera vez", seguimiento:"seguimiento", cita_rapida:"consulta" };
+const construirMsgConfirmacion = (cita, nombre) => {
+  const { fecha } = isoAInputsHmo(cita.inicio);
+  const fechaLarga = fecha
+    ? new Date(fecha+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
+    : "";
+  const hora12h = cita.inicio
+    ? new Date(cita.inicio).toLocaleTimeString("es-MX",{timeZone:"America/Hermosillo",hour:"numeric",minute:"2-digit",hour12:true})
+    : "";
+  const tipoLegible = TIPO_LEGIBLE_CITA[cita.tipo] || "consulta";
+  return `Hola ${nombre}, le confirmamos su cita de ${tipoLegible} con el Dr. Gerardo Félix Tapia.\n`
+    + `📅 ${fechaLarga}\n`
+    + `🕐 ${hora12h}\n`
+    + `📍 Av. Adolfo de la Huerta 200A, 2do piso, Col. Pitic, Hermosillo\n`
+    + `Cualquier duda, puede responder por este medio. ¡Lo esperamos!`;
+};
+// Abre WhatsApp con la confirmación de la cita. Reutiliza enviarWA (formateo 52 + limpieza).
+// Devuelve false si no hay teléfono (enviarWA copia el texto al portapapeles).
+const enviarConfirmacionCita = (cita, paciente) => {
+  const tel = (paciente && paciente.telefono) || "";
+  const nombre = (cita && cita.pacienteNombre) || (paciente && paciente.nombre) || "paciente";
+  return enviarWA(tel, construirMsgConfirmacion(cita, nombre));
+};
+
 // FASE B — Migración automática de citas FUTURAS (hoy en adelante) anidadas en p.consultas (esSoloCita)
 // al formato v2 en la tabla `citas`. Idempotente. NO borra las viejas (respaldo). NO migra las pasadas.
 const migrarCitasFuturas = async (pacientes) => {
@@ -6499,6 +6524,15 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         medicamento: med||null, dosis: med?(dosis||null):null, origen: origen||null, fecha, hora });
       cita.pendienteSincronizar = true; // se baja a false si Google la sincroniza enseguida
       const creada = await crearCita(cita);
+      // TAREA 1 — Confirmación por WhatsApp LO ANTES POSIBLE (antes de la sync con Google) para
+      // no perder el user-gesture y evitar el bloqueo de popup en Safari.
+      const telConfirm = (telefono && telefono.trim()) || (pacienteLink && pacienteLink.telefono) || "";
+      if (telConfirm) {
+        try { enviarConfirmacionCita(creada, { telefono: telConfirm, nombre: nombre.trim() }); }
+        catch(e){ console.warn("Confirmación WA falló (no crítico):", e); }
+      } else {
+        alert("Cita agendada. Sin teléfono para enviar confirmación.");
+      }
       // D2-A — Escritura a Google (no crítica): crear evento en el calendario dedicado y enlazar googleEventId.
       const gc = await pushCrearEventoGCal(creada);
       if (gc && gc.googleEventId) {
@@ -6924,7 +6958,9 @@ const AdminCitas = ({ pacientes=[] }) => {
                   {fmtCitaHmo(c.inicio)}
                 </div>
               </div>
-              <div style={{display:"flex",gap:6}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                <button className="gft-btn gft-btn--secondary gft-btn--sm"
+                  onClick={()=>enviarConfirmacionCita(c, (pacientes||[]).find(p=>p.id===c.pacienteId))}>📱 Enviar confirmación</button>
                 <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setEditar(c)}>✏️ Editar</button>
                 <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}}
                   onClick={()=>borrar(c)}>🗑️ Borrar</button>
@@ -7592,6 +7628,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                               {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
                             </div>
                           </div>
+                          <button title="Enviar confirmación por WhatsApp" className="gft-btn gft-btn--secondary gft-btn--sm"
+                            style={{flexShrink:0,fontSize:11}}
+                            onClick={e=>{e.stopPropagation(); enviarConfirmacionCita(c, pac);}}>📱</button>
                           {pac&&<span style={{fontSize:12,color:"var(--gft-accent)",flexShrink:0}}>→</span>}
                         </div>
                       );
