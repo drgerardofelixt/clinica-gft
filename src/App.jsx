@@ -410,6 +410,42 @@ const actualizarTratamientoPaciente = async (paciente, cambios) => {
   } catch(e) { console.warn("actualizarTratamientoPaciente (no crítico):", e); }
 };
 
+// FASE 2 — Migración: puebla p.tratamiento de todos los pacientes desde su CITA MÁS RECIENTE con medicamento
+// (fallback: última consulta con medicamento). Idempotente y conservador: no pisa un tratamiento ajustado a
+// mano más reciente que la fuente. Reusa mergeTratamiento/actualizarTratamientoPaciente (Fase 1). Lee datos FRESCOS.
+const migrarTratamientos = async () => {
+  let pacientes = [], citas = [];
+  try { pacientes = await getPacientes(); } catch(e){ console.error("migrarTratamientos/pacientes:", e); return { error:true }; }
+  try { citas = await listarCitas({}); } catch(e){ console.error("migrarTratamientos/citas:", e); }
+  const porPac = {};
+  citas.forEach(c => { if (c.pacienteId) (porPac[c.pacienteId]=porPac[c.pacienteId]||[]).push(c); });
+
+  let migrados=0, saltados=0, respetados=0;
+  for (const p of pacientes) {
+    // 1) Cita más reciente (mayor inicio) con medicamento → formato ya canónico.
+    const citaSrc = (porPac[p.id]||[]).filter(c=>c.medicamento).sort((a,b)=>new Date(b.inicio)-new Date(a.inicio))[0] || null;
+    let cambios = null, srcTs = 0;
+    if (citaSrc) {
+      cambios = { medicamento: citaSrc.medicamento, dosis: citaSrc.dosis, origen: citaSrc.origen };
+      srcTs = new Date(citaSrc.ultimaModificacion || citaSrc.inicio || 0).getTime();
+    } else {
+      // 2) Fallback: última consulta con medicamento (full→abrev / Farmacia→FARM lo hace mergeTratamiento).
+      const cons = [...(p.consultas||[])].filter(c=>!c.esSoloCita && c.medicamento).sort(porFechaClinica).slice(-1)[0];
+      if (cons) {
+        cambios = { medicamento: cons.medicamento, dosis: cons.dosis, origen: cons.origenMed };
+        srcTs = parseFechaClinica(cons.fecha) || 0;
+      }
+    }
+    if (!cambios) { saltados++; continue; }               // sin datos → no inventa
+    // 3) Conservador/idempotente: si el tratamiento ya guardado es MÁS RECIENTE que la fuente, respetarlo.
+    const actualTs = (p.tratamiento && p.tratamiento.actualizado) ? new Date(p.tratamiento.actualizado).getTime() : 0;
+    if (actualTs && actualTs > srcTs) { respetados++; continue; }
+    try { await actualizarTratamientoPaciente(p, cambios); migrados++; }
+    catch(e){ console.warn("migrarTratamientos/cita:", e); saltados++; }
+  }
+  return { migrados, saltados, respetados };
+};
+
 // Slots de GCal ocupados en una fecha dada (reusa el array gcalEventos ya cargado a nivel App)
 const gcalOcupadasEnFecha = (gcalEventos, fechaSel) => (gcalEventos||[]).flatMap(ev => {
   const f = (ev.start?.dateTime||ev.start?.date||"").split("T")[0];
@@ -6929,6 +6965,7 @@ const AdminCitas = ({ pacientes=[] }) => {
   const [comparando,setComparando] = useState(false);
   const [editar,setEditar] = useState(null);
   const [sincronizando,setSincronizando] = useState(false);
+  const [migrandoTrat,setMigrandoTrat] = useState(false);
 
   const cargar = async () => {
     setCargando(true);
@@ -6956,6 +6993,18 @@ const AdminCitas = ({ pacientes=[] }) => {
     try { setComparacion(await compararConGoogle()); }
     catch(e){ console.error("comparar:",e); setComparacion({ conectado:true, error:"Falló la comparación." }); }
     finally { setComparando(false); }
+  };
+
+  // 🔄 Migración temporal (Fase 2): puebla p.tratamiento desde la cita más reciente de cada paciente.
+  const migrarTrat = async () => {
+    if (!confirm("Se poblará el 'tratamiento actual' de cada paciente desde su cita más reciente (o última consulta). No pisa ajustes manuales más recientes. ¿Continuar?")) return;
+    setMigrandoTrat(true);
+    try {
+      const r = await migrarTratamientos();
+      if (r && r.error) alert("⚠️ No se pudo leer la base para migrar.");
+      else alert(`🔄 Tratamientos migrados: ${r.migrados}. Sin datos (saltados): ${r.saltados}. Ya actualizados (respetados): ${r.respetados}.`);
+    } catch(e){ console.error("migrarTrat:",e); alert("⚠️ Falló la migración de tratamientos."); }
+    finally { setMigrandoTrat(false); }
   };
 
   // Detección de duplicados: instante de inicio idéntico o a ±5 min de otra cita
@@ -6987,6 +7036,9 @@ const AdminCitas = ({ pacientes=[] }) => {
           </button>
           <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={sincronizar} disabled={sincronizando}>
             {sincronizando ? "Sincronizando…" : "☁️ Sincronizar pendientes con Google"}
+          </button>
+          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={migrarTrat} disabled={migrandoTrat}>
+            {migrandoTrat ? "Migrando…" : "🔄 Migrar tratamientos desde citas"}
           </button>
           <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={cargar}>↻ Refrescar</button>
         </div>
