@@ -2423,8 +2423,9 @@ const DocProgreso = ({p}) => {
   // Meta de calorías a COMER (ingesta diaria para ~0.5 kg/sem) = BMR × factor actividad − 500, con piso de seguridad.
   const FACTOR_ACT = { sedentario:1.2, ligero:1.375, moderado:1.55, intenso:1.725 };
   const afPac = p.actividadFisica || {};
-  const nivelActValido = !!(afPac.hace && afPac.nivel && FACTOR_ACT[afPac.nivel]);
-  const nivelActUsado = nivelActValido ? afPac.nivel : "sedentario"; // default conservador
+  // Vale el nivel si está definido y es válido, INDEPENDIENTEMENTE de `hace` (un nivel elegido no debe ignorarse).
+  const nivelActValido = !!(afPac.nivel && FACTOR_ACT[afPac.nivel]);
+  const nivelActUsado = nivelActValido ? afPac.nivel : "sedentario"; // default conservador solo si no hay nivel
   const factorAct = FACTOR_ACT[nivelActUsado] || 1.2;
   const pisoKcal = esMujer ? 1200 : 1500;
   const kcalBruto = bmrAct!=null ? Math.round((bmrAct*factorAct - 500)/10)*10 : null; // a decenas
