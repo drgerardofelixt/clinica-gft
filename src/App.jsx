@@ -2712,8 +2712,8 @@ const DocProgreso = ({p}) => {
           </div>
           {pctMeta != null && !cercanos && (
             <div style={{position:'absolute', bottom:6, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
-              <div style={{fontSize:10, color:'#1D9E75', letterSpacing:.5}}>META</div>
-              <div className="d" style={{fontSize:14, fontWeight:500, color:'#1D9E75'}}>
+              <div style={{fontSize:10, color:'#1B3F8B', letterSpacing:.5, fontWeight:700}}>◆ META</div>
+              <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
                 {vm.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
             </div>
           )}
@@ -2722,12 +2722,15 @@ const DocProgreso = ({p}) => {
           {pctMeta != null && (
             <div style={{position:'absolute', top:'50%', transform:'translateY(-50%)',
               left:`${Math.min(pctHoy,pctMeta)}%`, width:`${Math.abs(pctHoy-pctMeta)}%`,
-              borderTop:'2px dashed rgba(255,255,255,0.7)', zIndex:1}}/>
+              borderTop:'2px solid rgba(27,63,139,0.40)', zIndex:1}}/>
           )}
+          {/* META — rombo azul marino SÓLIDO (contrasta sobre cualquier zona; distinto del círculo HOY) */}
           {pctMeta != null && (
-            <div style={{position:'absolute', top:'50%', left:`${pctMeta}%`, transform:'translate(-50%,-50%)',
-              width:16, height:16, borderRadius:'50%', background:'#fff', border:'2.5px dashed #1D9E75', boxSizing:'border-box', zIndex:3}}/>
+            <div style={{position:'absolute', top:'50%', left:`${pctMeta}%`, transform:'translate(-50%,-50%) rotate(45deg)',
+              width:14, height:14, background:'#1B3F8B', border:'2px solid #fff',
+              boxShadow:'0 0 0 1px #1B3F8B', boxSizing:'border-box', zIndex:3}}/>
           )}
+          {/* HOY — círculo azul marino relleno con aro blanco */}
           <div style={{position:'absolute', top:'50%', left:`${pctHoy}%`, transform:'translate(-50%,-50%)',
             width:18, height:18, borderRadius:'50%', background:'#1B3F8B', border:'3px solid #fff',
             boxShadow:'0 0 0 1px #1B3F8B', boxSizing:'border-box', zIndex:4}}/>
@@ -2736,8 +2739,8 @@ const DocProgreso = ({p}) => {
         {pctMeta != null && cercanos && (
           <div style={{position:'relative', height:34, marginTop:3, paddingBottom:8}}>
             <div style={{position:'absolute', top:0, left:`${pctMeta}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
-              <div style={{fontSize:10, color:'#1D9E75', letterSpacing:.5}}>META</div>
-              <div className="d" style={{fontSize:14, fontWeight:500, color:'#1D9E75'}}>
+              <div style={{fontSize:10, color:'#1B3F8B', letterSpacing:.5, fontWeight:700}}>◆ META</div>
+              <div className="d" style={{fontSize:14, fontWeight:500, color:'#1B3F8B'}}>
                 {vm.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
             </div>
           </div>
@@ -2915,38 +2918,30 @@ const DocProgreso = ({p}) => {
             domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
             etiquetaRango={`Meta de grasa saludable para tu sexo: ${metaGrasaPct}%`}/>
         </>)}
-        {ffmi!=null && (<>
-          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular libre de grasa</div>
-          <div style={{fontSize:12,color:'#8A99AC',marginBottom:8}}>Ajustada a tu estatura y peso.</div>
-          <MetaBarra zonas={ZONAS_FFMI[sexoKey]} valorHoy={ffmi} valorMeta={null}
-            domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"
-            etiquetaRango={sexoKey==='H'
-              ? 'Objetivo: mantener o subir. Mínimo recomendado: 18 kg/m²'
-              : 'Objetivo: mantener o subir. Mínimo recomendado: 15 kg/m²'}/>
-        </>)}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:11,marginTop:4}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:11,marginTop:14}}>
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>PESO META (IMC SALUDABLE)</div>
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{pesoObj}<span style={{fontSize:11,color:C.suave}}> kg</span></div>
           </div>
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
-            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>METABOLISMO BASAL META</div>
-            <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{bmrObj}<span style={{fontSize:11,color:C.suave}}> kcal</span>
-              {bmrAct!=null && <span style={{fontSize:10,color:C.suave,fontWeight:600}}>  ·  hoy {bmrAct}</span>}</div>
+            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>METABOLISMO BASAL</div>
+            <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{bmrAct!=null?bmrAct:"—"}<span style={{fontSize:11,color:C.suave}}> kcal</span></div>
+            <div style={{fontSize:9,color:C.suave,marginTop:1}}>Meta: {bmrObj} kcal</div>
+            {bmrAct!=null && (bmrAct>=bmrObj
+              ? <div style={{fontSize:8.5,fontWeight:700,color:C.verde,marginTop:3}}>Por encima de tu meta 👍</div>
+              : <div style={{fontSize:8.5,fontWeight:700,color:"#B9772E",marginTop:3}}>Acércate subiendo masa muscular</div>)}
           </div>
           {aguaAct!=null && (
             <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0"}}>
-              <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>AGUA CORPORAL OBJETIVO</div>
-              <div className="d" style={{fontSize:20,fontWeight:700,color:C.verde,marginTop:2}}>{aguaAct}<span style={{fontSize:11,color:C.suave}}>%</span></div>
-              <div style={{fontSize:8,color:C.suave,marginTop:2}}>Saludable: {aguaZona.min}–{aguaZona.max}% · óptimo ~{aguaZona.optimo}%</div>
-              <div style={{position:"relative",height:6,borderRadius:3,background:"#E9EDF3",overflow:"hidden",marginTop:6}}>
-                <div style={{position:"absolute",top:0,bottom:0,
-                  left:`${(aguaZona.min-30)/45*100}%`,width:`${(aguaZona.max-aguaZona.min)/45*100}%`,background:"#1D9E75"}}/>
-              </div>
-              <div style={{position:"relative",height:0}}>
-                <div style={{position:"absolute",top:-3,left:`${Math.min(Math.max((aguaAct-30)/45*100,2),98)}%`,
-                  transform:"translate(-50%,-50%)",width:9,height:9,borderRadius:"50%",background:"white",border:"2px solid "+C.azul}}/>
-              </div>
+              <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>AGUA CORPORAL</div>
+              <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{aguaAct}<span style={{fontSize:11,color:C.suave}}>%</span></div>
+              {(()=>{
+                const dentro = aguaAct>=aguaZona.min && aguaAct<=aguaZona.max;
+                const et = dentro?"Óptimo":(aguaAct<aguaZona.min?"Bajo":"Alto");
+                const col = dentro?C.verde:"#B9772E";
+                return <div style={{fontSize:8.5,fontWeight:700,color:col,marginTop:3}}>{et}</div>;
+              })()}
+              <div style={{fontSize:8,color:C.suave,marginTop:2}}>Rango saludable: {aguaZona.min}–{aguaZona.max}%</div>
             </div>
           )}
         </div>
