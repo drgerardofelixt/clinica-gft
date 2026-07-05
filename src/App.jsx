@@ -2502,25 +2502,31 @@ const DocProgreso = ({p}) => {
 
   // ── Helpers del rediseño (zonas por sexo, rango proporcional, series, sparkline) ──
   const sexoKey = esMujer ? "M" : "H";
-  const ZONAS_GRASA = {
-    M: [
-      {label:'Atleta',    min:14, max:21, color:'#9DB4D6'},
-      {label:'Saludable', min:21, max:25, color:'#1D9E75'},
-      {label:'Aceptable', min:25, max:32, color:'#E0A45F'},
-      {label:'Alto',      min:32, max:45, color:'#D85A30'},
-    ],
-    H: [
-      {label:'Atleta',    min:6,  max:14, color:'#9DB4D6'},
-      {label:'Saludable', min:14, max:18, color:'#1D9E75'},
-      {label:'Aceptable', min:18, max:25, color:'#E0A45F'},
-      {label:'Alto',      min:25, max:40, color:'#D85A30'},
-    ],
+  // Grasa corporal — Gallagher (AJCN 2000), por sexo y grupo etario. `rango` = etiqueta numérica visible;
+  // min/max = geometría de la barra (contiguos). Grupos: j=18–39, m=40–59 (default si falta edad), s=60–69.
+  const zonasGrasaPara = (sk, ed) => {
+    const g = (ed||50) < 40 ? "j" : (ed||50) < 60 ? "m" : "s";
+    const cols = ['#9DB4D6','#1D9E75','#E0A45F','#D85A30'];
+    const TABLE = {
+      M: {
+        j: [["Atleta","<21",14,21],["Saludable","21–32",21,33],["Aceptable","33–38",33,39],["Alto","≥39",39,45]],
+        m: [["Atleta","<23",14,23],["Saludable","23–33",23,34],["Aceptable","34–39",34,40],["Alto","≥40",40,45]],
+        s: [["Atleta","<24",14,24],["Saludable","24–35",24,36],["Aceptable","36–41",36,42],["Alto","≥42",42,45]],
+      },
+      H: {
+        j: [["Atleta","<8",6,8],["Saludable","8–19",8,20],["Aceptable","20–24",20,25],["Alto","≥25",25,40]],
+        m: [["Atleta","<11",6,11],["Saludable","11–21",11,22],["Aceptable","22–27",22,28],["Alto","≥28",28,40]],
+        s: [["Atleta","<13",6,13],["Saludable","13–24",13,25],["Aceptable","25–29",25,30],["Alto","≥30",30,40]],
+      },
+    };
+    return TABLE[sk][g].map((r,i)=>({label:r[0], rango:r[1], min:r[2], max:r[3], color:cols[i]}));
   };
+  const ZONAS_GRASA = { M: zonasGrasaPara('M', edad), H: zonasGrasaPara('H', edad) };
   const ZONAS_IMC = [
-    {label:'Bajo',      min:15,   max:18.5, color:'#9DB4D6'},
-    {label:'Saludable', min:18.5, max:25,   color:'#1D9E75'},
-    {label:'Sobrepeso', min:25,   max:30,   color:'#E0A45F'},
-    {label:'Obesidad',  min:30,   max:35,   color:'#D85A30'},
+    {label:'Bajo',      rango:'<18.5',     min:15,   max:18.5, color:'#9DB4D6'},
+    {label:'Saludable', rango:'18.5–24.9', min:18.5, max:25,   color:'#1D9E75'},
+    {label:'Sobrepeso', rango:'25–29.9',   min:25,   max:30,   color:'#E0A45F'},
+    {label:'Obesidad',  rango:'≥30',       min:30,   max:35,   color:'#D85A30'},
   ];
   const ZONAS_VISC = [
     {label:'Saludable', min:1,  max:10, color:'#1D9E75'},
@@ -2571,9 +2577,9 @@ const DocProgreso = ({p}) => {
 
   // Visceral con dominio 1–20 para RangoGrad
   const ZONAS_VISCERAL = [
-    {label:'Saludable', min:1,  max:10, color:'#1D9E75'},
-    {label:'Moderada',  min:10, max:15, color:'#E0A45F'},
-    {label:'Elevada',   min:15, max:20, color:'#D85A30'},
+    {label:'Saludable', rango:'1–9',   min:1,  max:10, color:'#1D9E75'},
+    {label:'Moderada',  rango:'10–12', min:10, max:13, color:'#E0A45F'},
+    {label:'Elevada',   rango:'13+',   min:13, max:20, color:'#D85A30'},
   ];
 
   // Barra de rango con DEGRADADO continuo (píldora) + punto blanco marcador.
@@ -2619,6 +2625,11 @@ const DocProgreso = ({p}) => {
             </span>
           ))}
         </div>
+        {zonas.some(z => z.rango) && (
+          <div style={{ fontSize: 8, color: '#8A99AC', marginTop: 5, lineHeight: 1.4, textAlign: 'center' }}>
+            {zonas.map(z => z.rango ? `${z.label} ${z.rango}` : z.label).join('   ·   ')}
+          </div>
+        )}
       </div>
     );
   };
@@ -2626,16 +2637,16 @@ const DocProgreso = ({p}) => {
   // ── Masa muscular (FFMI), agua, zonas de peso ──
   const ZONAS_FFMI = {
     H: [
-      {label:'Bajo',     min:14, max:18, color:'#D85A30'},
-      {label:'Adecuado', min:18, max:20, color:'#1D9E75'},
-      {label:'Bueno',    min:20, max:23, color:'#0E8E80'},
-      {label:'Atlético', min:23, max:27, color:'#1B3F8B'},
+      {label:'Bajo',     rango:'<17.4',     min:14,   max:17.4, color:'#D85A30'},
+      {label:'Adecuado', rango:'17.4–19.7', min:17.4, max:19.8, color:'#1D9E75'},
+      {label:'Bueno',    rango:'19.8–21.9', min:19.8, max:22,   color:'#0E8E80'},
+      {label:'Atlético', rango:'≥22.0',     min:22,   max:27,   color:'#1B3F8B'},
     ],
     M: [
-      {label:'Bajo',     min:11, max:15, color:'#D85A30'},
-      {label:'Adecuado', min:15, max:17, color:'#1D9E75'},
-      {label:'Buena',    min:17, max:20, color:'#0E8E80'},
-      {label:'Atlética', min:20, max:24, color:'#1B3F8B'},
+      {label:'Bajo',     rango:'<15.0',     min:11,   max:15,   color:'#D85A30'},
+      {label:'Adecuado', rango:'15.0–16.6', min:15,   max:16.7, color:'#1D9E75'},
+      {label:'Buena',    rango:'16.7–17.9', min:16.7, max:18,   color:'#0E8E80'},
+      {label:'Atlética', rango:'≥18.0',     min:18,   max:24,   color:'#1B3F8B'},
     ],
   };
   const ZONAS_AGUA = { H:{min:50,max:65,optimo:60}, M:{min:45,max:60,optimo:55} };
@@ -2845,11 +2856,15 @@ const DocProgreso = ({p}) => {
         <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa visceral</div>
         <RangoGrad zonas={ZONAS_VISCERAL} valor={ultima?.visceral} domMin={1} domMax={20}/>
 
-        {ffmi!=null && (<>
-          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular libre de grasa</div>
-          <div style={{fontSize:12,color:'#8A99AC',marginBottom:10}}>Ajustada a tu estatura y peso.</div>
-          <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"/>
-        </>)}
+        {(ultima?.musculo!=null && ultima?.musculo!=="") && (
+          <div style={{marginTop:2}}>
+            <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:4}}>Músculo total</div>
+            <div style={{display:'flex',alignItems:'baseline',gap:10,flexWrap:'wrap'}}>
+              <span className="d" style={{fontSize:24,fontWeight:700,color:'#1B3F8B'}}>{ultima.musculo}<span style={{fontSize:12,color:'#8A99AC',marginLeft:3}}>kg</span></span>
+              <span style={{fontSize:9,color:'#8A99AC'}}>Masa muscular total medida por la báscula (sin rango clínico estándar).</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"13px 16px",marginBottom:16}}>
