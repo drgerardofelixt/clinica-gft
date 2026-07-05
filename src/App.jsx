@@ -3580,7 +3580,7 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
 // ── Modal Consulta ────────────────────────────────────────────
 const ORIGEN_ABREV = { Farmacia:"FARM", Consultorio:"CON" };
 const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=false, onReporte, onSiguiente}) => {
-  const prev = [...(p.consultas||[])].sort(porFechaClinica).slice(-1)[0];
+  const prev = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica).slice(-1)[0];
   const [confirmarSinCita, setConfirmarSinCita] = useState(false);
   const [guardado, setGuardado] = useState(false); // ¿ya se persistió la consulta?
   const [f, setF] = useState(() => {
@@ -4066,7 +4066,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
     ant:{cronicas:"NEGADAS",alergias:"NEGADAS",cirugias:"NEGADAS",medicamentos:"NINGUNO",tabaco:"NEGADO",alcohol:"NEGADO"},
     meta:{hta:"NO",dm2:"NO",dislipidemias:"NO"},
     gine:{menarca:"",fum:"",gestas:"",metodo:""},
-    ef:{temp:"",fr:"",spo2:"",glucosaCapilar:""},
+    ef:{temp:"",fr:"",spo2:"",glucosaCapilar:"",ca:""},
     ci:{ta:"",fc:"",otrosH:"",grado:"",comorbilidades:"",glp1:"",dosis:""},
     dx:{principal:"",riesgoCV:""},
     labsI:{glucosa:"",hba1c:"",insulina:"",homa:"",colesterol:"",trigliceridos:"",hdl:"",ldl:"",tsh:"",creatinina:"",fecha:""},
@@ -4110,7 +4110,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
       fecha: (compInicial && compInicial.fecha) || f.fechaInicio || hoy(),
       hora: (compInicial && compInicial.hora) || f.horaRegistro || ahora(),
       peso: (compInicial && compInicial.peso) || "",
-      ca: "", ta: f.ci.ta||"", fc: f.ci.fc||"", spo2: f.ef.spo2||"",
+      ca: f.ef.ca||"", ta: f.ci.ta||"", fc: f.ci.fc||"", spo2: f.ef.spo2||"",
       glucosaCapilar: f.ef.glucosaCapilar||"",
       subjetivo: f.motivoConsulta||"", efectos: "", respuesta: "",
       plan: f.pronostico||"", cambioDosis: "", origenMed: "",
@@ -4315,6 +4315,10 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                     </div>
                   );
                 })()}
+                <Row>
+                  <Inp label="Circ. Abdominal (cm)" value={f.ef.ca} onChange={v=>s("ef.ca",v)} tipo="number"/>
+                  <div/><div/>
+                </Row>
               </Sec>
               <Sec title="Signos vitales" icon="📊">
                 <Row>
