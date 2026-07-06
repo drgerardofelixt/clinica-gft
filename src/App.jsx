@@ -2272,6 +2272,7 @@ const DocProgreso = ({p}) => {
   const primera = comps[0];
   const ultima  = comps[comps.length-1];
   const n = comps.length;
+  const esPrimeraToma = n < 2;   // 1 medición → reporte de estado actual (oculta evolución/comparación)
 
   const difNum = (a,b) => (a!=null&&a!==""&&b!=null&&b!=="")
     ? parseFloat((parseFloat(a)-parseFloat(b)).toFixed(2)) : null;
@@ -3085,9 +3086,12 @@ const DocProgreso = ({p}) => {
     {/* ── HOJA 3 — Evolución mes a mes ── */}
     <div className="pdf-page" style={pageStyle}>
       <Encabezado/>
-      <Banda derecha={`${n} MEDICIÓN${n!==1?"ES":""} · ${normDate(primera?.fecha)} → ${normDate(ultima?.fecha)}`}/>
+      <Banda derecha={esPrimeraToma
+        ? `1 MEDICIÓN · ${normDate(ultima?.fecha)}`
+        : `${n} MEDICIÓN${n!==1?"ES":""} · ${normDate(primera?.fecha)} → ${normDate(ultima?.fecha)}`}/>
 
-      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>Tu evolución, mes a mes</div>
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>{esPrimeraToma ? "Estado actual por zona" : "Tu evolución, mes a mes"}</div>
+      {!esPrimeraToma && (
       <div style={{marginBottom:12}}>
         {[
           {label:"Peso", v:ultima?.peso, u:"kg", arr:sPeso, chg:pesoChange, baja:true, color:"#1B3F8B", dec:1},
@@ -3113,6 +3117,28 @@ const DocProgreso = ({p}) => {
           );
         })}
       </div>
+      )}
+
+      {esPrimeraToma && segAct && (
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>Composición por zona (hoy)</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:9}}>
+            {SEGS.map((s,i)=>{
+              const mv = parseFloat(segAct[s.mKey]);
+              const gv = parseFloat(segAct[s.gKey]);
+              return (
+                <div key={i} style={{background:"#F4F6FB",borderRadius:10,padding:"11px 9px",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:700,color:C.texto,marginBottom:7}}>{s.label}</div>
+                  <div style={{fontSize:8,color:C.suave,marginBottom:1}}>MÚSCULO</div>
+                  <div style={{marginBottom:6,fontSize:12,fontWeight:700,color:C.azul}}>{isNaN(mv)?"—":`${mv.toFixed(1)} kg`}</div>
+                  <div style={{fontSize:8,color:C.suave,marginBottom:1}}>GRASA</div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#E0A45F"}}>{isNaN(gv)?"—":`${gv.toFixed(1)} %`}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {hasSegmental&&(
         <div style={{marginBottom:14}}>
@@ -3925,10 +3951,10 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
     return true;
   };
 
-  // ¿Hay suficientes mediciones con báscula para un reporte? (≥2)
+  // ¿Hay al menos una medición con báscula para un reporte? (≥1; con 1 sale el estado actual)
   const compsConBascula = (p.composicion||[]).filter(c=>c.peso||c.grasa).length;
   const fTieneComp = !!(f.comp && (f.comp.peso||f.comp.grasa)) || !!f.peso;
-  const puedeReporte = (guardado ? compsConBascula : compsConBascula + (fTieneComp?1:0)) >= 2;
+  const puedeReporte = (guardado ? compsConBascula : compsConBascula + (fTieneComp?1:0)) >= 1;
 
   // Botón "Generar reporte": guarda y abre el PDF de progreso (con opciones de compartir)
   const generarReporte = () => { if (saveOnce()) onReporte && onReporte(); };
@@ -4117,7 +4143,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
             <Btn onClick={guardarConsulta} color={C.verde} icon="✓">Guardar cambios</Btn>
           ) : (
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              <span title={puedeReporte ? "" : "Sin datos suficientes"} style={{display:"inline-flex"}}>
+              <span title={puedeReporte ? "" : "Registra al menos una medición con báscula"} style={{display:"inline-flex"}}>
                 <Btn onClick={generarReporte} color={C.azul} icon="📊" disabled={!puedeReporte}>
                   Generar reporte
                 </Btn>
@@ -5373,7 +5399,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
               <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>
                 Registra al menos 2 consultas para ver las gráficas
               </div>
-              <Btn onClick={()=>setShowC(true)} color={C.azul}>Registrar consulta</Btn>
+              <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+                <Btn onClick={()=>setShowC(true)} color={C.azul}>Registrar consulta</Btn>
+                {grafData.length>=1 && <Btn onClick={()=>setDoc({tipo:"progreso"})} color={C.verde} icon="📊">Generar reporte de estado actual</Btn>}
+              </div>
             </div>
           ) : (
             <div>
