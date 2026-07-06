@@ -1245,6 +1245,16 @@ const LABS_PRESET = {
   iniciales:["BHC","Perfil Lípidos","Glucosa","HbA1c","Insulina Sérica","Índice HOMA-IR","Perfil Tiroideo","Perfil Hepático","Creatinina","Ácido Úrico","Perfil Ginecológico"],
   seguimiento:["BHC","Perfil Lípidos","HbA1c","Índice HOMA-IR","Perfil Hepático"],
 };
+// Fuente ÚNICA de estudios de laboratorio pedibles (Paso 1/2). Extensible: cada estudio {id, nombre}.
+// Unión de lo que hoy muestran la orden completa (11) y la rápida (+4). Paso 2 añadirá categorías/solo-mujeres/plantillas aquí.
+const ESTUDIOS_LABS = [
+  ...LABS_PRESET.iniciales.map(n=>({id:n, nombre:n})),
+  {id:"Examen General de Orina", nombre:"Examen General de Orina"},
+  {id:"Vitamina D",   nombre:"Vitamina D"},
+  {id:"Vitamina B12", nombre:"Vitamina B12"},
+  {id:"Ferritina",    nombre:"Ferritina"},
+];
+const ESTUDIOS_LABS_NOMBRES = ESTUDIOS_LABS.map(e=>e.nombre);
 // ── LABORATORIOS: campos, rangos de referencia y categorías ─────
 // Cada campo tiene: k=clave, l=label, u=unidad, min/max=rangos normales
 // g=grupo (general, lipidos, hepatico, tiroideo, gineco)
@@ -4249,6 +4259,37 @@ const ModalAgendarCita = ({p, consulta={}, gcalEventos=[], onClose}) => {
 };
 
 // ── Modal Labs ────────────────────────────────────────────────
+// Selector de estudios COMPARTIDO — fuente única ESTUDIOS_LABS. Lo usan la orden completa (ModalLabs)
+// y la rápida (OrdenRapida). Paso 2 mejorará aquí contraste/plantillas/solo-mujeres → se refleja en ambas.
+// variant="lista" (filas, orden completa) | "grid" (2 columnas, orden rápida). Mismo listado y misma lógica.
+const SelectorEstudiosLabs = ({ seleccionados=[], onToggle, variant="lista" }) => {
+  if (variant === "grid") {
+    return (
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
+        {ESTUDIOS_LABS_NOMBRES.map(l=>(
+          <label key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,padding:"4px 8px",
+            background:seleccionados.includes(l)?C.azulPale:C.gris,borderRadius:6,cursor:"pointer",
+            border:"1px solid "+(seleccionados.includes(l)?C.azul+"40":C.grisMedio)}}>
+            <input type="checkbox" checked={seleccionados.includes(l)} onChange={()=>onToggle(l)}/>
+            <span style={{flex:1}}>{l}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <>
+      {ESTUDIOS_LABS_NOMBRES.map(e=>(
+        <label key={e} style={{display:"flex",alignItems:"center",gap:10,
+          padding:"7px 0",borderBottom:"1px solid "+C.gris,cursor:"pointer",fontSize:13}}>
+          <input type="checkbox" checked={seleccionados.includes(e)} onChange={()=>onToggle(e)}/>
+          {e}
+        </label>
+      ))}
+    </>
+  );
+};
+
 const ModalLabs = ({p, onClose, onSave}) => {
   const [f, setF] = useState({
     id:Date.now().toString(), fecha:hoy(), tipo:"seguimiento",
@@ -4320,13 +4361,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
           <label style={{fontSize:11,fontWeight:600,color:C.suave,display:"block",marginBottom:8}}>
             ESTUDIOS
           </label>
-          {LABS_PRESET.iniciales.map(e=>(
-            <label key={e} style={{display:"flex",alignItems:"center",gap:10,
-              padding:"7px 0",borderBottom:"1px solid "+C.gris,cursor:"pointer",fontSize:13}}>
-              <input type="checkbox" checked={f.estudios.includes(e)} onChange={()=>tog(e)}/>
-              {e}
-            </label>
-          ))}
+          <SelectorEstudiosLabs seleccionados={f.estudios} onToggle={tog} variant="lista"/>
           <div style={{marginTop:12}}>
             <Txt label="Notas / indicaciones" value={f.notas} onChange={v=>u("notas",v)} rows={2}/>
           </div>
@@ -5991,16 +6026,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
           </div>
 
           <div style={{fontWeight:800,color:C.azul,fontSize:12,marginBottom:8}}>Estudios solicitados</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
-            {[...LABS_PRESET.iniciales,"Examen General de Orina","Vitamina D","Vitamina B12","Ferritina"].map(l=>(
-              <label key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,padding:"4px 8px",
-                background:labs.includes(l)?C.azulPale:C.gris,borderRadius:6,cursor:"pointer",
-                border:"1px solid "+(labs.includes(l)?C.azul+"40":C.grisMedio)}}>
-                <input type="checkbox" checked={labs.includes(l)} onChange={()=>togglelab(l)}/>
-                <span style={{flex:1}}>{l}</span>
-              </label>
-            ))}
-          </div>
+          <SelectorEstudiosLabs seleccionados={labs} onToggle={togglelab} variant="grid"/>
 
           <div style={{marginBottom:12}}>
             <label style={{fontSize:10,fontWeight:600,color:C.suave,display:"block",marginBottom:3}}>
