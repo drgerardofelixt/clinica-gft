@@ -895,9 +895,12 @@ const leerEventosOcupado = async ({ desde, hasta } = {}) => {
       let evs = [];
       try { evs = await leerEventosDeCalendario(id, { timeMin:desde, timeMax:hasta }); } catch(e){ evs = []; }
       for (const ev of evs) {
-        if (!ev.start?.dateTime) continue; // ignora día completo
-        out.push({ inicio:ev.start.dateTime, fin:ev.end?.dateTime||ev.start.dateTime,
-          summary:ev.summary||"Ocupado", calendario:nombreDe(id), calendarId:id });
+        const timed = !!ev.start?.dateTime;   // con hora → cuadrícula; sin hora (start.date) → evento de todo el día
+        out.push({
+          allDay: !timed,
+          inicio: timed ? ev.start.dateTime : (ev.start?.date || null),
+          fin:    timed ? (ev.end?.dateTime || ev.start.dateTime) : (ev.end?.date || ev.start?.date || null),
+          summary: ev.summary||"Ocupado", calendario:nombreDe(id), calendarId:id });
       }
     }
     return out;
@@ -6523,7 +6526,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, pacById}) => {
   const evDe = (fecha) => eventos.filter(e=>e.fecha===fecha).sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
   // Bloques "ocupado" de calendarios personales (solo lectura).
-  const ocupEv = (ocupado||[]).map((o,i)=>{
+  const ocupEv = (ocupado||[]).filter(o=>!o.allDay).map((o,i)=>{
     const {fecha,hora} = isoAInputsHmo(o.inicio);
     const dur = (o.inicio && o.fin) ? Math.max(15, Math.round((new Date(o.fin)-new Date(o.inicio))/60000)) : 30;
     return { key:"oc-"+i, fecha, hora:hora||"00:00", dur, nombre:o.summary||"Ocupado", calendario:o.calendario };
@@ -6733,7 +6736,7 @@ const sugerirDosisSeguimiento = (pac) => {
 
 // Tira de horarios libre/ocupado del día — vive dentro de ModalAgendarCitaV2 (aparece en los 3 puntos de entrada).
 // Reglas: L-V 9→18, Sáb 9→13, Dom cerrado · slots de 30 min · seguimiento 30 min (1 slot), primera vez 60 min (2 slots).
-const TiraHorarios = ({ fecha, tipo, citas=[], horaSel, onPick }) => {
+const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick }) => {
   if (!fecha) return (
     <div style={{fontSize:11,color:C.suave,margin:"0 0 12px"}}>Selecciona una fecha para ver horarios.</div>
   );
@@ -6762,6 +6765,19 @@ const TiraHorarios = ({ fecha, tipo, citas=[], horaSel, onPick }) => {
     }) || null;
   };
   const primerNombre = (n) => { const s=(n||"").trim().split(/\s+/)[0]||"—"; return s.length>10?s.slice(0,9)+"…":s; };
+  const compacto = (s,n=12) => { const t=(s||"").trim(); return t.length>n ? t.slice(0,n-1)+"…" : (t||"—"); };
+
+  // Eventos personales (calendarios seleccionados en Ajustes): con hora → cuadrícula; todo el día → nota superior.
+  const persTimed  = (personales||[]).filter(p=>!p.allDay && p.inicio && p.fin);
+  const persAllDay = (personales||[]).filter(p=>p.allDay);
+  const personalEnSlot = (min) => {
+    const a = tsDe(min), b = tsDe(min+30);
+    return persTimed.find(p=>{
+      const pi=new Date(p.inicio).getTime(), pf=new Date(p.fin).getTime();
+      if (isNaN(pi)||isNaN(pf)) return false;
+      return a < pf && b > pi;
+    }) || null;
+  };
 
   const slots = [];
   for (let t=iniBloque; t<finBloque; t+=30) slots.push(t);   // último inicio válido = finBloque-30
@@ -6772,44 +6788,77 @@ const TiraHorarios = ({ fecha, tipo, citas=[], horaSel, onPick }) => {
         🕐 {fechaLarga}
         <span style={{fontWeight:600,color:C.suave,textTransform:"none"}}> · duración {esPrim?"60":"30"} min</span>
       </div>
+      {persAllDay.length>0 && (
+        <div style={{margin:"0 0 8px",padding:"7px 10px",borderRadius:8,background:"#FBF6E3",
+          border:"1px solid "+C.amarillo+"55",fontSize:10.5,color:"#8A6D1A"}}>
+          📌 Hoy: {persAllDay.map(p=>p.summary||"Evento").join(" · ")}
+        </div>
+      )}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(82px,1fr))",gap:6,
         maxHeight:180,overflow:"auto",padding:6,background:C.gris,borderRadius:8}}>
         {slots.map(min=>{
           const h = minToHhmm(min);
           const citaAqui = citaEnSlot(min);
-          let estado, nombre=null;              // 'ocupado' | 'libre' | 'nodisp'
-          if (citaAqui) { estado="ocupado"; nombre=primerNombre(citaAqui.pacienteNombre); }
-          else if (esPrim) {
-            // Primera vez necesita ESTA media hora Y la siguiente libres, y que quepan 60 min en el bloque
-            const cabe = (min+60) <= finBloque;
+          const persAqui = personalEnSlot(min);
+          // Prioridad: cita de paciente > personal > libre. Duración por tipo decide si un LIBRE es seleccionable.
+          let estado, nombre=null, hayPersonal=false;   // 'cita_primera'|'cita_seg'|'personal'|'libre'|'nodisp'
+          if (citaAqui) {
+            estado = citaAqui.tipo==="primera_vez" ? "cita_primera" : "cita_seg";
+            nombre = primerNombre(citaAqui.pacienteNombre);
+            hayPersonal = !!persAqui;                    // cita + personal solapado → puntito
+          } else if (persAqui) {
+            estado = "personal"; nombre = compacto(persAqui.summary);
+          } else if (esPrim) {
+            const cabe = (min+60) <= finBloque;          // primera vez necesita 2 medias horas libres seguidas
             estado = (cabe && !citaEnSlot(min+30)) ? "libre" : "nodisp";
           } else {
             estado = "libre";
           }
           const sel = h===horaSel;
-          const clickable = estado==="libre";
-          const st = sel
-            ? { bg:C.azul,      bd:C.azul,      col:"#fff" }
-            : estado==="ocupado" ? { bg:C.rojoPale, bd:C.rojo,     col:C.rojo }
-            : estado==="nodisp"  ? { bg:C.gris,     bd:C.grisMedio, col:C.suave }
-            :                      { bg:"white",    bd:C.verde,    col:C.verde };
+          const clickable = estado!=="nodisp";           // todo clickable salvo "no cabe 60 min"
+          const base =
+            estado==="cita_primera" ? { bg:"#EAF0FB", bd:C.azul,     col:C.azul }
+          : estado==="cita_seg"     ? { bg:"#FDF0E6", bd:C.naranja,  col:C.naranja }
+          : estado==="personal"     ? { bg:"#FBF6E3", bd:C.amarillo, col:"#8A6D1A" }
+          : estado==="nodisp"       ? { bg:C.gris,    bd:C.grisMedio, col:C.suave }
+          :                           { bg:"white",   bd:C.verde,    col:C.verde };
+          const title =
+            (estado==="cita_primera"||estado==="cita_seg")
+              ? `${citaAqui.pacienteNombre} · ${estado==="cita_primera"?"primera vez":"seguimiento"}${hayPersonal?` · también: ${persAqui.summary}`:""}`
+          : estado==="personal" ? `${persAqui.summary} · ${persAqui.calendario}`
+          : estado==="nodisp"   ? "No caben 60 min desde esta hora"
+          :                       "Disponible";
+          const onSlot = () => {
+            if (!clickable) return;
+            if (estado==="cita_primera" || estado==="cita_seg") {
+              const t = estado==="cita_primera" ? "primera vez" : "seguimiento";
+              if (!window.confirm(`Ya hay una cita de ${t} a esta hora con ${citaAqui.pacienteNombre}. ¿Agendar de todas formas?`)) return;
+            }
+            onPick(h);
+          };
           return (
-            <button key={h} disabled={!clickable} onClick={()=>clickable&&onPick(h)}
-              title={estado==="ocupado"?`Ocupado: ${citaAqui.pacienteNombre}`:estado==="nodisp"?"No caben 60 min desde esta hora":"Disponible"}
-              style={{padding:"6px 4px",borderRadius:7,border:"1px solid "+st.bd,background:st.bg,color:st.col,
+            <button key={h} disabled={!clickable} onClick={onSlot} title={title}
+              style={{position:"relative",padding:"6px 4px",borderRadius:7,
+                border:`${sel?2:1}px solid ${sel?C.azul:base.bd}`,background:base.bg,color:base.col,
+                boxShadow: sel ? `0 0 0 2px ${C.azul}33` : "none",
                 cursor:clickable?"pointer":"not-allowed",textAlign:"center",lineHeight:1.15,
                 opacity:estado==="nodisp"?0.6:1}}>
+              {hayPersonal && <span style={{position:"absolute",top:2,right:3,width:6,height:6,
+                borderRadius:"50%",background:C.amarillo}}/>}
               <div style={{fontSize:11,fontWeight:700}}>{h}</div>
-              {estado==="ocupado" && <div style={{fontSize:8,fontWeight:600,marginTop:1,overflow:"hidden",
-                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
+              {(estado==="cita_primera"||estado==="cita_seg"||estado==="personal") &&
+                <div style={{fontSize:8,fontWeight:600,marginTop:1,overflow:"hidden",
+                  textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nombre}</div>}
             </button>
           );
         })}
       </div>
-      <div style={{display:"flex",gap:12,marginTop:5,fontSize:9,color:C.suave}}>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:5,fontSize:9,color:C.suave}}>
         <span><span style={{color:C.verde,fontWeight:900}}>■</span> Libre</span>
-        <span><span style={{color:C.rojo,fontWeight:900}}>■</span> Ocupado</span>
-        {esPrim && <span><span style={{color:C.grisMedio,fontWeight:900}}>■</span> No cabe 60 min</span>}
+        <span><span style={{color:C.azul,fontWeight:900}}>■</span> 1ª vez</span>
+        <span><span style={{color:C.naranja,fontWeight:900}}>■</span> Seguim.</span>
+        <span><span style={{color:C.amarillo,fontWeight:900}}>■</span> Personal</span>
+        {esPrim && <span><span style={{color:C.grisMedio,fontWeight:900}}>■</span> No cabe 60m</span>}
       </div>
     </div>
   );
@@ -6863,6 +6912,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
     const ini = new Date(`${fecha}T${hora}:00-07:00`).getTime();
     const fin = ini + dur*60000;
     return ocupadoDia.find(o=>{
+      if (o.allDay) return false;   // los eventos de todo el día no cuentan como choque de hora
       const oi=new Date(o.inicio).getTime(), of=new Date(o.fin).getTime();
       return ini < of && fin > oi;
     }) || null;
@@ -7005,7 +7055,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
           </div>
         </Row>
 
-        <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} horaSel={hora} onPick={setHora}/>
+        <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
 
         {choque && (
           <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#FFF7ED",
