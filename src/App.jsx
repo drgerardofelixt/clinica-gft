@@ -1255,6 +1255,17 @@ const ESTUDIOS_LABS = [
   {id:"Ferritina",    nombre:"Ferritina"},
 ];
 const ESTUDIOS_LABS_NOMBRES = ESTUDIOS_LABS.map(e=>e.nombre);
+// Estudios que se PREMARCAN solo en mujeres (en hombres quedan disponibles pero desmarcados).
+const LABS_SOLO_MUJERES = ["Perfil Ginecológico", "Vitamina D"];
+const esSexoMujer = (s) => /mujer|femenin|^f$/i.test(s||"");
+// Preselección al abrir/cambiar plantilla: parte del preset (iniciales/seguimiento) respetando solo-mujeres.
+const preseleccionLabs = (tipo, esMujer) => {
+  if (tipo==="personalizado") return [];
+  const base = LABS_PRESET[tipo] || LABS_PRESET.iniciales;
+  let set = base.filter(e => esMujer || !LABS_SOLO_MUJERES.includes(e));   // hombre → quita solo-mujeres del preset
+  if (esMujer) set = Array.from(new Set([...set, ...LABS_SOLO_MUJERES]));   // mujer → asegura ambos premarcados
+  return set;
+};
 // ── LABORATORIOS: campos, rangos de referencia y categorías ─────
 // Cada campo tiene: k=clave, l=label, u=unidad, min/max=rangos normales
 // g=grupo (general, lipidos, hepatico, tiroideo, gineco)
@@ -4262,39 +4273,65 @@ const ModalAgendarCita = ({p, consulta={}, gcalEventos=[], onClose}) => {
 // Selector de estudios COMPARTIDO — fuente única ESTUDIOS_LABS. Lo usan la orden completa (ModalLabs)
 // y la rápida (OrdenRapida). Paso 2 mejorará aquí contraste/plantillas/solo-mujeres → se refleja en ambas.
 // variant="lista" (filas, orden completa) | "grid" (2 columnas, orden rápida). Mismo listado y misma lógica.
-const SelectorEstudiosLabs = ({ seleccionados=[], onToggle, variant="lista" }) => {
-  if (variant === "grid") {
-    return (
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
-        {ESTUDIOS_LABS_NOMBRES.map(l=>(
-          <label key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,padding:"4px 8px",
-            background:seleccionados.includes(l)?C.azulPale:C.gris,borderRadius:6,cursor:"pointer",
-            border:"1px solid "+(seleccionados.includes(l)?C.azul+"40":C.grisMedio)}}>
-            <input type="checkbox" checked={seleccionados.includes(l)} onChange={()=>onToggle(l)}/>
-            <span style={{flex:1}}>{l}</span>
-          </label>
-        ))}
-      </div>
-    );
-  }
-  return (
-    <>
+const SelectorEstudiosLabs = ({ seleccionados=[], onToggle, variant="lista", personalizados=[], onPersonalizados }) => {
+  const TXT = "#1a1a2e";   // texto OSCURO legible SIEMPRE (marcado y desmarcado igual) — fix de contraste
+  const editar = (i,v) => onPersonalizados && onPersonalizados(personalizados.map((x,j)=>j===i?v:x));
+  const quitar = (i)   => onPersonalizados && onPersonalizados(personalizados.filter((_,j)=>j!==i));
+  const filas = variant === "grid" ? (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+      {ESTUDIOS_LABS_NOMBRES.map(l=>(
+        <label key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,padding:"5px 8px",
+          background:seleccionados.includes(l)?C.azulPale:C.gris,borderRadius:6,cursor:"pointer",
+          border:"1px solid "+(seleccionados.includes(l)?C.azul+"40":C.grisMedio)}}>
+          <input type="checkbox" checked={seleccionados.includes(l)} onChange={()=>onToggle(l)}/>
+          <span style={{flex:1,color:TXT,fontWeight:600}}>{l}</span>
+        </label>
+      ))}
+    </div>
+  ) : (
+    <div style={{marginBottom:10}}>
       {ESTUDIOS_LABS_NOMBRES.map(e=>(
         <label key={e} style={{display:"flex",alignItems:"center",gap:10,
-          padding:"7px 0",borderBottom:"1px solid "+C.gris,cursor:"pointer",fontSize:13}}>
+          padding:"7px 0",borderBottom:"1px solid "+C.gris,cursor:"pointer",fontSize:13,color:TXT,fontWeight:600}}>
           <input type="checkbox" checked={seleccionados.includes(e)} onChange={()=>onToggle(e)}/>
           {e}
         </label>
       ))}
+    </div>
+  );
+  return (
+    <>
+      {filas}
+      {onPersonalizados && (
+        <div style={{marginBottom:10}}>
+          {personalizados.map((val,i)=>(
+            <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+              <input value={val} onChange={e=>editar(i,e.target.value)} placeholder="Otro estudio…"
+                style={{flex:1,padding:"6px 10px",borderRadius:7,border:"1px solid "+C.grisMedio,fontSize:12,color:TXT}}/>
+              <button onClick={()=>quitar(i)} title="Quitar"
+                style={{border:"none",background:C.rojoPale,color:C.rojo,borderRadius:7,
+                  width:30,height:30,cursor:"pointer",fontSize:14,fontWeight:700,flexShrink:0}}>✕</button>
+            </div>
+          ))}
+          <button onClick={()=>onPersonalizados([...personalizados, ""])}
+            style={{border:"1px dashed "+C.azul,background:"white",color:C.azul,borderRadius:8,
+              padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>➕ Agregar estudio</button>
+        </div>
+      )}
     </>
   );
 };
 
-const ModalLabs = ({p, onClose, onSave}) => {
+const ModalLabs = ({p, onClose, onSave, firmaB64=null}) => {
+  const esMujer = esSexoMujer(p?.sexo);
+  // primera vez (sin consultas reales) → iniciales; con historial → seguimiento
+  const tipoIni = (p?.consultas||[]).filter(c=>!c.esSoloCita).length>0 ? "seguimiento" : "iniciales";
   const [f, setF] = useState({
-    id:Date.now().toString(), fecha:hoy(), tipo:"seguimiento",
-    estudios:[...LABS_PRESET.seguimiento], notas:"",
+    id:Date.now().toString(), fecha:hoy(), tipo:tipoIni,
+    estudios:preseleccionLabs(tipoIni, esMujer), notas:"",
   });
+  const [personalizados, setPersonalizados] = useState([]);
+  const [conFirma, setConFirma] = useState(false);
   const [preview, setPreview] = useState(false);
   const docRef = useRef();
   const [pdf, setPdf] = useState(null);
@@ -4302,7 +4339,10 @@ const ModalLabs = ({p, onClose, onSave}) => {
   const tog = (e) => setF(x=>({...x,
     estudios:x.estudios.includes(e)?x.estudios.filter(s=>s!==e):[...x.estudios,e]
   }));
-  const cambiaTipo = (v) => setF(x=>({...x,tipo:v,estudios:v==="personalizado"?[]:(LABS_PRESET[v]||[])}));
+  const cambiaTipo = (v) => setF(x=>({...x,tipo:v,estudios:preseleccionLabs(v, esMujer)}));
+  // Estudios finales = catálogo marcado + líneas libres no vacías. Se usan para guardar y PDF.
+  const estudiosFinal = [...f.estudios, ...personalizados.map(s=>s.trim()).filter(Boolean)];
+  const labsDoc = {...f, estudios:estudiosFinal};
 
   // Pre-genera el PDF al entrar a vista previa (Compartir iOS-safe)
   useEffect(() => {
@@ -4311,7 +4351,7 @@ const ModalLabs = ({p, onClose, onSave}) => {
     const fn = `Labs_${sanitizeFilename(p.nombre||"Paciente")}.pdf`;
     const t = setTimeout(() => { generarPDFBlob(docRef, fn).then(d => { if (vivo) setPdf(d); }); }, 300);
     return () => { vivo = false; clearTimeout(t); };
-  }, [preview]);
+  }, [preview, conFirma]);
 
   if (preview) {
     return (
@@ -4326,13 +4366,13 @@ const ModalLabs = ({p, onClose, onSave}) => {
               color={pdf?"#0EA5E9":"rgba(255,255,255,0.2)"} size="sm" icon="📄" disabled={!pdf}>
               {pdf ? "Ver / Compartir" : "Generando…"}
             </Btn>
-            <Btn onClick={()=>onSave(f)} color={C.verde} size="sm" icon="✓">Guardar</Btn>
+            <Btn onClick={()=>onSave(labsDoc)} color={C.verde} size="sm" icon="✓">Guardar</Btn>
           </div>
         </div>
         <div style={{flex:1,overflow:"auto",padding:20,display:"flex",justifyContent:"center"}}>
           <div ref={docRef} style={{background:"white",boxShadow:"0 4px 30px rgba(0,0,0,0.2)",
             width:"21cm",position:"relative"}}>
-            <DocLabs p={p} labs={f} firmaB64={null}/>
+            <DocLabs p={p} labs={labsDoc} firmaB64={conFirma?firmaB64:null}/>
           </div>
         </div>
       </div>
@@ -4355,22 +4395,33 @@ const ModalLabs = ({p, onClose, onSave}) => {
         <div style={{padding:20,maxHeight:"78vh",overflow:"auto"}}>
           <Row cols={2}>
             <Inp label="Fecha" value={f.fecha} onChange={v=>u("fecha",v)} tipo="date"/>
-            <Sel label="Perfil" value={f.tipo} onChange={cambiaTipo}
-              opts={["iniciales","seguimiento","personalizado"]}/>
+            <div/>
           </Row>
-          <label style={{fontSize:11,fontWeight:600,color:C.suave,display:"block",marginBottom:8}}>
-            ESTUDIOS
-          </label>
-          <SelectorEstudiosLabs seleccionados={f.estudios} onToggle={tog} variant="lista"/>
-          <div style={{marginTop:12}}>
-            <Txt label="Notas / indicaciones" value={f.notas} onChange={v=>u("notas",v)} rows={2}/>
+          <div style={{fontWeight:800,color:C.azul,fontSize:12,marginBottom:8}}>Tipo de panel</div>
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <Btn onClick={()=>cambiaTipo("iniciales")} color={f.tipo==="iniciales"?C.azul:C.gris} size="sm">Iniciales</Btn>
+            <Btn onClick={()=>cambiaTipo("seguimiento")} color={f.tipo==="seguimiento"?C.azul:C.gris} size="sm">Seguimiento</Btn>
           </div>
+          <div style={{fontWeight:800,color:C.azul,fontSize:12,marginBottom:8}}>Estudios solicitados</div>
+          <SelectorEstudiosLabs seleccionados={f.estudios} onToggle={tog} variant="grid"
+            personalizados={personalizados} onPersonalizados={setPersonalizados}/>
+          <div style={{marginTop:4,marginBottom:12}}>
+            <Txt label="Observaciones / indicaciones" value={f.notas} onChange={v=>u("notas",v)} rows={2}/>
+          </div>
+          {firmaB64 && (
+            <label style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",
+              background:conFirma?"#F0FFF9":C.gris,border:"2px solid "+(conFirma?C.verde:C.grisMedio),
+              borderRadius:8,cursor:"pointer",fontSize:12}}>
+              <input type="checkbox" checked={conFirma} onChange={e=>setConFirma(e.target.checked)}/>
+              <span style={{fontWeight:700,color:conFirma?C.verde:C.texto}}>✍️ Incluir firma digital en la orden</span>
+            </label>
+          )}
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"14px 22px",
           borderTop:"1px solid "+C.grisMedio,background:C.gris}}>
           <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
           <Btn onClick={()=>setPreview(true)} outline color={C.azul} icon="📄">Vista previa / PDF</Btn>
-          <Btn onClick={()=>onSave(f)} color={C.morado} icon="🧪">Guardar solicitud</Btn>
+          <Btn onClick={()=>onSave(labsDoc)} color={C.morado} icon="🧪">Guardar solicitud</Btn>
         </div>
       </div>
     </div>
@@ -5906,7 +5957,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       {agendarCita && <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
         onClose={()=>setAgendarCita(null)} onCreada={()=>setAgendarCita(null)}/>}
       {showR && <ModalReceta p={p} firmaB64={firmaB64} onClose={()=>setShowR(false)} onSave={addReceta}/>}
-      {showL && <ModalLabs p={p} onClose={()=>setShowL(false)} onSave={addLabs}/>}
+      {showL && <ModalLabs p={p} firmaB64={firmaB64} onClose={()=>setShowL(false)} onSave={addLabs}/>}
       {/* Entry unificado (Fase C): botón "Agendar" del expediente. ModalAgenda (viejo) ya no se usa. */}
       {showAgenda && (
         <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
@@ -5967,21 +6018,27 @@ const OrdenRapida = ({onClose, firmaB64}) => {
   const [edad, setEdad] = useState("");
   const [sexo, setSexo] = useState("");
   const [tipo, setTipo] = useState("iniciales");
-  const [labs, setLabs] = useState(LABS_PRESET.iniciales);
+  const [labs, setLabs] = useState(preseleccionLabs("iniciales", false));
+  const [personalizados, setPersonalizados] = useState([]);
   const [obs, setObs] = useState("");
   const [conFirma, setConFirma] = useState(false);
+  const esMujer = esSexoMujer(sexo);
 
   const togglelab = (l) => {
     setLabs(labs.includes(l) ? labs.filter(x=>x!==l) : [...labs, l]);
   };
   const cambiarTipo = (t) => {
     setTipo(t);
-    setLabs(LABS_PRESET[t]||LABS_PRESET.iniciales);
+    setLabs(preseleccionLabs(t, esMujer));
   };
+  const cambiarSexo = (v) => { setSexo(v); setLabs(preseleccionLabs(tipo, esSexoMujer(v))); };
+
+  // Estudios finales = catálogo marcado + líneas libres no vacías (WhatsApp y PDF).
+  const labsFinal = [...labs, ...personalizados.map(s=>s.trim()).filter(Boolean)];
 
   const enviarOrdenWA = () => {
     if (!tel) { alert("Ingrese teléfono"); return; }
-    const msg = `Hola ${nombre||""}, te envío la orden de laboratorios solicitados:\n\n${labs.map(l=>"• "+l).join("\n")}${obs?"\n\nIndicaciones: "+obs:""}\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
+    const msg = `Hola ${nombre||""}, te envío la orden de laboratorios solicitados:\n\n${labsFinal.map(l=>"• "+l).join("\n")}${obs?"\n\nIndicaciones: "+obs:""}\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
     enviarWA(tel, msg);
   };
 
@@ -5989,7 +6046,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
     nombre: nombre || "Paciente",
     edad: edad,
     sexo: sexo,
-    laboratorios: [{ fecha: new Date().toISOString().split("T")[0], labs: labs, obs: obs }]
+    laboratorios: [{ fecha: new Date().toISOString().split("T")[0], labs: labsFinal, obs: obs }]
   };
 
   return (
@@ -6008,7 +6065,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
             <Inp label="Edad" value={edad} onChange={setEdad} tipo="number"/>
             <div style={{flex:1}}>
               <label style={{fontSize:10,fontWeight:600,color:C.suave,display:"block",marginBottom:3}}>Sexo</label>
-              <select value={sexo} onChange={e=>setSexo(e.target.value)}
+              <select value={sexo} onChange={e=>cambiarSexo(e.target.value)}
                 style={{width:"100%",padding:"7px 10px",borderRadius:7,border:"1px solid "+C.grisMedio,fontSize:12}}>
                 <option value="">—</option>
                 <option value="Femenino">Femenino</option>
@@ -6026,7 +6083,8 @@ const OrdenRapida = ({onClose, firmaB64}) => {
           </div>
 
           <div style={{fontWeight:800,color:C.azul,fontSize:12,marginBottom:8}}>Estudios solicitados</div>
-          <SelectorEstudiosLabs seleccionados={labs} onToggle={togglelab} variant="grid"/>
+          <SelectorEstudiosLabs seleccionados={labs} onToggle={togglelab} variant="grid"
+            personalizados={personalizados} onPersonalizados={setPersonalizados}/>
 
           <div style={{marginBottom:12}}>
             <label style={{fontSize:10,fontWeight:600,color:C.suave,display:"block",marginBottom:3}}>
@@ -6063,7 +6121,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
 
       {paso==="pdf" && (
         <PrintModal onClose={()=>setPaso("form")} titulo="Orden de laboratorios">
-          <DocLabs p={pacFake} labs={{fecha: new Date().toISOString().split("T")[0], estudios: labs, notas: obs}} firmaB64={conFirma?firmaB64:null}/>
+          <DocLabs p={pacFake} labs={{fecha: new Date().toISOString().split("T")[0], estudios: labsFinal, notas: obs}} firmaB64={conFirma?firmaB64:null}/>
         </PrintModal>
       )}
     </Modal>
@@ -9234,7 +9292,7 @@ export default function App() {
       />
       {rapidaRecetaPac&&<ModalReceta p={rapidaRecetaPac} firmaB64={firmaB64} onClose={()=>setRapidaRecetaPac(null)}
         onSave={async r=>{ if(!rapidaRecetaPac._libre) await updPac({...rapidaRecetaPac,recetas:[...(rapidaRecetaPac.recetas||[]),r]}); setRapidaRecetaPac(null);}}/>}
-      {rapidaLabsPac&&<ModalLabs p={rapidaLabsPac} onClose={()=>setRapidaLabsPac(null)}
+      {rapidaLabsPac&&<ModalLabs p={rapidaLabsPac} firmaB64={firmaB64} onClose={()=>setRapidaLabsPac(null)}
         onSave={async l=>{ if(!rapidaLabsPac._libre) await updPac({...rapidaLabsPac,laboratorios:[...(rapidaLabsPac.laboratorios||[]),l]}); setRapidaLabsPac(null);}}/>}
       {mNuevo && <ModalPaciente onClose={()=>setMNuevo(false)} onSave={savePac}/>}
       {showConfig && (
