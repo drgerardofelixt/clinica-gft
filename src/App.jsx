@@ -791,6 +791,7 @@ const sincronizarPendientes = async () => {
   let pendientes = [];
   try { pendientes = (await listarCitas({})).filter(c => c.pendienteSincronizar && !c.googleEventId); }
   catch(e) { console.error("sincronizarPendientes/listar:", e); return { ok:false, motivo:"listar_fallo", sincronizadas:0, total:0 }; }
+  if (pendientes.length === 0) return { ok:true, sincronizadas:0, total:0 }; // nada pendiente → no tocar Google (chequeo barato)
   const calendarId = await obtenerOCrearCalendarioConsultorio();
   if (!calendarId) return { ok:false, motivo:"sin_calendario", sincronizadas:0, total:pendientes.length };
   let n = 0;
@@ -8936,14 +8937,30 @@ export default function App() {
   const [gcalAuthed, setGcalAuthed] = useState(false);
   const [gcalEventos, setGcalEventos] = useState([]);
 
+  // Reintento automático SILENCIOSO de sincronización con Google (arregla el sync intermitente al agendar).
+  // Se dispara cuando Google queda listo, al refrescarse el token y periódicamente. Sin avisos al usuario.
+  const autoSyncRef = useRef(false);
+  const autoSyncPendientes = async (motivo) => {
+    if (autoSyncRef.current) return;             // evita solapar dos corridas
+    if (!isGoogleAuthorized()) return;           // Google no listo → no martillar, espera a la señal
+    autoSyncRef.current = true;
+    try {
+      const r = await sincronizarPendientes();   // silenciosa · idempotente · try/catch por cita
+      if (r && r.sincronizadas > 0) console.log(`[auto-sync ${motivo||""}] ${r.sincronizadas}/${r.total} cita(s) sincronizada(s)`);
+    } catch(e) { console.warn("auto-sync pendientes (no crítico):", e); }
+    finally { autoSyncRef.current = false; }
+  };
+
   // Inicializar Google Calendar al cargar
   useEffect(() => {
     initGoogleCalendar().then(() => {
       setGcalAuthed(isGoogleAuthorized());
+      autoSyncPendientes("google-listo");        // al terminar de cargar el cliente: drena pendientes
     }).catch(e => console.warn("Google Calendar no disponible:", e));
 
     const onAuthed = async () => {
       setGcalAuthed(true);
+      autoSyncPendientes("token-refrescado");    // token disponible/refrescado: reintenta pendientes
       const eventos = await leerEventosGCal();
       setGcalEventos(eventos);
     };
@@ -8954,6 +8971,13 @@ export default function App() {
       window.removeEventListener("gcal_authed", onAuthed);
       window.removeEventListener("gcal_revoked", onRevoked);
     };
+  }, []);
+
+  // Reintento periódico en segundo plano (90s): cubre las citas que quedaron pendientes tras agendar.
+  // Solo actúa si Google está autorizado y realmente hay pendientes (sincronizarPendientes corta barato si no).
+  useEffect(() => {
+    const id = setInterval(() => { autoSyncPendientes("intervalo"); }, 90000);
+    return () => clearInterval(id);
   }, []);
   const [confirmarCita, setConfirmarCita] = useState(null); // datos pendientes de guardar consulta
 
