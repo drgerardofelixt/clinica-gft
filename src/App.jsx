@@ -2283,12 +2283,35 @@ const DocProgreso = ({p}) => {
     return pos?(v>0?"#1D9E75":"#D85A30"):(v<0?"#1D9E75":"#D85A30");
   };
 
-  const caConsultas = (p.consultas||[]).filter(c=>c.ca).sort(porFechaClinica);
-  const caIni = caConsultas[0]?.ca;
-  const caAct = caConsultas[caConsultas.length-1]?.ca;
+  // CA: unifica TODAS las fuentes registradas — consultas[].ca + el inicial p.ef.ca del alta (que en
+  // edición/shell-rápido no llega a una consulta). Dedup por fecha (la consulta gana si coincide).
+  const caPuntos = (() => {
+    const byF = new Map();
+    const add = (fecha, ca) => { if (fecha!=null && ca!=null && ca!=="") byF.set(normDate(fecha), { fecha, ca }); };
+    if (p.ef) add(p.fechaInicio || comps[0]?.fecha, p.ef.ca);   // inicial (menor prioridad → se añade primero)
+    (p.consultas||[]).forEach(c => add(c.fecha, c.ca));          // consultas sobreescriben si misma fecha
+    return [...byF.values()].sort(porFechaClinica);
+  })();
+  const caIni = caPuntos[0]?.ca;
+  const caAct = caPuntos[caPuntos.length-1]?.ca;
   // Consulta más reciente (real, por fecha clínica) para tratamiento actual
   const ultimaConsulta = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica).slice(-1)[0];
-  const proxCita = [...(p.consultas||[])].sort(porFechaClinica).reverse().find(c=>c.proxCita)?.proxCita;
+  // Bug 2: próxima cita REAL desde la tabla `citas` (agenda v2), no el campo legacy p.consultas[].proxCita.
+  // Solo la próxima cita FUTURA (inicio > ahora) y no cancelada de este paciente; si no hay, el recuadro se oculta.
+  const [proxCitaReal, setProxCitaReal] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    if (!p?.id) { setProxCitaReal(null); return; }
+    listarCitas({ desde: new Date().toISOString() })
+      .then(cs => { if (!vivo) return;
+        const fut = (cs||[])
+          .filter(c => c.pacienteId===p.id && c.estado!=="cancelada" && new Date(c.inicio).getTime() > Date.now())
+          .sort((a,b) => new Date(a.inicio) - new Date(b.inicio));
+        setProxCitaReal(fut[0] || null);
+      })
+      .catch(() => { if (vivo) setProxCitaReal(null); });
+    return () => { vivo = false; };
+  }, [p?.id]);
   const _tEf  = tratamientoEfectivo(p);
   const med   = ultimaConsulta?.medicamento || medLegibleCorto(_tEf) || null;
   const dosis = ultimaConsulta?.dosis || _tEf.dosis || null;
@@ -2849,7 +2872,7 @@ const DocProgreso = ({p}) => {
   const sPeso  = serie(c=>c.peso);
   const sGrasa = serie(c=>c.grasa);
   const sMusc  = serie(c=>c.musculo);
-  const sCA    = caConsultas.map(c=>({f:normDate(c.fecha), v:parseFloat(c.ca)})).filter(d=>!isNaN(d.v));
+  const sCA    = caPuntos.map(c=>({f:normDate(c.fecha), v:parseFloat(c.ca)})).filter(d=>!isNaN(d.v));
   const yScale = (arr) => { const vs=arr.map(d=>d.v), min=Math.min(...vs), max=Math.max(...vs), rng=(max-min)||1;
     return v => 42 - ((v-min)/rng)*26; };
   const Sparkline = ({arr, color, decimals=1, sufijo=""}) => {
@@ -3221,12 +3244,13 @@ const DocProgreso = ({p}) => {
           <div style={{fontWeight:800,color:"#1D9E75",marginBottom:3}}>{motivTitle}</div>
           <div style={{fontSize:10.5,lineHeight:1.45}}>{motiv}</div>
         </div>
-        {proxCita && (
+        {proxCitaReal && (()=>{ const {fecha,hora}=isoAInputsHmo(proxCitaReal.inicio); return (
           <div style={{width:170,flexShrink:0,background:C.azul,color:"white",borderRadius:11,padding:"14px 16px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
             <div style={{fontSize:9,fontWeight:700,opacity:0.85,letterSpacing:"0.5px"}}>PRÓXIMA CITA</div>
-            <div className="d" style={{fontSize:18,fontWeight:700,marginTop:4}}>{normDate(proxCita)}</div>
+            <div className="d" style={{fontSize:18,fontWeight:700,marginTop:4}}>{normDate(fecha)}</div>
+            <div style={{fontSize:11,opacity:0.9,marginTop:2}}>{hora} hrs</div>
           </div>
-        )}
+        );})()}
       </div>
 
       <Pie n={3}/>
