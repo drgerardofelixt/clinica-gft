@@ -1016,10 +1016,10 @@ const construirMsgConfirmacion = (cita, nombre) => {
     : "";
   const tipoLegible = TIPO_LEGIBLE_CITA[cita.tipo] || "consulta";
   return `Hola ${nombre}, le confirmamos su cita de ${tipoLegible} con el Dr. Gerardo Félix Tapia.\n`
-    + `📅 ${fechaLarga}\n`
-    + `🕐 ${hora12h}\n`
-    + `📍 Av. Adolfo de la Huerta 200A, 2do piso, Col. Pitic, Hermosillo\n`
-    + `Cualquier duda, puede responder por este medio. ¡Lo esperamos!`;
+    + `Fecha: ${fechaLarga}\n`
+    + `Hora: ${hora12h}\n`
+    + `Dirección: Av. Adolfo de la Huerta 200A, 2do piso, Col. Pitic, Hermosillo\n`
+    + `Cualquier duda, puede responder por este medio. Quedamos a sus órdenes.`;
 };
 // Abre WhatsApp con la confirmación de la cita. Reutiliza enviarWA (formateo 52 + limpieza).
 // Devuelve false si no hay teléfono (enviarWA copia el texto al portapapeles).
@@ -5114,13 +5114,13 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
 
     const zoneRange = (v, min, max) => {
       const nv=parseFloat(v); if(isNaN(nv)) return null;
-      if(nv>=min&&nv<=max) return "✅ dentro del rango normal";
+      if(nv>=min&&nv<=max) return "dentro del rango normal";
       const lo=min*0.7, hi=max*1.35;
       const pct=Math.min(Math.max((nv-lo)/(hi-lo)*100,0),100);
       const near=(pct>20&&pct<80);
       return nv<min
-        ? (near?"🟡 ligeramente por debajo del rango":"⚠️ por debajo del rango normal")
-        : (near?"🟡 ligeramente elevado":"⚠️ por encima del rango normal");
+        ? (near?"ligeramente por debajo del rango":"por debajo del rango normal")
+        : (near?"ligeramente elevado":"por encima del rango normal");
     };
 
     const tallaCm = parseFloat(p.talla)||170;
@@ -5161,18 +5161,18 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     const primerNom = (p.nombre||"").split(" ")[0]||"";
     let msg = `Hola ${primerNom}, le comparto su reporte de progreso:\n\n`;
 
-    msg += `📊 *REPORTE DE PROGRESO*\n`;
+    msg += `*REPORTE DE PROGRESO*\n`;
     if (primera && ultima) {
       msg += `${n} medición${n!==1?"es":""}`;
-      if (n>1) msg += ` · ${normDate(primera.fecha)} → ${normDate(ultima.fecha)}`;
+      if (n>1) msg += ` - ${normDate(primera.fecha)} a ${normDate(ultima.fecha)}`;
       msg += `\n\n`;
     }
 
-    msg += `*📈 Métricas principales*\n`;
-    if (ultima?.peso)    msg += `• Peso actual: *${ultima.peso} kg*${pesoDif!=null?` (${pesoDif} kg)`:""}\n`;
-    if (ultima?.grasa)   msg += `• Grasa corporal: *${ultima.grasa}%*${grasaDif!=null?` (${grasaDif}%)`:""}\n`;
-    if (ultima?.musculo) msg += `• Masa muscular: *${ultima.musculo} kg*${musculoDif!=null?` (${musculoDif} kg)`:""}\n`;
-    if (caAct)           msg += `• Circ. abdominal: *${caAct} cm*${caDif!=null?` (${caDif} cm)`:""}\n`;
+    msg += `*Métricas principales*\n`;
+    if (ultima?.peso)    msg += `- Peso actual: *${ultima.peso} kg*${pesoDif!=null?` (${pesoDif} kg)`:""}\n`;
+    if (ultima?.grasa)   msg += `- Grasa corporal: *${ultima.grasa}%*${grasaDif!=null?` (${grasaDif}%)`:""}\n`;
+    if (ultima?.musculo) msg += `- Masa muscular: *${ultima.musculo} kg*${musculoDif!=null?` (${musculoDif} kg)`:""}\n`;
+    if (caAct)           msg += `- Circ. abdominal: *${caAct} cm*${caDif!=null?` (${caDif} cm)`:""}\n`;
     msg += `\n`;
 
     const imcRange   = ultima?.imc      ? zoneRange(ultima.imc, 18.5, 25) : null;
@@ -5183,22 +5183,19 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       const grasaLabel = esMujer
         ? (grasa <= 24 ? "en rango fitness" : grasa <= 31 ? "aceptable" : "elevada")
         : (grasa <= 17 ? "en rango fitness" : grasa <= 24 ? "aceptable" : "elevada");
-      const grasaIcon = grasaLabel==="en rango fitness" ? "✅" : grasaLabel==="aceptable" ? "🟡" : "⚠️";
-      grasaRange = `${grasaIcon} ${grasaLabel}`;
+      grasaRange = grasaLabel;
     }
     // Grasa visceral — índice Tanita
     let viscRange = null;
     if (ultima?.visceral) {
       const visceral = parseFloat(ultima.visceral);
-      const viscLabel = visceral <= 9 ? "excelente" : visceral <= 14 ? "moderada" : "elevada";
-      const viscIcon = viscLabel==="excelente" ? "✅" : viscLabel==="moderada" ? "🟡" : "⚠️";
-      viscRange = `${viscIcon} ${viscLabel}`;
+      viscRange = visceral <= 9 ? "excelente" : visceral <= 14 ? "moderada" : "elevada";
     }
     if (imcRange||grasaRange||viscRange) {
-      msg += `*📐 Rangos saludables*\n`;
-      if (imcRange)   msg += `• IMC ${ultima.imc}: ${imcRange}\n`;
-      if (grasaRange) msg += `• Grasa ${ultima.grasa}%: ${grasaRange}\n`;
-      if (viscRange)  msg += `• Grasa visceral ${ultima.visceral}: ${viscRange}\n`;
+      msg += `*Rangos saludables*\n`;
+      if (imcRange)   msg += `- IMC ${ultima.imc}: ${imcRange}\n`;
+      if (grasaRange) msg += `- Grasa ${ultima.grasa}%: ${grasaRange}\n`;
+      if (viscRange)  msg += `- Grasa visceral ${ultima.visceral}: ${viscRange}\n`;
       msg += `\n`;
     }
 
@@ -5207,56 +5204,55 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         const md=difNum(waSegAct[s.mKey],waSegRef[s.mKey]);
         const gd=difNum(waSegAct[s.gKey],waSegRef[s.gKey]);
         if(md==null&&gd==null) return null;
-        const mTxt=md==null?"":md===0?` músculo: ${parseFloat(waSegAct[s.mKey]).toFixed(1)} kg`:` músculo ${md>0?"↑":"↓"} ${Math.abs(md).toFixed(1)} kg${md>0?" ✅":" ⚠️"}`;
-        const gTxt=gd==null?"":gd===0?` grasa: ${parseFloat(waSegAct[s.gKey]).toFixed(1)}%`:" grasa "+`${gd<0?"↓":"↑"} ${Math.abs(gd).toFixed(1)}%${gd<0?" ✅":" ⚠️"}`;
-        return `• ${s.label}:${mTxt}${gTxt}`;
+        const mTxt=md==null?"":md===0?` músculo: ${parseFloat(waSegAct[s.mKey]).toFixed(1)} kg`:` músculo ${md>0?"subió":"bajó"} ${Math.abs(md).toFixed(1)} kg`;
+        const gTxt=gd==null?"":gd===0?` grasa: ${parseFloat(waSegAct[s.gKey]).toFixed(1)}%`:` grasa ${gd<0?"bajó":"subió"} ${Math.abs(gd).toFixed(1)}%`;
+        return `- ${s.label}:${mTxt}${gTxt}`;
       }).filter(Boolean);
       if (segLines.length) {
-        msg += `*📊 Progreso por segmento*\n`;
+        msg += `*Progreso por segmento*\n`;
         msg += segLines.join("\n")+"\n\n";
       }
     }
 
     const hasMetas = grasaActKg!=null||musculoAct!=null||bmrAct!=null;
     if (hasMetas) {
-      msg += `*🎯 Metas personalizadas*\n`;
+      msg += `*Metas personalizadas*\n`;
       if (musculoAct!=null&&musculoIni!=null)
-        msg += `• Masa muscular: actual ${musculoAct} kg, meta ${musculoIni} kg (preservar)\n`;
+        msg += `- Masa muscular: actual ${musculoAct} kg, meta ${musculoIni} kg (preservar)\n`;
       if (grasaActKg!=null)
-        msg += `• Masa grasa: actual ${grasaActKg} kg, meta ${grasaObjKg} kg\n`;
+        msg += `- Masa grasa: actual ${grasaActKg} kg, meta ${grasaObjKg} kg\n`;
       if (bmrAct!=null)
-        msg += `• TMB: actual ${bmrAct} kcal, meta ${bmrObj} kcal\n`;
-      msg += `_Metas estimadas como referencia · criterio médico_\n\n`;
+        msg += `- TMB: actual ${bmrAct} kcal, meta ${bmrObj} kcal\n`;
+      msg += `_Metas estimadas como referencia, criterio médico_\n\n`;
     }
 
     if (med||proxCita) {
-      msg += `*💊 Tratamiento actual*\n`;
-      if (med)      msg += `• ${med}${dosis?" — "+dosis:""}\n`;
-      if (proxCita) msg += `• Próxima cita: ${normDate(proxCita)}\n`;
+      msg += `*Tratamiento actual*\n`;
+      if (med)      msg += `- ${med}${dosis?" - "+dosis:""}\n`;
+      if (proxCita) msg += `- Próxima cita: ${normDate(proxCita)}\n`;
       msg += `\n`;
     }
 
     const musculoChWA = difNum(ultima?.musculo, primera?.musculo);
     const grasaChWA   = difNum(ultima?.grasa,   primera?.grasa);
     const waCambios = [
-      pesoChange!=null ? `peso ${pesoChange<0?"−":"+"}${Math.abs(pesoChange)} kg` : null,
-      grasaChWA!=null  ? `grasa ${grasaChWA<0?"−":"+"}${Math.abs(grasaChWA)}%`   : null,
-      musculoChWA!=null? `músculo ${musculoChWA>=0?"+":"−"}${Math.abs(musculoChWA)} kg` : null,
+      pesoChange!=null ? `peso ${pesoChange<0?"-":"+"}${Math.abs(pesoChange)} kg` : null,
+      grasaChWA!=null  ? `grasa ${grasaChWA<0?"-":"+"}${Math.abs(grasaChWA)}%`   : null,
+      musculoChWA!=null? `músculo ${musculoChWA>=0?"+":"-"}${Math.abs(musculoChWA)} kg` : null,
     ].filter(Boolean);
     let waRec = "";
     if(pesoChange!=null&&pesoChange<0&&musculoChWA!=null&&musculoChWA<-0.5){
-      waRec = "Para preservar la masa muscular, asegure proteínas 1.2–1.6 g/kg/día e incluya ejercicio de resistencia 2–3 veces/semana.";
+      waRec = "Para preservar la masa muscular, asegure proteínas de 1.2 a 1.6 g/kg/día e incluya ejercicio de resistencia 2 a 3 veces por semana.";
     } else if(pesoChange!=null&&pesoChange<0&&(musculoChWA==null||musculoChWA>=-0.3)){
-      waRec = "Excelente preservación de masa muscular — indica un metabolismo eficiente. Continúe con su plan.";
+      waRec = "Excelente preservación de masa muscular, lo cual indica un metabolismo eficiente. Continúe con su plan.";
     } else if((pesoChange==null||Math.abs(pesoChange)<0.5)&&grasaChWA!=null&&grasaChWA<0){
       waRec = "Recomposición corporal en progreso. Mantenga el balance de proteínas y carbohidratos para optimizar.";
     } else {
       waRec = "La constancia en su plan de tratamiento y nutrición es el factor más determinante para resultados sostenibles.";
     }
-    const waMotivIcon = (pesoChange!=null&&pesoChange<0)||(grasaChWA!=null&&grasaChWA<0) ? "🌟" : "💪";
-    const waMotivTit  = (pesoChange!=null&&pesoChange<0)||(grasaChWA!=null&&grasaChWA<0) ? "¡Excelente avance!" : "¡Siga adelante!";
-    msg += `${waMotivIcon} *${waMotivTit}*\n`;
-    if(waCambios.length) msg += `Cambios: ${waCambios.join(" · ")}.\n`;
+    const waMotivTit  = (pesoChange!=null&&pesoChange<0)||(grasaChWA!=null&&grasaChWA<0) ? "Excelente avance" : "Siga adelante";
+    msg += `*${waMotivTit}*\n`;
+    if(waCambios.length) msg += `Cambios: ${waCambios.join(", ")}.\n`;
     msg += waRec+"\n\n";
 
     msg += `Atentamente,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
@@ -6038,7 +6034,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
 
   const enviarOrdenWA = () => {
     if (!tel) { alert("Ingrese teléfono"); return; }
-    const msg = `Hola ${nombre||""}, te envío la orden de laboratorios solicitados:\n\n${labsFinal.map(l=>"• "+l).join("\n")}${obs?"\n\nIndicaciones: "+obs:""}\n\nSaludos,\nDr. Gerardo Félix Tapia\nMedicina Integral`;
+    const msg = `Hola ${nombre||""}, le comparto la orden de laboratorios solicitados:\n\n${labsFinal.map(l=>"- "+l).join("\n")}${obs?"\n\nIndicaciones: "+obs:""}\n\nQuedamos a sus órdenes.\nDr. Gerardo Félix Tapia\nMedicina Integral`;
     enviarWA(tel, msg);
   };
 
@@ -7864,7 +7860,11 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
       weekday:"long",day:"numeric",month:"long"
     });
     const nombre = (c.pac?.nombre||"paciente").split(" ")[0];
-    const msg = `Hola ${nombre}, te escribimos para recordarte y confirmar tu asistencia a tu cita de mañana ${fechaMx}${c.hora?" a las "+c.hora+" hrs":""} con el Dr. Félix Tapia. ¿Nos confirmas que asistirás? Quedamos al pendiente, ¡saludos!`;
+    const msg = `Hola ${nombre}, le recordamos y confirmamos su cita de mañana.\n`
+      + `Fecha: ${fechaMx}\n`
+      + (c.hora?`Hora: ${c.hora} hrs\n`:"")
+      + `Médico: Dr. Gerardo Félix Tapia\n`
+      + `¿Nos confirma su asistencia? Quedamos al pendiente. Gracias.`;
     enviarWA(c.pac?.telefono||"sin telefono", msg);
   };
 
