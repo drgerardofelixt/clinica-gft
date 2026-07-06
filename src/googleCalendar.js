@@ -14,12 +14,14 @@ let tokenClient = null;
 let gapiInited = false;
 let gisInited = false;
 let accessToken = null;
+let refreshTimer = null;   // temporizador único del refresco proactivo (siempre uno a la vez)
 
 const saveToken = (token) => {
   accessToken = token;
   localStorage.setItem(TOKEN_KEY, token);
   // Token dura 1 hora, guardamos expiración
   localStorage.setItem(TOKEN_EXP_KEY, Date.now() + 55*60*1000);
+  programarRefresco();   // reprograma el refresco proactivo para este token nuevo
 };
 
 const loadSavedToken = () => {
@@ -35,6 +37,24 @@ const loadSavedToken = () => {
   return null;
 };
 
+// ── Refresco proactivo del token (silencioso) ────────────────
+// Pide un token nuevo sin interacción. Solo funciona si el usuario ya autorizó antes y hay sesión Google.
+// En caso de fallo, el callback de GIS registra el error y NO reprograma → degrada al flujo reactivo (no peor que hoy).
+const refrescarTokenSilencioso = () => {
+  if (!tokenClient) return;                             // GIS aún no cargó → nada que hacer
+  try { tokenClient.requestAccessToken({ prompt: "" }); }
+  catch(e) { console.warn("Refresco silencioso de token falló (no crítico):", e); }
+};
+
+// Programa el refresco ~5 min ANTES de que venza el token. Un solo temporizador a la vez (cancela el anterior).
+const programarRefresco = () => {
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+  const exp = parseInt(localStorage.getItem(TOKEN_EXP_KEY)||"0");
+  if (!exp) return;                                     // sin token → no programar
+  const delay = Math.max(exp - Date.now() - 5*60*1000, 1000);  // 5 min antes; nunca negativo ni en bucle cerrado
+  refreshTimer = setTimeout(() => { refreshTimer = null; refrescarTokenSilencioso(); }, delay);
+};
+
 export const initGoogleCalendar = () => new Promise((resolve, reject) => {
   // Restaurar token guardado
   const savedToken = loadSavedToken();
@@ -44,6 +64,7 @@ export const initGoogleCalendar = () => new Promise((resolve, reject) => {
       if (savedToken) {
         window.gapi.client.setToken({ access_token: savedToken });
         window.dispatchEvent(new Event("gcal_authed"));
+        programarRefresco();   // token restaurado de sesión previa → programa su refresco proactivo
       }
       resolve();
     }
@@ -102,6 +123,7 @@ export const isGoogleAuthorized = () => {
 };
 
 export const revokeGoogleAccess = () => {
+  if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }  // detén el refresco proactivo
   if (accessToken) {
     window.google?.accounts.oauth2.revoke(accessToken);
   }
