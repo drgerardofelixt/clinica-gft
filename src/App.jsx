@@ -314,30 +314,33 @@ const porFechaClinica = (a,b) => parseFechaClinica(a.fecha) - parseFechaClinica(
 // (composición inicial en p.composicion sin consulta vinculada en p.consultas).
 // Devuelve el paciente actualizado, o null si no hay nada que migrar. Idempotente (seguro de correr varias veces).
 const migrarConsultaInicial = (p) => {
-  const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
-  if (comps.length === 0) return null; // sin mediciones, nada que migrar
-  const primera = comps[0];
   const cons = p.consultas || [];
-  // Ya vinculada por id, o ya existe una consulta real en esa misma fecha → no migrar.
-  const yaVinculada = primera.id && cons.some(c => c.id === primera.id);
-  const mismaFecha  = cons.some(c => !c.esSoloCita && normDate(c.fecha) === normDate(primera.fecha));
+  // Si ya hay una consulta real (no solo-cita) → nada que reparar.
+  if (cons.some(c => !c.esSoloCita)) return null;
+  const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
+  const primera = comps[0] || null;   // puede no haber báscula: la Consulta 1 se crea igual desde el expediente
+  // Ya vinculada por id, o ya existe una consulta en esa misma fecha → no migrar.
+  const yaVinculada = primera && primera.id && cons.some(c => c.id === primera.id);
+  const mismaFecha  = primera && cons.some(c => !c.esSoloCita && normDate(c.fecha) === normDate(primera.fecha));
   if (yaVinculada || mismaFecha) return null;
-  const cid = primera.id || crypto.randomUUID();
-  const compConId = primera.id ? primera : {...primera, id:cid}; // vincula la composición con el mismo id
+  const cid = (primera && primera.id) || crypto.randomUUID();
+  const compConId = primera ? (primera.id ? primera : {...primera, id:cid}) : null; // vincula la composición si existe
   const consultaInicial = {
     id: cid,
-    fecha: primera.fecha,
-    hora: primera.hora || ahora(),
-    peso: primera.peso || "",
-    ca: "", ta:(p.ci&&p.ci.ta)||"", fc:(p.ci&&p.ci.fc)||"", spo2:(p.ef&&p.ef.spo2)||"",
+    fecha: (primera && primera.fecha) || p.fechaInicio || hoy(),
+    hora: (primera && primera.hora) || ahora(),
+    peso: (primera && primera.peso) || "",
+    ca:(p.ef&&p.ef.ca)||"", ta:(p.ci&&p.ci.ta)||"", fc:(p.ci&&p.ci.fc)||"", spo2:(p.ef&&p.ef.spo2)||"",
     glucosaCapilar:(p.ef&&p.ef.glucosaCapilar)||"",
     subjetivo: "(Consulta inicial — migrada automáticamente, datos originales no capturados en el sistema)",
     efectos: "", respuesta: "",
     plan: "", cambioDosis: "", origenMed: "",
     medicamento:(p.ci&&p.ci.glp1)||"", dosis:(p.ci&&p.ci.dosis)||"",
-    comp: {...compConId},
+    comp: compConId ? {...compConId} : {},
   };
-  const composicion = primera.id ? (p.composicion||[]) : (p.composicion||[]).map(c => c===primera ? compConId : c);
+  const composicion = (compConId && !primera.id)
+    ? (p.composicion||[]).map(c => c===primera ? compConId : c)
+    : (p.composicion||[]);
   return { ...p, composicion, consultas: [...(p.consultas||[]), consultaInicial] };
 };
 // Helpers de horario (compartidos por ModalAgenda y ModalConsulta)
@@ -4530,12 +4533,18 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
     // Fase 1 — Tratamiento actual desde el alta/edición (medicamento=GLP-1 full; dosis extraída del nombre o del campo). Sin origen en el alta.
     const _dosisAlta = (((f.ci.glp1||"").match(/([\d.]+\s*mg)/i)||[])[1]) || f.ci.dosis || null;
     const _tratAlta = f.ci.glp1 ? { tratamiento: mergeTratamiento(f.tratamiento, { medicamento: f.ci.glp1, dosis: _dosisAlta, origen: null }) } : {};
-    if (pac) { onSave({...f, ..._tratAlta}); return; } // edición: NO crear consulta inicial (evita duplicados)
-    const arr = [...(f.composicion||[])];
-    const compInicial = arr.length ? arr[arr.length-1] : null;
+    // Regla clínica: la historia clínica YA es la primera consulta. Si el paciente aún NO tiene una
+    // consulta real (no solo-cita) → crearla, sea alta nueva o edición de un expediente incompleto
+    // (p. ej. paciente "shell" creado al agendar). Si ya existe consulta real → edición normal, no duplicar.
+    if ((f.consultas||[]).some(c => !c.esSoloCita)) { onSave({...f, ..._tratAlta}); return; }
+    // Primera medición por fecha (si hay báscula); si no hay, la consulta se crea igual desde el expediente.
+    const compsReales = [...(f.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
+    const compInicial = compsReales[0] || null;
     const cid = (compInicial && compInicial.id) || crypto.randomUUID();
-    // Vincula la composición inicial con el mismo id que la consulta
-    if (compInicial && !compInicial.id) arr[arr.length-1] = {...compInicial, id:cid};
+    // Vincula la composición inicial con el mismo id que la consulta (sin exigir que exista)
+    const arr = (compInicial && !compInicial.id)
+      ? (f.composicion||[]).map(c => c===compInicial ? {...compInicial, id:cid} : c)
+      : [...(f.composicion||[])];
     const consultaInicial = {
       id: cid,
       fecha: (compInicial && compInicial.fecha) || f.fechaInicio || hoy(),
@@ -5738,8 +5747,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                 padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",
                 gap:10,flexWrap:"wrap"}}>
                 <div style={{fontSize:11,color:"#9A3412"}}>
-                  <b>Falta la Consulta 1 de este paciente.</b> Su primera medición de báscula
-                  {primera?.fecha?` (${fmtF(primera.fecha)})`:""} no tiene consulta vinculada.
+                  <b>Falta la Consulta 1 de este paciente.</b> Su historia clínica
+                  {primera?.fecha?` (primera medición: ${fmtF(primera.fecha)})`:""} no tiene una consulta vinculada.
                 </div>
                 <Btn onClick={repararConsultaInicial} color={C.naranja} size="sm" icon="🔧">
                   Reparar Consulta 1 faltante
