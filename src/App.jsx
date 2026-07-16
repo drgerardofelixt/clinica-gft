@@ -2484,6 +2484,25 @@ const DocProgreso = ({p}) => {
   const musculoAct = ultima?.musculo!=null  ? parseFloat(ultima.musculo)  : null;
   const bmrIni     = primera?.bmr!=null ? parseFloat(primera.bmr) : null;
   const bmrAct     = ultima?.bmr!=null  ? parseFloat(ultima.bmr)  : null;
+  // Penúltima medición = "mes anterior" (solo con ≥2 mediciones)
+  const penultima = comps.length>=2 ? comps[comps.length-2] : null;
+  // Grasa en kg: campo directo masaGrasa (Tanita); si falta, peso×grasa/100
+  const grasaKgDe = (c) => {
+    if(!c) return null;
+    const dir=parseFloat(c.masaGrasa);
+    if(!isNaN(dir)&&dir>0) return parseFloat(dir.toFixed(1));
+    const g=parseFloat(c.grasa), pe=parseFloat(c.peso);
+    return (!isNaN(g)&&!isNaN(pe)) ? parseFloat((g/100*pe).toFixed(1)) : null;
+  };
+  const grasaKgAct  = grasaKgDe(ultima);
+  const grasaKgPrev = grasaKgDe(penultima);
+  const musculoPrev = (penultima?.musculo!=null && penultima?.musculo!=="") ? parseFloat(penultima.musculo) : null;
+  const bmrPrev     = (penultima?.bmr!=null && penultima?.bmr!=="") ? parseFloat(penultima.bmr) : null;
+  // Edad metabólica (última) vs edad real del paciente
+  const edadMetAct   = (ultima?.edadMet!=null && ultima?.edadMet!=="") ? parseFloat(ultima.edadMet) : null;
+  const edadRealNum  = parseFloat(p.edad);
+  const edadMetMenor = (edadMetAct!=null && !isNaN(edadRealNum)) ? edadMetAct < edadRealNum : null;
+  const edadMetColor = edadMetMenor==null ? C.suave : (edadMetMenor ? "#1D9E75" : "#E0A45F");
 
   // Meta de calorías a COMER (ingesta diaria para ~0.5 kg/sem) = BMR × factor actividad − 500, con piso de seguridad.
   const FACTOR_ACT = { sedentario:1.2, ligero:1.375, moderado:1.55, intenso:1.725 };
@@ -2839,11 +2858,12 @@ const DocProgreso = ({p}) => {
               width:14, height:14, background:'#1B3F8B', border:'2px solid #fff',
               boxShadow:'0 0 0 1px #1B3F8B', boxSizing:'border-box', zIndex:3}}/>
           )}
-          {/* MI OBJETIVO (doctor) — triángulo verde marca, distinto del círculo HOY y del rombo META */}
+          {/* MI OBJETIVO (doctor) — triángulo NEGRO con contorno blanco (resalta sobre cualquier zona de color) */}
           {pctObj != null && (
             <div style={{position:'absolute', top:'50%', left:`${pctObj}%`, transform:'translate(-50%,-50%)',
               width:0, height:0, borderLeft:'7px solid transparent', borderRight:'7px solid transparent',
-              borderBottom:'13px solid #1D9E75', filter:'drop-shadow(0 0 1.2px #fff)', zIndex:5}}/>
+              borderBottom:'13px solid #111',
+              filter:'drop-shadow(0.7px 0 0.4px #fff) drop-shadow(-0.7px 0 0.4px #fff) drop-shadow(0 0.7px 0.4px #fff) drop-shadow(0 -0.7px 0.4px #fff)', zIndex:5}}/>
           )}
           {/* HOY — círculo azul marino relleno con aro blanco */}
           <div style={{position:'absolute', top:'50%', left:`${pctHoy}%`, transform:'translate(-50%,-50%)',
@@ -2862,8 +2882,8 @@ const DocProgreso = ({p}) => {
             )}
             {pctObj != null && (
               <div style={{position:'absolute', top:(metaAbajo?24:0), left:`${pctObj}%`, transform:'translateX(-50%)', textAlign:'center', whiteSpace:'nowrap'}}>
-                <div style={{fontSize:10, color:'#1D9E75', letterSpacing:.5, fontWeight:700}}>▲ MI OBJETIVO</div>
-                <div className="d" style={{fontSize:14, fontWeight:500, color:'#1D9E75'}}>
+                <div style={{fontSize:10, color:'#111', letterSpacing:.5, fontWeight:700}}>▲ MI OBJETIVO</div>
+                <div className="d" style={{fontSize:14, fontWeight:500, color:'#111'}}>
                   {vo.toFixed(1)}{unidad && <span style={{fontSize:11}}> {unidad}</span>}</div>
               </div>
             )}
@@ -2991,19 +3011,25 @@ const DocProgreso = ({p}) => {
       <Banda derecha={`HOY · ${fechaHoy}`}/>
 
       <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>¿Cómo estás hoy?</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:11,marginBottom:18}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:18}}>
         {[
           {l:"PESO", v:ultima?.peso, u:"kg", chip:zonaDe(ultima?.imc,ZONAS_IMC)?.color},
-          {l:"GRASA", v:ultima?.grasa, u:"%", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color},
-          {l:"MÚSCULO TOTAL", v:ultima?.musculo, u:"kg", chip:"#1D9E75"},
+          {l:"GRASA", v:grasaKgAct, u:"kg", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color,
+            sub2:(!esPrimeraToma && grasaKgPrev!=null)?`Mes anterior: ${grasaKgPrev} kg`:null},
+          {l:"MÚSCULO TOTAL", v:ultima?.musculo, u:"kg", chip:"#1D9E75",
+            sub2:(!esPrimeraToma && musculoPrev!=null)?`Mes anterior: ${musculoPrev} kg`:null},
           {l:"C. ABDOMINAL", v:caAct, u:"cm", chip:colorCintura(caAct), sub:zonaCA(caAct)?.label, subColor:colorCintura(caAct)},
+          {l:"EDAD METABÓLICA", v:edadMetAct, u:"años", chip:edadMetColor,
+            sub: edadMetMenor==null?null:(edadMetMenor?"Menor que tu edad":"Mayor que tu edad"), subColor:edadMetColor,
+            sub2: (!isNaN(edadRealNum))?`Tu edad: ${Math.round(edadRealNum)} años`:null},
         ].map((m,i)=>(
-          <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"12px 13px",position:"relative"}}>
-            <span style={{position:"absolute",top:11,right:11,width:9,height:9,borderRadius:"50%",background:m.chip||C.suave}}/>
-            <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>{m.l}</div>
-            <div className="d" style={{fontSize:24,fontWeight:700,lineHeight:1.05,color:C.azul,marginTop:3}}>
-              {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:12,fontWeight:600,color:C.suave}}> {m.u}</span></div>
-            {m.sub && <div style={{fontSize:8.5,fontWeight:700,color:m.subColor||C.suave,marginTop:2}}>{m.sub}</div>}
+          <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"11px 11px",position:"relative"}}>
+            <span style={{position:"absolute",top:10,right:10,width:8,height:8,borderRadius:"50%",background:m.chip||C.suave}}/>
+            <div style={{fontSize:7.5,fontWeight:700,color:C.suave,letterSpacing:"0.3px"}}>{m.l}</div>
+            <div className="d" style={{fontSize:21,fontWeight:700,lineHeight:1.05,color:C.azul,marginTop:3}}>
+              {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:11,fontWeight:600,color:C.suave}}> {m.u}</span></div>
+            {m.sub && <div style={{fontSize:8,fontWeight:700,color:m.subColor||C.suave,marginTop:2}}>{m.sub}</div>}
+            {m.sub2 && <div style={{fontSize:7.5,color:C.suave,marginTop:1}}>{m.sub2}</div>}
           </div>
         ))}
       </div>
@@ -3011,7 +3037,7 @@ const DocProgreso = ({p}) => {
       <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>¿En qué rango te encuentras?</div>
       <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>Rangos ajustados a tu sexo. El punto blanco marca dónde estás hoy.</div>
       <div style={{background:"#F4F6FB",borderRadius:11,padding:"18px 20px",marginBottom:18}}>
-        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>IMC</div>
+        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Índice de Masa Corporal</div>
         <RangoGrad zonas={ZONAS_IMC} valor={ultima?.imc} domMin={15} domMax={35}/>
 
         <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa corporal</div>
@@ -3021,7 +3047,7 @@ const DocProgreso = ({p}) => {
         <RangoGrad zonas={ZONAS_VISCERAL} valor={ultima?.visceral} domMin={1} domMax={20}/>
 
         {ffmi!=null && (<>
-          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular (FFMI)</div>
+          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Índice de Masa Muscular Libre de Grasa</div>
           <div style={{fontSize:12,color:'#8A99AC',marginBottom:10}}>Índice de masa libre de grasa, ajustado a tu estatura.</div>
           <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"/>
         </>)}
@@ -3076,6 +3102,7 @@ const DocProgreso = ({p}) => {
           <div style={{background:"white",borderRadius:9,padding:"11px 13px",border:"1px solid #E2E8F0",textAlign:"center"}}>
             <div style={{fontSize:8.5,fontWeight:700,color:C.suave,letterSpacing:"0.5px"}}>METABOLISMO BASAL</div>
             <div className="d" style={{fontSize:20,fontWeight:700,color:C.azul,marginTop:2}}>{bmrAct!=null?bmrAct:"—"}<span style={{fontSize:11,color:C.suave}}> kcal/día</span></div>
+            {(!esPrimeraToma && bmrPrev!=null) && <div style={{fontSize:8,color:C.suave,marginTop:1}}>Mes anterior: {bmrPrev} kcal/día</div>}
             <div style={{fontSize:8.5,color:C.suave,marginTop:2}}>Energía que tu cuerpo usa en reposo.</div>
             <div style={{fontSize:8.5,fontWeight:700,color:C.verde,marginTop:3}}>Mantener tu masa muscular conserva alto este valor.</div>
           </div>
@@ -3186,7 +3213,7 @@ const DocProgreso = ({p}) => {
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 3px",fontSize:8,fontWeight:700,color:C.suave,letterSpacing:"0.3px",textTransform:"uppercase"}}>
             <div style={{width:104,flexShrink:0}}>Zona / grasa</div>
             <div style={{width:66,flexShrink:0,textAlign:"right"}}>Inicio</div>
-            <div style={{flex:1,textAlign:"center"}}>Evolución (músculo)</div>
+            <div style={{flex:1,textAlign:"center"}}>Evolución</div>
             <div style={{width:66,flexShrink:0}}>Actual</div>
             <div style={{width:98,flexShrink:0,textAlign:"right"}}>Cambio músculo</div>
           </div>
@@ -3213,11 +3240,18 @@ const DocProgreso = ({p}) => {
                     ? <><div style={{fontSize:11,fontWeight:700,color:C.texto,lineHeight:1.1}}>{ini.v.toFixed(1)} kg</div><div style={{fontSize:8,color:C.suave}}>{(ini.f||"").slice(0,5)}</div></>
                     : <span style={{fontSize:10,color:C.suave}}>—</span>}
                 </div>
-                {/* Evolución (gráfica ancha de músculo) */}
-                <div style={{flex:1,minWidth:0}}>
-                  {sm.length>=2
-                    ? <SparkMini arr={sm} color="#1D9E75"/>
-                    : <div style={{fontSize:9,color:C.suave,textAlign:"center"}}>—</div>}
+                {/* Evolución: dos mini-gráficas — músculo (vino anatómico) y grasa (ámbar anatómico) */}
+                <div style={{flex:1,minWidth:0,display:"flex",gap:10}}>
+                  {(()=>{ const sg = serie(c=>c[s.gKey]); return (<>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:7.5,fontWeight:700,color:"#7B3F3F",textAlign:"center",marginBottom:1}}>Músculo</div>
+                      {sm.length>=2 ? <SparkMini arr={sm} color="#7B3F3F"/> : <div style={{fontSize:9,color:C.suave,textAlign:"center"}}>—</div>}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:7.5,fontWeight:700,color:"#D97706",textAlign:"center",marginBottom:1}}>Grasa</div>
+                      {sg.length>=2 ? <SparkMini arr={sg} color="#D97706"/> : <div style={{fontSize:9,color:C.suave,textAlign:"center"}}>—</div>}
+                    </div>
+                  </>); })()}
                 </div>
                 {/* Actual */}
                 <div style={{width:66,flexShrink:0}}>
