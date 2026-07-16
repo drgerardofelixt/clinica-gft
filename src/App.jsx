@@ -1987,42 +1987,84 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, p
 const DocHC = ({p}) => {
   const ul = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica);
   const uc = ul[ul.length-1]||{};
+  const hf=p.hf||{}, ant=p.ant||{}, meta=p.meta||{}, ci=p.ci||{}, ef=p.ef||{}, dx=p.dx||{};
+  // IMC: la consulta no guarda `imc` en raíz (vive en comp.imc, de la báscula); si no, se calcula de peso/talla.
+  const imc = (uc.comp&&uc.comp.imc) || calcIMC(uc.peso, p.talla) || "";
+  // Signos vitales: de la consulta y, si no, del expediente (editar el expediente no re-sincroniza la consulta).
+  const ca=uc.ca||ef.ca, ta=uc.ta||ci.ta, fc=uc.fc||ci.fc, spo2=uc.spo2||ef.spo2;
+  const temp=uc.temp||ef.temp, gluc=uc.glucosaCapilar||ef.glucosaCapilar;
+  const tit = {fontWeight:700,color:C.azul,marginBottom:3,marginTop:2};
   return (
-    <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+    <div className="pdf-page" style={{width:816, minHeight:1056, boxSizing:"border-box",
+      padding:"40px 48px", background:"white", display:"flex", flexDirection:"column",
+      fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.5}}>
       <LogoDoc conCedula={true}/>
       <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
         HISTORIA CLÍNICA
       </div>
       <G4>
         <CF l="Nombre" v={p.nombre} span={2}/>
-        <CF l="Edad" v={p.edad+" años"}/>
+        <CF l="Edad" v={p.edad?p.edad+" años":""}/>
         <CF l="Sexo" v={p.sexo}/>
-        <CF l="Peso" v={uc.peso?uc.peso+" kg":"—"}/>
-        <CF l="Talla" v={p.talla?p.talla+" cm":"—"}/>
-        <CF l="IMC" v={uc.imc||"—"}/>
+        <CF l="Peso" v={uc.peso?uc.peso+" kg":""}/>
+        <CF l="Talla" v={p.talla?p.talla+" cm":""}/>
+        <CF l="IMC" v={imc}/>
         <CF l="Teléfono" v={p.telefono}/>
       </G4>
-      <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
-      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Motivo de consulta</div>
-      <div style={{marginBottom:10}}>{uc.motivo||"—"}</div>
-      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Antecedentes</div>
+      <hr style={{border:"1px solid "+C.grisMedio,margin:"4px 0 8px"}}/>
+      <div style={tit}>Motivo de consulta</div>
+      <div style={{marginBottom:8}}>{uc.subjetivo || p.motivoConsulta || "—"}</div>
+
+      <div style={tit}>Antecedentes heredofamiliares</div>
       <G4>
-        <CF l="Tabaquismo" v={(p.hf&&p.hf.tabaquismo)||"—"}/>
-        <CF l="Alcoholismo" v={(p.hf&&p.hf.alcoholismo)||"—"}/>
-        <CF l="Cardiopatías" v={(p.hf&&p.hf.cardiopatia)||"—"}/>
-        <CF l="Diabetes" v={(p.hf&&p.hf.diabetes)||"—"}/>
+        <CF l="DM2" v={hf.dm2}/>
+        <CF l="HTA" v={hf.hta}/>
+        <CF l="Cardiopatías" v={hf.cardiopatia}/>
+        <CF l="Obesidad" v={hf.obesidad}/>
+        <CF l="Cáncer" v={hf.cancer}/>
+        <CF l="Otros" v={hf.otros} span={3}/>
       </G4>
-      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Exploración física</div>
+
+      <div style={tit}>Antecedentes personales</div>
       <G4>
-        <CF l="Circ. Abd." v={uc.ca?uc.ca+" cm":"—"}/>
-        <CF l="TA" v={uc.ta||"—"}/>
-        <CF l="FC" v={uc.fc||"—"}/>
-        <CF l="SpO₂" v={uc.spo2||"—"}/>
+        <CF l="Tabaquismo" v={ant.tabaco}/>
+        <CF l="Alcoholismo" v={ant.alcohol}/>
+        <CF l="Enf. crónicas" v={ant.cronicas} span={2}/>
+        <CF l="Alergias" v={ant.alergias} span={2}/>
+        <CF l="Cirugías" v={ant.cirugias}/>
+        <CF l="Medicamentos" v={ant.medicamentos}/>
       </G4>
-      <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Plan de tratamiento</div>
-      <div>{uc.plan||"—"}</div>
-      <Firma/>
-      <FooterDoc/>
+
+      <div style={tit}>Comorbilidades actuales</div>
+      <G4>
+        <CF l="HTA" v={meta.hta}/>
+        <CF l="DM2" v={meta.dm2}/>
+        <CF l="Dislipidemias" v={meta.dislipidemias}/>
+      </G4>
+
+      <div style={tit}>Exploración física</div>
+      <G4>
+        <CF l="Circ. Abd." v={ca?ca+" cm":""}/>
+        <CF l="TA" v={ta}/>
+        <CF l="FC" v={fc}/>
+        <CF l="SpO₂" v={spo2}/>
+        <CF l="Temperatura" v={temp?temp+" °C":""}/>
+        <CF l="Glucosa capilar" v={gluc}/>
+      </G4>
+
+      <div style={tit}>Diagnóstico</div>
+      <G4>
+        <CF l="Dx principal (CIE-10)" v={dx.principal} span={3}/>
+        <CF l="Riesgo CV" v={dx.riesgoCV}/>
+      </G4>
+
+      <div style={tit}>Plan de tratamiento</div>
+      <div>{uc.plan || "—"}</div>
+
+      <div style={{marginTop:"auto"}}>
+        <Firma/>
+        <FooterDoc/>
+      </div>
     </div>
   );
 };
@@ -2083,6 +2125,9 @@ const DocExpediente = ({p}) => {
               EXPEDIENTE COMPLETO
               {paginas.length>1 && <span style={{fontSize:10,color:C.suave,fontWeight:600}}>{"  ·  Hoja "+(pi+1)+" de "+paginas.length}</span>}
             </div>
+            <div style={{textAlign:"center",fontSize:9,color:"#64748B",marginTop:2}}>
+              Dr. Gerardo Félix Tapia · Céd. Prof. 15131213 · Reg. SSA: 10361/16
+            </div>
           </div>
           {pi===0 && (
             <G4>
@@ -2109,30 +2154,57 @@ const DocExpediente = ({p}) => {
   );
 };
 
-const DocNota = ({p, consulta={}}) => (
-  <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
-    <LogoDoc conCedula={true}/>
-    <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
-      NOTA DE EVOLUCIÓN
+const DocNota = ({p, consulta={}}) => {
+  const c = consulta;
+  // IMC: la consulta no guarda `imc` en raíz (vive en comp.imc); si no, se calcula de peso/talla.
+  const imc = (c.comp&&c.comp.imc) || calcIMC(c.peso, p.talla) || "";
+  // SOAP: mismos campos que el Expediente Completo (Objetivo y Análisis no se mostraban → la nota salía vacía).
+  const objO = [
+    c.glucosaCapilar && ("Glucosa cap. "+c.glucosaCapilar),
+    c.efectos && ("Efectos: "+c.efectos),
+  ].filter(Boolean).join(" · ") || "—";
+  const anaA = [
+    c.respuesta && ("Respuesta: "+c.respuesta),
+    c.cambioDosis,
+  ].filter(Boolean).join(" · ") || "—";
+  const tit = {fontWeight:700,color:C.azul,marginBottom:3,marginTop:4};
+  return (
+    <div className="pdf-page" style={{width:816, minHeight:1056, boxSizing:"border-box",
+      padding:"40px 48px", background:"white", display:"flex", flexDirection:"column",
+      fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.5}}>
+      <LogoDoc conCedula={true}/>
+      <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
+        NOTA DE EVOLUCIÓN
+      </div>
+      <G4>
+        <CF l="Paciente" v={p.nombre} span={2}/>
+        <CF l="Edad" v={p.edad?p.edad+" años":""}/>
+        <CF l="Fecha" v={fmtFecha(c.fecha)}/>
+        <CF l="Peso" v={c.peso?c.peso+" kg":""}/>
+        <CF l="IMC" v={imc}/>
+        <CF l="Circ. Abd." v={c.ca?c.ca+" cm":""}/>
+        <CF l="TA" v={c.ta}/>
+        <CF l="FC" v={c.fc}/>
+        <CF l="SpO₂" v={c.spo2}/>
+        {c.medicamento && <CF l="Medicamento" v={c.medicamento+(c.dosis?" · "+c.dosis:"")} span={2}/>}
+      </G4>
+      <hr style={{border:"1px solid "+C.grisMedio,margin:"4px 0 8px"}}/>
+      <div style={tit}>Subjetivo</div>
+      <div>{c.subjetivo || c.motivo || "—"}</div>
+      <div style={tit}>Objetivo</div>
+      <div>{objO}</div>
+      <div style={tit}>Análisis</div>
+      <div>{anaA}</div>
+      <div style={tit}>Plan</div>
+      <div>{c.plan || "—"}</div>
+
+      <div style={{marginTop:"auto"}}>
+        <Firma/>
+        <FooterDoc/>
+      </div>
     </div>
-    <G4>
-      <CF l="Paciente" v={p.nombre} span={2}/>
-      <CF l="Edad" v={p.edad+" años"}/>
-      <CF l="Fecha" v={consulta.fecha||"—"}/>
-      <CF l="Peso" v={consulta.peso?consulta.peso+" kg":"—"}/>
-      <CF l="IMC" v={consulta.imc||"—"}/>
-      <CF l="Circ. Abd." v={consulta.ca?consulta.ca+" cm":"—"}/>
-      <CF l="TA" v={consulta.ta||"—"}/>
-    </G4>
-    <hr style={{border:"1px solid "+C.grisMedio,margin:"10px 0"}}/>
-    <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Subjetivo</div>
-    <div style={{marginBottom:8}}>{consulta.motivo||"—"}</div>
-    <div style={{fontWeight:700,color:C.azul,marginBottom:4}}>Plan</div>
-    <div style={{marginBottom:8}}>{consulta.plan||"—"}</div>
-    <Firma/>
-    <FooterDoc/>
-  </div>
-);
+  );
+};
 
 const fmtFecha = f => f ? f.split('-').reverse().join('/') : '—';
 
