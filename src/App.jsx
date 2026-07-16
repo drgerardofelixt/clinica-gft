@@ -2911,15 +2911,15 @@ const DocProgreso = ({p}) => {
   const sMusc  = serie(c=>c.musculo);
   const sCA    = caPuntos.map(c=>({f:normDate(c.fecha), v:parseFloat(c.ca)})).filter(d=>!isNaN(d.v));
   const yScale = (arr) => { const vs=arr.map(d=>d.v), min=Math.min(...vs), max=Math.max(...vs), rng=(max-min)||1;
-    return v => 42 - ((v-min)/rng)*26; };
+    return v => 29 - ((v-min)/rng)*18; };
   const Sparkline = ({arr, color, decimals=1, sufijo=""}) => {
-    if(!arr.length) return <div style={{fontSize:9,color:C.suave,padding:"14px 0"}}>Sin datos suficientes</div>;
-    const W=320, H=50, pad=20, ys=yScale(arr);
+    if(!arr.length) return <div style={{fontSize:9,color:C.suave,padding:"10px 0"}}>Sin datos suficientes</div>;
+    const W=320, H=34, pad=20, ys=yScale(arr);
     const xx = i => arr.length===1 ? W/2 : pad + (i/(arr.length-1))*(W-pad*2);
     const pts = arr.map((d,i)=>({x:xx(i), y:ys(d.v), f:d.f, v:d.v}));
     const path = pts.map((pt,i)=>(i===0?"M":"L")+pt.x.toFixed(1)+","+pt.y.toFixed(1)).join(" ");
     return (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:50,display:"block"}}>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:34,display:"block"}}>
         {pts.length>1 && <path d={path} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>}
         {pts.map((pt,i)=>(
           <g key={i}>
@@ -2933,10 +2933,10 @@ const DocProgreso = ({p}) => {
   };
   // Sparkline ancho compacto para filas segmentales: solo línea + punto inicio/fin, sin etiquetas. Degrada seguro.
   const SparkMini = ({arr, color}) => {
-    const W=280, H=30, pad=6;
+    const W=280, H=22, pad=6;
     const clean = (arr||[]).filter(d=>d && !isNaN(d.v));
     if(!clean.length) return (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:30,display:"block"}}>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:22,display:"block"}}>
         <line x1={pad} y1={H/2} x2={W-pad} y2={H/2} stroke={C.grisMedio} strokeWidth="1" strokeDasharray="2 3"/>
       </svg>
     );
@@ -2947,7 +2947,7 @@ const DocProgreso = ({p}) => {
     const path = pts.map((pt,i)=>(i===0?"M":"L")+pt.x.toFixed(1)+","+pt.y.toFixed(1)).join(" ");
     const first = pts[0], last = pts[pts.length-1];
     return (
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:30,display:"block"}}>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:22,display:"block"}}>
         {pts.length>1 && <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
         {pts.length>1 && <circle cx={first.x} cy={first.y} r="2.4" fill="#fff" stroke={color} strokeWidth="1.4"/>}
         <circle cx={last.x} cy={last.y} r="2.6" fill={color}/>
@@ -3160,9 +3160,9 @@ const DocProgreso = ({p}) => {
         ? `1 MEDICIÓN · ${normDate(ultima?.fecha)}`
         : `${n} MEDICIÓN${n!==1?"ES":""} · ${normDate(primera?.fecha)} → ${normDate(ultima?.fecha)}`}/>
 
-      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>{esPrimeraToma ? "Estado actual por zona" : "Tu evolución, mes a mes"}</div>
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:4}}>{esPrimeraToma ? "Estado actual por zona" : "Tu evolución, mes a mes"}</div>
       {!esPrimeraToma && (
-      <div style={{marginBottom:12}}>
+      <div style={{marginBottom:6}}>
         {[
           {label:"Peso", v:ultima?.peso, u:"kg", arr:sPeso, chg:pesoChange, baja:true, color:"#1B3F8B", dec:1},
           {label:"Grasa corporal", v:ultima?.grasa, u:"%", arr:sGrasa, chg:grasaChange, baja:true, color:"#E0A45F", dec:1},
@@ -3173,14 +3173,14 @@ const DocProgreso = ({p}) => {
           const flecha = m.chg==null?"":(m.chg<0?"▼":"▲");
           const bcol = bueno==null?C.suave:(bueno?"#1D9E75":"#D85A30");
           return (
-            <div key={i} style={{display:"flex",alignItems:"center",gap:14,background:"#F4F6FB",borderRadius:11,padding:"8px 16px",marginBottom:7}}>
+            <div key={i} style={{display:"flex",alignItems:"center",gap:14,background:"#F4F6FB",borderRadius:11,padding:"4px 12px",marginBottom:4}}>
               <div style={{width:172,flexShrink:0}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.suave,letterSpacing:"0.3px"}}>{m.label.toUpperCase()}</div>
-                <div className="d" style={{fontSize:24,fontWeight:700,color:C.azul,lineHeight:1.05}}>
-                  {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:12,color:C.suave}}> {m.u}</span></div>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.suave,letterSpacing:"0.3px"}}>{m.label.toUpperCase()}</div>
+                <div className="d" style={{fontSize:18,fontWeight:700,color:C.azul,lineHeight:1.05}}>
+                  {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:11,color:C.suave}}> {m.u}</span></div>
                 {m.chg!=null
-                  ? <div style={{fontSize:11,fontWeight:700,color:bcol,marginTop:2}}>{flecha} {Math.abs(m.chg)} {m.u} <span style={{color:C.suave,fontWeight:600}}>vs. inicio</span></div>
-                  : <div style={{fontSize:10,color:C.suave,marginTop:2}}>Una sola medición</div>}
+                  ? <div style={{fontSize:9.5,fontWeight:700,color:bcol,marginTop:1}}>{flecha} {Math.abs(m.chg)} {m.u} <span style={{color:C.suave,fontWeight:600}}>vs. inicio</span></div>
+                  : <div style={{fontSize:9,color:C.suave,marginTop:1}}>Una sola medición</div>}
               </div>
               <div style={{flex:1,minWidth:0}}><Sparkline arr={m.arr} color={m.color} decimals={m.dec}/></div>
             </div>
@@ -3211,8 +3211,8 @@ const DocProgreso = ({p}) => {
       )}
 
       {hasSegmental&&(
-        <div style={{marginBottom:14}}>
-          <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:6}}>Detalle por zona del cuerpo</div>
+        <div style={{marginBottom:6}}>
+          <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:3}}>Detalle por zona del cuerpo</div>
           {/* Encabezados: cada métrica tiene su bloque completo (inicio → evolución → actual → cambio) */}
           <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 12px 3px",fontSize:8,fontWeight:700,color:C.suave,letterSpacing:"0.3px",textTransform:"uppercase"}}>
             <div style={{width:66,flexShrink:0}}>Zona</div>
@@ -3229,7 +3229,7 @@ const DocProgreso = ({p}) => {
                dTotal:difNum(segAct[s.gKey], segRef[s.gKey]), dPrev:segPrev?difNum(segAct[s.gKey], segPrev[s.gKey]):null, rawAct:segAct[s.gKey]},
             ];
             return (
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#F4F6FB",borderRadius:10,padding:"7px 12px",marginBottom:6}}>
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#F4F6FB",borderRadius:10,padding:"4px 12px",marginBottom:4}}>
                 <div style={{width:66,flexShrink:0,fontSize:10,fontWeight:700,color:C.texto}}>{s.label}</div>
                 {bloques.map((b,j)=>{
                   const ini=b.ser[0], act=b.ser[b.ser.length-1];
@@ -3265,11 +3265,11 @@ const DocProgreso = ({p}) => {
       )}
 
       {hayEquilibrio && (
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6}}>Equilibrio izquierda / derecha</div>
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:4}}>Equilibrio izquierda / derecha</div>
           <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
             {[equilBrazos, equilPiernas].filter(Boolean).map((e,i)=>(
-              <div key={i} style={{flex:"1 1 45%",minWidth:180,background:"#F4F6FB",borderRadius:10,padding:"9px 12px",display:"flex",alignItems:"center",gap:8}}>
+              <div key={i} style={{flex:"1 1 45%",minWidth:180,background:"#F4F6FB",borderRadius:10,padding:"6px 12px",display:"flex",alignItems:"center",gap:8}}>
                 <span style={{width:8,height:8,borderRadius:"50%",background:e.color,flexShrink:0}}/>
                 <div style={{fontSize:10.5,color:C.texto}}>
                   <span style={{fontWeight:700}}>{e.etiqueta}: </span>
@@ -3282,13 +3282,13 @@ const DocProgreso = ({p}) => {
         </div>
       )}
 
-      <div style={{display:"flex",gap:12,marginBottom:16,alignItems:"stretch"}}>
-        <div style={{flex:1,background:"linear-gradient(135deg,#E1F5EE,#E6F1FB)",borderRadius:11,padding:"14px 16px"}}>
-          <div style={{fontWeight:800,color:"#1D9E75",marginBottom:3}}>{motivTitle}</div>
-          <div style={{fontSize:10.5,lineHeight:1.45}}>{motiv}</div>
+      <div style={{display:"flex",gap:12,marginBottom:8,alignItems:"stretch"}}>
+        <div style={{flex:1,background:"linear-gradient(135deg,#E1F5EE,#E6F1FB)",borderRadius:11,padding:"10px 14px"}}>
+          <div style={{fontWeight:800,color:"#1D9E75",marginBottom:2}}>{motivTitle}</div>
+          <div style={{fontSize:10,lineHeight:1.35}}>{motiv}</div>
         </div>
         {proxCitaReal && (()=>{ const {fecha,hora}=isoAInputsHmo(proxCitaReal.inicio); return (
-          <div style={{width:170,flexShrink:0,background:C.azul,color:"white",borderRadius:11,padding:"14px 16px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <div style={{width:170,flexShrink:0,background:C.azul,color:"white",borderRadius:11,padding:"10px 14px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
             <div style={{fontSize:9,fontWeight:700,opacity:0.85,letterSpacing:"0.5px"}}>PRÓXIMA CITA</div>
             <div className="d" style={{fontSize:18,fontWeight:700,marginTop:4}}>{normDate(fecha)}</div>
             <div style={{fontSize:11,opacity:0.9,marginTop:2}}>{hora} hrs</div>
