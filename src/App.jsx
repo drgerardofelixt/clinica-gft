@@ -2239,8 +2239,16 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
   );
 };
 
-const DocLabs = ({p, labs={}, firmaB64}) => (
-  <div style={{fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.7}}>
+const DocLabs = ({p, labs={}, firmaB64}) => {
+  const estudios = labs.estudios||[];
+  // Ancho FIJO de hoja carta (.pdf-page) → captura idéntica en compu y celular, y construirPDF la
+  // escala a UNA sola página preservando proporción (el pie SIEMPRE entra, nunca se parte ni duplica).
+  // 2 columnas cuando la lista es larga para que 15+ estudios + firma + pie quepan a tamaño casi natural.
+  const dosCols = estudios.length > 8;
+  return (
+  <div className="pdf-page" style={{width:816, minHeight:1056, boxSizing:"border-box",
+    padding:"40px 48px", background:"white", display:"flex", flexDirection:"column",
+    fontFamily:"Arial,sans-serif", fontSize:11, color:C.texto, lineHeight:1.5}}>
     <LogoDoc compact conCedula={true}/>
     <SepDoc/>
     <G4>
@@ -2249,26 +2257,31 @@ const DocLabs = ({p, labs={}, firmaB64}) => (
       <CF l="Fecha" v={fmtFecha(labs.fecha)}/>
     </G4>
     <SepDoc/>
-    <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:C.azul}}>
+    <div style={{fontSize:13,fontWeight:700,marginBottom:10,color:C.azul}}>
       Realizar los siguientes laboratorios:
     </div>
-    {(labs.estudios||[]).map((e,i)=>(
-      <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,
-        padding:"7px 0",borderBottom:"1px solid "+C.grisMedio}}>
-        <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span>
-        <span>{e}</span>
-      </div>
-    ))}
+    <div style={{display:"grid", gridTemplateColumns: dosCols?"1fr 1fr":"1fr", columnGap:28, rowGap:0}}>
+      {estudios.map((e,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,
+          padding:"4px 0",borderBottom:"1px solid "+C.grisMedio}}>
+          <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span>
+          <span>{e}</span>
+        </div>
+      ))}
+    </div>
     {labs.notas&&(
-      <div style={{marginTop:14,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
+      <div style={{marginTop:12,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
         <b>Indicaciones:</b> {labs.notas}
       </div>
     )}
-    <Firma fecha={labs.fecha} firmaB64={firmaB64}/>
-    <FooterDoc/>
-    <OlasDoc/>
+    <div style={{marginTop:"auto"}}>
+      <Firma fecha={labs.fecha} firmaB64={firmaB64}/>
+      <FooterDoc/>
+      <OlasDoc/>
+    </div>
   </div>
-);
+  );
+};
 
 const DocProgreso = ({p}) => {
   const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
