@@ -2061,6 +2061,9 @@ const DocHC = ({p}) => {
       <div style={tit}>Plan de tratamiento</div>
       <div>{uc.plan || "—"}</div>
 
+      <div style={tit}>Pronóstico</div>
+      <div>{p.pronostico || "—"}</div>
+
       <div style={{marginTop:"auto"}}>
         <Firma/>
         <FooterDoc/>
@@ -4665,7 +4668,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
       ca: f.ef.ca||"", ta: f.ci.ta||"", fc: f.ci.fc||"", spo2: f.ef.spo2||"",
       glucosaCapilar: f.ef.glucosaCapilar||"",
       subjetivo: f.motivoConsulta||"", efectos: "", respuesta: "",
-      plan: f.pronostico||"", cambioDosis: "", origenMed: "",
+      plan: "", cambioDosis: "", origenMed: "",   // el Plan real se captura en ModalConsulta; el Pronóstico vive en p.pronostico
       medicamento: f.ci.glp1||"", dosis: f.ci.dosis||"",
       comp: compInicial ? {...compInicial} : {},
     };
