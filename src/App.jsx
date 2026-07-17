@@ -15,6 +15,7 @@ import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
+import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
 import IMG_LOGO_REPORTE from './assets/images/DrGFT-logo-02-trimmed.png'; // logo con Céd. Prof. y Reg. SSA (para el reporte)
@@ -4115,6 +4116,15 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
     : (_af.hace ? (_nivelLabel[_af.nivel] || "Sí (nivel sin especificar)") : "No hace ejercicio");
 
   const applyTanita = (d) => {
+    // Guarda de verificación: si el PDF trae nombre y NO coincide (tras normalizar) con el
+    // expediente abierto, avisar (evita archivar la báscula de otra persona — caso Carmen/Manuel).
+    if (d && d.nombre && String(d.nombre).trim() && p && p.nombre &&
+        !mismoNombreNormalizado(d.nombre, p.nombre)) {
+      const ok = window.confirm(
+        `⚠️ Este PDF de báscula dice "${String(d.nombre).trim()}", pero estás en el expediente de "${p.nombre}".\n\n`+
+        `¿Aplicar la medición de todas formas?`);
+      if (!ok) return;
+    }
     const s = (v) => v!=null?String(v):"";
     setF(x=>({...x,
       fecha:toISODate(d.fecha)||x.fecha, hora:d.hora||x.hora,
@@ -4800,6 +4810,11 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
               {/* ── BUG #6 FIX: TanitaUp ahora disponible en alta de paciente ── */}
               <Sec title="Datos de báscula Tanita" icon="⚖️">
                 <TanitaUp nombre={f.nombre||"nuevo paciente"} onApply={(d)=>{
+                  // Guarda: si el PDF trae nombre y no coincide con el nombre ya escrito en el alta, avisar.
+                  if (d && d.nombre && String(d.nombre).trim() && (f.nombre||"").trim() &&
+                      !mismoNombreNormalizado(d.nombre, f.nombre)) {
+                    if (!window.confirm(`⚠️ Este PDF de báscula dice "${String(d.nombre).trim()}", pero el paciente en captura es "${f.nombre}".\n\n¿Aplicar de todas formas?`)) return;
+                  }
                   const ss = (v) => v!=null?String(v):"";
                   // Guardar la primera medición Tanita como composición inicial
                   setF(x=>({
@@ -7138,6 +7153,11 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const [guardando,setGuardando] = useState(false);
   const [mostrarSug,setMostrarSug] = useState(false);
   const [ocupadoDia,setOcupadoDia] = useState([]); // bloques "ocupado" del día elegido (solo lectura)
+  // Prevención de duplicados: modal "¿Es este paciente?" cuando hay nombres similares
+  const [similarModal,setSimilarModal] = useState(null); // {candidatos:[{paciente,score,tipo}]} | null
+  const resolverSimilar = useRef(null);
+  const pedirEleccionPaciente = (candidatos) => new Promise(res => { resolverSimilar.current = res; setSimilarModal({candidatos}); });
+  const responderSimilar = (val) => { setSimilarModal(null); const r = resolverSimilar.current; resolverSimilar.current = null; if (r) r(val); };
   const [citasDia,setCitasDia] = useState([]);     // citas del consultorio (tabla citas) del día, para la tira de horarios
 
   const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
@@ -7217,6 +7237,16 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         const existente = (pacientes||[]).find(pp=>pp.nombre && pp.nombre.trim().toLowerCase()===nombre.trim().toLowerCase());
         if (existente) pacienteId = existente.id;
       }
+      // Prevención de duplicados: sin match exacto, ¿hay pacientes con nombre similar (typo/parcial/sufijo)?
+      if (!pacienteId) {
+        const similares = buscarPacientesSimilares(nombre, pacientes);
+        if (similares.length) {
+          const eleccion = await pedirEleccionPaciente(similares);   // pausa hasta que el doctor decida
+          if (eleccion === "cancelar") { setGuardando(false); return; }
+          if (eleccion && eleccion.id) pacienteId = eleccion.id;      // usa el paciente existente elegido
+          // si eligió "crear nuevo": pacienteId sigue null → cae al alta shell (flujo normal)
+        }
+      }
       // C3 — Alta de paciente al agendar primera vez si no existe
       if (tipo==="primera_vez" && !pacienteId) {
         const nuevo = { id:crypto.randomUUID(), nombre:nombre.trim(), telefono:telefono.trim(), edad:String(edad).trim(),
@@ -7257,6 +7287,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
 
   const esPrim = tipo==="primera_vez";
   return (
+    <>
     <Modal title="🗓 Agendar cita" onClose={onClose} color={C.azul}>
       <div style={{padding:14}}>
         <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={[
@@ -7329,6 +7360,37 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         </div>
       </div>
     </Modal>
+
+    {similarModal && (
+      <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:3200,
+        display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"white",borderRadius:14,width:"100%",maxWidth:440,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+          <div style={{background:C.naranja,padding:"14px 20px",color:"white"}}>
+            <div style={{fontWeight:800,fontSize:14}}>¿Es este paciente?</div>
+            <div style={{fontSize:11,opacity:.9,marginTop:2}}>Ya existe un paciente con nombre parecido a “{nombre}”. Elige uno para no duplicar el expediente, o crea uno nuevo.</div>
+          </div>
+          <div style={{padding:14,maxHeight:"60vh",overflow:"auto"}}>
+            {similarModal.candidatos.map(({paciente,score,tipo})=>(
+              <button key={paciente.id} onClick={()=>responderSimilar(paciente)}
+                style={{display:"block",width:"100%",textAlign:"left",padding:"10px 12px",marginBottom:8,borderRadius:9,
+                  border:"1px solid "+C.grisMedio,background:C.gris,cursor:"pointer"}}>
+                <div style={{fontWeight:700,fontSize:13,color:C.texto}}>{paciente.nombre}</div>
+                <div style={{fontSize:10,color:C.suave,marginTop:2}}>
+                  {(paciente.composicion||[]).filter(c=>c.peso||c.grasa).length} medición(es) · {(paciente.consultas||[]).filter(c=>!c.esSoloCita).length} consulta(s)
+                  {paciente.telefono?` · ${paciente.telefono}`:""}
+                  {" · "}{tipo==="exacto"?"mismo nombre":tipo==="parcial"?"nombre parcial":`${Math.round(score*100)}% parecido`}
+                </div>
+              </button>
+            ))}
+            <div style={{display:"flex",gap:10,marginTop:6,justifyContent:"flex-end"}}>
+              <Btn onClick={()=>responderSimilar("cancelar")} outline color={C.suave}>Cancelar</Btn>
+              <Btn onClick={()=>responderSimilar("nuevo")} color={C.naranja} icon="＋">Crear paciente nuevo</Btn>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 
@@ -9362,8 +9424,14 @@ export default function App() {
   };
 
   const importarPacientesGCal = async (candidatos) => {
-    let importados = 0;
+    let importados = 0, omitidos = 0;
+    // Dedup por nombre normalizado: contra los pacientes existentes Y los ya creados en este lote.
+    const vistos = new Map(); // nombreNormalizado -> nombre existente
+    (pacientes||[]).forEach(p => { const k = normalizarNombre(p.nombre); if (k) vistos.set(k, p.nombre); });
     for (const c of candidatos) {
+      const k = normalizarNombre(c.nombre);
+      if (k && vistos.has(k)) { omitidos++; console.log(`Import GCal: "${c.nombre}" omitido (ya existe como "${vistos.get(k)}")`); continue; }
+      if (k) vistos.set(k, c.nombre);   // evita duplicar dentro del mismo lote
       const pac = {
         id: crypto.randomUUID(),
         nombre: c.nombre,
@@ -9397,7 +9465,8 @@ export default function App() {
       catch(e) { console.error("Error importando paciente:", c.nombre, e); }
     }
     await cargarPacientes();
-    alert(`✅ ${importados} paciente${importados!==1?"s":""} importado${importados!==1?"s":""} correctamente.`);
+    alert(`✅ ${importados} paciente${importados!==1?"s":""} importado${importados!==1?"s":""} correctamente.`+
+      (omitidos>0?`\n${omitidos} omitido${omitidos!==1?"s":""} por coincidir con un paciente existente (nombre normalizado).`:""));
   };
   const saveFirma = async (b64) => {
     setFirmaB64(b64);

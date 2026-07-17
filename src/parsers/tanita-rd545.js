@@ -54,6 +54,7 @@ const fileToBase64 = (file) =>
 const PROMPT = `Eres un experto en análisis de composición corporal. Extrae todos los valores de esta báscula de bioimpedancia (Tanita, InBody, Omron, SECA u otras marcas). Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.
 
 CAMPOS Y SUS SINÓNIMOS:
+- nombre: nombre del paciente/perfil si aparece en el PDF (Name, Nombre, Perfil, Usuario). Muchas básculas solo muestran un ID numérico o nada: en ese caso devuelve null. NO inventes un nombre; devuelve null si no hay uno claro de persona.
 - fecha: fecha del análisis. En el PDF aparece en el header como "Date D/M/YYYY HH:MM" en formato DÍA/MES/AÑO (día PRIMERO, ej. "23/6/2026 20:38" = 23 de junio de 2026). Interpreta SIEMPRE el primer número como día y el segundo como mes. Devuélvela como DD/MM/YYYY con ceros a la izquierda, SIN la hora (ej. "23/06/2026")
 - peso: Weight, Peso (kg)
 - imc: BMI, IMC
