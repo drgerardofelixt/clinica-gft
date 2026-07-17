@@ -1026,12 +1026,34 @@ const construirMsgConfirmacion = (cita, nombre) => {
     + `Dirección: Av. Adolfo de la Huerta 200A, 2do piso, Col. Pitic, Hermosillo\n`
     + `Cualquier duda, puede responder por este medio. Quedamos a sus órdenes.`;
 };
+// Variante para REPROGRAMACIÓN: aclara al paciente que la cita cambió de fecha/hora (no es una cita nueva).
+const construirMsgReprogramada = (cita, nombre) => {
+  const { fecha } = isoAInputsHmo(cita.inicio);
+  const fechaLarga = fecha
+    ? new Date(fecha+"T12:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"})
+    : "";
+  const hora12h = cita.inicio
+    ? new Date(cita.inicio).toLocaleTimeString("es-MX",{timeZone:"America/Hermosillo",hour:"numeric",minute:"2-digit",hour12:true})
+    : "";
+  const tipoLegible = TIPO_LEGIBLE_CITA[cita.tipo] || "consulta";
+  return `Hola ${nombre}, le confirmamos que su cita de ${tipoLegible} con el Dr. Gerardo Félix Tapia ha sido reprogramada.\n`
+    + `Nueva fecha: ${fechaLarga}\n`
+    + `Nueva hora: ${hora12h}\n`
+    + `Dirección: Av. Adolfo de la Huerta 200A, 2do piso, Col. Pitic, Hermosillo\n`
+    + `Cualquier duda, puede responder por este medio. Quedamos a sus órdenes.`;
+};
 // Abre WhatsApp con la confirmación de la cita. Reutiliza enviarWA (formateo 52 + limpieza).
 // Devuelve false si no hay teléfono (enviarWA copia el texto al portapapeles).
 const enviarConfirmacionCita = (cita, paciente) => {
   const tel = (paciente && paciente.telefono) || "";
   const nombre = (cita && cita.pacienteNombre) || (paciente && paciente.nombre) || "paciente";
   return enviarWA(tel, construirMsgConfirmacion(cita, nombre));
+};
+// Igual pero con el mensaje de reprogramación (al reagendar).
+const enviarReprogramacionCita = (cita, paciente) => {
+  const tel = (paciente && paciente.telefono) || "";
+  const nombre = (cita && cita.pacienteNombre) || (paciente && paciente.nombre) || "paciente";
+  return enviarWA(tel, construirMsgReprogramada(cita, nombre));
 };
 
 // FASE B — Migración automática de citas FUTURAS (hoy en adelante) anidadas en p.consultas (esSoloCita)
@@ -7136,6 +7158,54 @@ const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick })
   );
 };
 
+// Mini calendario mensual COMPARTIDO — se muestra bajo el input de fecha en los modales de cita.
+// Deja ver en qué día de la semana cae la fecha. fecha=ISO "YYYY-MM-DD"; onPick(iso); min=ISO opcional (deshabilita días previos).
+const MiniCalendario = ({ fecha, onPick, min }) => {
+  const parse = (s) => { const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||""); return m?{y:+m[1], mo:+m[2]-1, d:+m[3]}:null; };
+  const iso = (y,mo,d)=>`${y}-${String(mo+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+  const hoyLocal = (()=>{ const n=new Date(); return iso(n.getFullYear(), n.getMonth(), n.getDate()); })();
+  const sel = parse(fecha);
+  const ini = sel || parse(hoyLocal);
+  const [ver, setVer] = useState({ y: ini.y, mo: ini.mo });
+  // Si la fecha del input cambia a otro mes (ej. tecleada), sincroniza la vista del calendario.
+  useEffect(()=>{ const p=parse(fecha); if(p) setVer(v => (v.y===p.y && v.mo===p.mo) ? v : {y:p.y, mo:p.mo}); }, [fecha]);
+  const primerDia = new Date(ver.y, ver.mo, 1).getDay();          // 0=Dom … 6=Sáb
+  const diasMes = new Date(ver.y, ver.mo+1, 0).getDate();
+  const mesStr = new Date(ver.y, ver.mo, 1).toLocaleDateString("es-MX",{month:"long",year:"numeric"});
+  const navMes = (n)=>setVer(v=>{ const d=new Date(v.y, v.mo+n, 1); return {y:d.getFullYear(), mo:d.getMonth()}; });
+  const navBtn = {border:"1px solid "+C.grisMedio,background:"white",borderRadius:7,width:30,height:30,cursor:"pointer",fontSize:12,color:C.azul,flexShrink:0};
+  return (
+    <div style={{background:"#F8FAFC",border:"1px solid "+C.grisMedio,borderRadius:10,padding:"8px 10px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+        <button type="button" onClick={()=>navMes(-1)} style={navBtn}>◀</button>
+        <div style={{fontWeight:800,fontSize:12,textTransform:"capitalize",color:C.azul}}>{mesStr}</div>
+        <button type="button" onClick={()=>navMes(1)} style={navBtn}>▶</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+        {["D","L","M","M","J","V","S"].map((d,i)=>(
+          <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:700,color:C.suave,padding:"2px 0"}}>{d}</div>
+        ))}
+        {Array.from({length:primerDia}).map((_,i)=><div key={"e"+i}/>)}
+        {Array.from({length:diasMes}).map((_,i)=>{
+          const dia=i+1, f=iso(ver.y,ver.mo,dia);
+          const esSel = !!fecha && f===fecha;
+          const esHoy = f===hoyLocal;
+          const deshab = !!min && f<min;
+          return (
+            <button type="button" key={dia} disabled={deshab} onClick={()=>onPick(f)}
+              style={{border:"1px solid "+(esSel?C.azul:esHoy?C.verde:C.grisMedio),
+                background: esSel?C.azul:esHoy?C.verdePale:"white",
+                color: esSel?"white":deshab?C.suave:C.texto,
+                fontWeight: esSel||esHoy?800:600, fontSize:13, borderRadius:7, minHeight:36,
+                cursor: deshab?"not-allowed":"pointer", opacity: deshab?0.4:1,
+                display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>{dia}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 // C1 — Formulario UNIFICADO de agendar. Único punto para crear cualquier cita (todos los entry points lo abren).
 const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null, onClose, onCreada }) => {
   const tipoInicial = tipoSugerido
@@ -7343,6 +7413,8 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
           </div>
         </Row>
 
+        <MiniCalendario fecha={fecha} onPick={setFecha}/>
+
         <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
 
         {choque && (
@@ -7430,8 +7502,18 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
       estado,
     };
     cambios.tituloGenerado = generarTituloCita({ ...cita, ...cambios });
+    // ¿Cambió la fecha u hora respecto a la cita original? (dispara aviso de reprogramación; NO en otros edits)
+    const huboCambioFecha = (fecha !== ini.fecha) || (hora !== ini.hora);
     try {
       await actualizarCita(cita.id, cambios); // incrementa version + ultima_modificacion (Fase B)
+      // WhatsApp de REPROGRAMACIÓN: solo si cambió fecha/hora y no es cancelación. Temprano (antes del push a
+      // Google) para no perder el user-gesture y evitar el bloqueo de popup en Safari — igual que al agendar.
+      if (huboCambioFecha && estado !== "cancelada") {
+        try {
+          const pacWA = (pacientes||[]).find(pp=>pp.id===cita.pacienteId) || null;
+          enviarReprogramacionCita({ ...cita, ...cambios }, pacWA);
+        } catch(e){ console.warn("WA reprogramación (no crítico):", e); }
+      }
       // Fase 1 — Actualiza el tratamiento actual del paciente vinculado desde esta edición. No crítico.
       if (med) {
         const pacTrat = (pacientes||[]).find(pp=>pp.id===cita.pacienteId) || null;
@@ -7481,6 +7563,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
             <Inp label="Hora (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
             <div/>
           </Row>
+          <MiniCalendario fecha={fecha} onPick={setFecha}/>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8,flexWrap:"wrap"}}>
             {onBorrar && <Btn onClick={onBorrar} outline color={C.rojo} icon="🗑️">Borrar</Btn>}
             <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
