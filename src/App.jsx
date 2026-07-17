@@ -276,7 +276,9 @@ const sSet = async (k, v) => {
 };
 
 // ── UTILS ────────────────────────────────────────────────────
-const hoy = () => new Date().toISOString().split("T")[0];
+// Fecha LOCAL de hoy (Hermosillo), NO UTC: new Date().toISOString() daba el día siguiente después de las 5pm
+// (17:00 local = 00:00 UTC). Se construye desde los componentes locales, igual que hoyLocal en MiniCalendario.
+const hoy = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; };
 const ahora = () => new Date().toLocaleTimeString("es-MX", { hour:"2-digit", minute:"2-digit" });
 const fmtF = (f) => {
   if (!f) return "";
@@ -6256,7 +6258,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
     nombre: nombre || "Paciente",
     edad: edad,
     sexo: sexo,
-    laboratorios: [{ fecha: new Date().toISOString().split("T")[0], labs: labsFinal, obs: obs }]
+    laboratorios: [{ fecha: hoy(), labs: labsFinal, obs: obs }]
   };
 
   return (
@@ -6331,7 +6333,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
 
       {paso==="pdf" && (
         <PrintModal onClose={()=>setPaso("form")} titulo="Orden de laboratorios">
-          <DocLabs p={pacFake} labs={{fecha: new Date().toISOString().split("T")[0], estudios: labsFinal, notas: obs}} firmaB64={conFirma?firmaB64:null}/>
+          <DocLabs p={pacFake} labs={{fecha: hoy(), estudios: labsFinal, notas: obs}} firmaB64={conFirma?firmaB64:null}/>
         </PrintModal>
       )}
     </Modal>
