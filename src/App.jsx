@@ -7076,7 +7076,9 @@ const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick })
   };
 
   const slots = [];
-  for (let t=iniBloque; t<finBloque; t+=30) slots.push(t);   // último inicio válido = finBloque-30
+  // Incluye el slot que empieza EXACTO en el cierre (18:00 L-V / 13:00 Sáb): seleccionable para seguimiento
+  // (termina 18:30/13:30) y "no cabe" para primera vez (60 min → se pasaría del cierre), vía la regla `cabe` de abajo.
+  for (let t=iniBloque; t<=finBloque; t+=30) slots.push(t);
 
   return (
     <div style={{margin:"0 0 12px"}}>
@@ -7204,6 +7206,45 @@ const MiniCalendario = ({ fecha, onPick, min }) => {
           );
         })}
       </div>
+    </div>
+  );
+};
+
+// Campo de fecha de cita: input de texto DD/MM (tecleo rápido) + ícono 📅 que abre el MiniCalendario como
+// popup. Ícono como disparador (no el foco del input) para no abrir el teclado numérico en móvil.
+const CampoFechaCita = ({ label, fecha, onChange }) => {
+  const [abierto, setAbierto] = useState(false);
+  const [arriba, setArriba] = useState(false);   // voltea el popup hacia arriba si no hay espacio abajo
+  const ref = useRef(null);
+  useEffect(()=>{
+    if (!abierto) return;
+    const fuera = (e) => { if (ref.current && !ref.current.contains(e.target)) setAbierto(false); };
+    document.addEventListener("mousedown", fuera);
+    document.addEventListener("touchstart", fuera);
+    return () => { document.removeEventListener("mousedown", fuera); document.removeEventListener("touchstart", fuera); };
+  }, [abierto]);
+  const stop = (e) => e.stopPropagation();       // evita que el mismo touch/clic que abre lo cierre
+  const toggle = (e) => {
+    e.stopPropagation();
+    if (!abierto) { const r = ref.current && ref.current.getBoundingClientRect(); setArriba(!!r && (window.innerHeight - r.bottom < 330)); }
+    setAbierto(a => !a);
+  };
+  const pick = (iso) => { onChange(iso); setAbierto(false); };
+  return (
+    <div ref={ref} style={{position:"relative", flex:1, minWidth:0}}>
+      <div style={{display:"flex", gap:6, alignItems:"flex-end"}}>
+        <div style={{flex:1, minWidth:0}}><Inp label={label} value={fecha} onChange={onChange} tipo="date"/></div>
+        <button type="button" onMouseDown={stop} onTouchStart={stop} onClick={toggle} title="Abrir calendario"
+          style={{marginBottom:12, height:40, minWidth:40, borderRadius:8, border:"1.5px solid "+C.grisMedio,
+            background: abierto?C.azulPale:"white", cursor:"pointer", fontSize:16, flexShrink:0, lineHeight:1}}>📅</button>
+      </div>
+      {abierto && (
+        <div style={{position:"absolute", zIndex:60, left:0, right:0,
+          ...(arriba ? {bottom:"calc(100% - 12px)"} : {top:"100%"}),
+          boxShadow:"0 12px 32px rgba(15,23,42,0.22)", borderRadius:10}}>
+          <MiniCalendario fecha={fecha} onPick={pick}/>
+        </div>
+      )}
     </div>
   );
 };
@@ -7408,14 +7449,12 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         )}
 
         <Row>
-          <Inp label="Fecha * (Hermosillo)" value={fecha} onChange={setFecha} tipo="date"/>
+          <CampoFechaCita label="Fecha * (Hermosillo)" fecha={fecha} onChange={setFecha}/>
           <Inp label="Hora * (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
           <div style={{flex:1,display:"flex",alignItems:"flex-end",paddingBottom:12}}>
             <span style={{fontSize:10,color:C.suave}}>Duración: {esPrim?"60":"30"} min (automática)</span>
           </div>
         </Row>
-
-        <MiniCalendario fecha={fecha} onPick={setFecha}/>
 
         <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
 
@@ -7479,6 +7518,20 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   const [hora,setHora]     = useState(ini.hora);
   const [estado,setEstado] = useState(cita.estado||"agendada");
   const [guardando,setGuardando] = useState(false);
+  // Disponibilidad del día para la tira de horarios (al reagendar). Excluye la cita que se edita (no se marca "ocupada" a sí misma).
+  const [citasDia,setCitasDia] = useState([]);
+  const [ocupadoDia,setOcupadoDia] = useState([]);
+  useEffect(()=>{
+    let activo=true;
+    if(!fecha){ setCitasDia([]); setOcupadoDia([]); return; }
+    listarCitas({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
+      .then(cs=>{ if(activo) setCitasDia((cs||[]).filter(c=>c.estado!=="cancelada" && c.id!==cita.id)); })
+      .catch(()=>{ if(activo) setCitasDia([]); });
+    leerEventosOcupado({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
+      .then(b=>{ if(activo) setOcupadoDia(b||[]); })
+      .catch(()=>{ if(activo) setOcupadoDia([]); });
+    return ()=>{ activo=false; };
+  },[fecha]);
 
   const dosisOpts = [{value:"",label:"—"},
     ...(DOSIS_POR_MED[med]||[]).map(d=>({value:d,label:d.replace("mg"," mg")}))];
@@ -7561,11 +7614,11 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
               {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
           </Row>
           <Row>
-            <Inp label="Fecha (Hermosillo)" value={fecha} onChange={setFecha} tipo="date"/>
+            <CampoFechaCita label="Fecha (Hermosillo)" fecha={fecha} onChange={setFecha}/>
             <Inp label="Hora (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
             <div/>
           </Row>
-          <MiniCalendario fecha={fecha} onPick={setFecha}/>
+          <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8,flexWrap:"wrap"}}>
             {onBorrar && <Btn onClick={onBorrar} outline color={C.rojo} icon="🗑️">Borrar</Btn>}
             <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
