@@ -580,12 +580,30 @@ const diasHasta = (f) => {
   if (!f) return null;
   return Math.ceil((new Date(f+"T00:00:00").getTime()-Date.now())/86400000);
 };
-const estadoLabs = (fecha) => {
+// Estado de labs a partir de UNA fecha y un plazo de vencimiento (días).
+// limiteDias por defecto 90 (≈3 meses); el umbral ámbar "por vencer" es limiteDias-10.
+const estadoLabs = (fecha, limiteDias=90) => {
   const d = diasDesde(fecha);
-  if (d===null) return {nivel:"amarillo",dias:null,msg:"Sin laboratorios registrados — solicitar"};
-  if (d>=90) return {nivel:"rojo",dias:d,msg:"Labs vencidos hace "+(d-90)+" días"};
-  if (d>=80) return {nivel:"amarillo",dias:d,msg:"Labs vencen en "+(90-d)+" días"};
-  return {nivel:"verde",dias:d,msg:"Labs al día"};
+  const ambar = limiteDias-10;
+  if (d===null) return {nivel:"amarillo",dias:null,restan:null,msg:"Sin laboratorios registrados — solicitar"};
+  if (d>=limiteDias) return {nivel:"rojo",dias:d,restan:0,msg:"Labs vencidos hace "+(d-limiteDias)+" días"};
+  if (d>=ambar) return {nivel:"amarillo",dias:d,restan:limiteDias-d,msg:"Labs vencen en "+(limiteDias-d)+" días"};
+  return {nivel:"verde",dias:d,restan:limiteDias-d,msg:"Labs al día"};
+};
+
+// Estado de labs de un PACIENTE, aplicando el override manual por precedencia:
+// si p.labsOverride existe y su fecha es más reciente que el último lab real (o no hay lab real),
+// se cuenta desde el override con plazo meses*30. Un lab real posterior lo domina automáticamente.
+const estadoLabsPaciente = (p) => {
+  const realLast = [
+    ...((p.resultadosLabs||[]).map(r=>r.fecha)),
+    ...((p.laboratorios||[]).map(l=>l.fecha)),
+    p.labsI?.fecha,
+  ].filter(Boolean).sort().slice(-1)[0] || null;
+  const ov = p.labsOverride;
+  if (ov?.fecha && (!realLast || ov.fecha > realLast))
+    return estadoLabs(ov.fecha, (ov.meses||3)*30);
+  return estadoLabs(realLast, 90);
 };
 
 // ── CATÁLOGOS ────────────────────────────────────────────────
@@ -4651,6 +4669,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
     dx:{principal:"",riesgoCV:""},
     labsI:{glucosa:"",hba1c:"",insulina:"",homa:"",colesterol:"",trigliceridos:"",hdl:"",ldl:"",tsh:"",creatinina:"",fecha:""},
     consultas:[], composicion:[], recetas:[], laboratorios:[], resultadosLabs:[],
+    labsOverride:null,  // {fecha:"YYYY-MM-DD", meses:1|2|3} — reinicio manual del conteo de labs (tiene precedencia si es más reciente que el último lab real)
   };
   // Merge pac with DEF so nested objects (ef, ci, hf…) always exist,
   // even for patients created before these fields were added.
@@ -5148,6 +5167,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [showR, setShowR] = useState(false);
   const [showL, setShowL] = useState(false);
   const [showLabs, setShowLabs] = useState(false);
+  const [showLabsReset, setShowLabsReset] = useState(false); // selector 1/2/3 meses para reiniciar conteo de labs
   const [showAgenda, setShowAgenda] = useState(false);
   const [showEditPac, setShowEditPac] = useState(false);
   const [doc, setDoc] = useState(null);
@@ -5279,14 +5299,9 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     "Músculo":parseFloat(c.musculo)||null,
     "Agua":parseFloat(c.agua)||null,
   }));
-  const _labDates = [
-    ...(p.resultadosLabs||[]).map(r=>r.fecha),
-    ...(p.laboratorios||[]).map(l=>l.fecha),
-    p.labsI?.fecha,
-  ].filter(Boolean).sort();
   const _hasRealConsultas = (p.consultas||[]).filter(c=>!c.esSoloCita).length > 0;
   const alerta = _hasRealConsultas
-    ? estadoLabs(_labDates.length ? _labDates[_labDates.length-1] : null)
+    ? estadoLabsPaciente(p)
     : {nivel:"none", dias:null, msg:""};
   const proxCitas = (p.consultas||[])
     .map(c=>({fecha:c.proxCita,p:c}))
@@ -5557,15 +5572,37 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           const rojo = alerta.nivel==="rojo";
           const col  = rojo ? "var(--gft-danger)" : "var(--gft-warning)";
           const dim  = rojo ? "var(--gft-danger-dim)" : "var(--gft-warning-dim)";
+          const reiniciar = (meses) => {
+            onUpdate({...p, labsOverride:{fecha:hoy(), meses}});
+            setShowLabsReset(false);
+          };
           return (
-            <div style={{display:"flex",alignItems:"center",gap:12,width:"100%",
-              marginTop:12,marginBottom:12,padding:"14px 18px",borderRadius:12,
+            <div style={{width:"100%",marginTop:12,marginBottom:12,padding:"14px 18px",borderRadius:12,
               background:dim,border:`1px solid ${col}`,borderLeft:`6px solid ${col}`}}>
-              <span style={{fontSize:24,lineHeight:1}}>{rojo?"🚨":"⚠️"}</span>
-              <span style={{flex:1,fontSize:15,fontWeight:700,color:col}}>{alerta.msg}</span>
-              <button className="gft-btn gft-btn--sm"
-                style={{background:col,color:"#fff",border:"none",whiteSpace:"nowrap"}}
-                onClick={()=>setShowL(true)}>{rojo?"Solicitar urgente":"Solicitar"}</button>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <span style={{fontSize:24,lineHeight:1}}>{rojo?"🚨":"⚠️"}</span>
+                <span style={{flex:1,fontSize:15,fontWeight:700,color:col}}>{alerta.msg}</span>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  <button className="gft-btn gft-btn--secondary gft-btn--sm"
+                    style={{whiteSpace:"nowrap"}}
+                    onClick={()=>setShowLabsReset(v=>!v)}>🔄 Ya tiene labs recientes</button>
+                  <button className="gft-btn gft-btn--sm"
+                    style={{background:col,color:"#fff",border:"none",whiteSpace:"nowrap"}}
+                    onClick={()=>setShowL(true)}>{rojo?"Solicitar urgente":"Solicitar"}</button>
+                </div>
+              </div>
+              {showLabsReset&&(
+                <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${col}`,
+                  display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:13,fontWeight:600,color:"var(--gft-text)"}}>
+                    Reiniciar conteo desde hoy — volver a avisar en:
+                  </span>
+                  {[1,2,3].map(m=>(
+                    <button key={m} className="gft-btn gft-btn--secondary gft-btn--sm"
+                      onClick={()=>reiniciar(m)}>{m} {m===1?"mes":"meses"}</button>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}
@@ -8064,15 +8101,6 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
   const totalC = pacientes.reduce((a,p)=>a+(p.consultas||[]).length,0);
 
-  // Última fecha de laboratorios del paciente (o null si nunca) — usado por la lista de pacientes
-  const getLastLabDate = (p) => {
-    const ds = [
-      ...(p.resultadosLabs||[]).map(r=>r.fecha),
-      ...(p.laboratorios||[]).map(l=>l.fecha),
-      p.labsI?.fecha,
-    ].filter(Boolean).sort();
-    return ds.length ? ds[ds.length-1] : null;
-  };
   // Citas del mes (con offset)
   const mesRef = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
   const finMes = new Date(mesRef.getFullYear(), mesRef.getMonth()+1, 0);
@@ -8942,7 +8970,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 if (labsFilter) {
                   const labNeed = p => {
                     if ((p.consultas||[]).filter(c=>!c.esSoloCita).length===0) return 2;
-                    const niv = estadoLabs(getLastLabDate(p)).nivel;
+                    const niv = estadoLabsPaciente(p).nivel;
                     return niv==="rojo"?0:niv==="amarillo"?1:2;
                   };
                   filt = [...filt].sort((a,b)=>labNeed(a)-labNeed(b));
@@ -8965,7 +8993,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       const pc=(p.composicion||[])[0];
                       const perd=uc&&pc&&uc.peso&&pc.peso?(parseFloat(pc.peso)-parseFloat(uc.peso)).toFixed(1):null;
                       const _hasRC=(p.consultas||[]).filter(c=>!c.esSoloCita).length>0;
-                      const al=_hasRC?estadoLabs(getLastLabDate(p)):{nivel:"none",dias:null,msg:""};
+                      const al=_hasRC?estadoLabsPaciente(p):{nivel:"none",dias:null,msg:""};
                       const borderColor=al.nivel==="rojo"?"var(--gft-danger)":al.nivel==="amarillo"?"var(--gft-warning)":"var(--gft-border)";
                       return (
                         <div key={p.id} onClick={()=>onVer(p)}
@@ -8987,7 +9015,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                             {uc?.peso&&<span className="gft-pill gft-pill--blue">{uc.peso} kg</span>}
                             {perd&&parseFloat(perd)>0&&<span className="gft-pill gft-pill--green">↓ {perd} kg</span>}
                             {medLegibleCorto(tratamientoEfectivo(p))&&<span className="gft-pill gft-pill--purple">{medLegibleCorto(tratamientoEfectivo(p))}</span>}
-                            {al.nivel==="amarillo"&&<span className="gft-pill gft-pill--amber">⚠️ Labs {90-al.dias}d</span>}
+                            {al.nivel==="amarillo"&&<span className="gft-pill gft-pill--amber">{al.dias==null?"⚠️ Sin labs":"⚠️ Labs "+al.restan+"d"}</span>}
                             {al.nivel==="rojo"&&<span className="gft-pill gft-pill--red">🚨 Labs vencidos</span>}
                           </div>
                           <div style={{display:"flex",gap:14,fontSize:11,color:"var(--gft-text-muted)"}}>
