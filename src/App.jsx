@@ -5551,21 +5551,24 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           </div>
         </div>
 
-        {/* Alertas labs */}
-        {alerta.nivel==="amarillo"&&(
-          <div className="gft-card gft-card--warning" style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <span>⚠️</span>
-            <span style={{flex:1,fontSize:13,color:"var(--gft-warning)"}}>{alerta.msg}</span>
-            <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowL(true)}>Solicitar</button>
-          </div>
-        )}
-        {alerta.nivel==="rojo"&&(
-          <div className="gft-card gft-card--danger" style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-            <span>🚨</span>
-            <span style={{flex:1,fontSize:13,color:"var(--gft-danger)"}}>{alerta.msg}</span>
-            <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}} onClick={()=>setShowL(true)}>Urgente</button>
-          </div>
-        )}
+        {/* Banner labs vencidos — franja prominente de ancho completo, justo debajo del encabezado.
+            Solo aparece en ámbar (sin labs / por vencer) o rojo (≥90 días). Verde/none no renderiza. */}
+        {(alerta.nivel==="amarillo"||alerta.nivel==="rojo")&&(()=>{
+          const rojo = alerta.nivel==="rojo";
+          const col  = rojo ? "var(--gft-danger)" : "var(--gft-warning)";
+          const dim  = rojo ? "var(--gft-danger-dim)" : "var(--gft-warning-dim)";
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:12,width:"100%",
+              marginTop:12,marginBottom:12,padding:"14px 18px",borderRadius:12,
+              background:dim,border:`1px solid ${col}`,borderLeft:`6px solid ${col}`}}>
+              <span style={{fontSize:24,lineHeight:1}}>{rojo?"🚨":"⚠️"}</span>
+              <span style={{flex:1,fontSize:15,fontWeight:700,color:col}}>{alerta.msg}</span>
+              <button className="gft-btn gft-btn--sm"
+                style={{background:col,color:"#fff",border:"none",whiteSpace:"nowrap"}}
+                onClick={()=>setShowL(true)}>{rojo?"Solicitar urgente":"Solicitar"}</button>
+            </div>
+          );
+        })()}
 
         {/* Tabs */}
         <div className="gft-action-bar" style={{marginBottom:8}}>
@@ -8061,7 +8064,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
   const totalC = pacientes.reduce((a,p)=>a+(p.consultas||[]).length,0);
 
-  // Pacientes con labs vencidos (>90 días) o sin labs registrados nunca
+  // Última fecha de laboratorios del paciente (o null si nunca) — usado por la lista de pacientes
   const getLastLabDate = (p) => {
     const ds = [
       ...(p.resultadosLabs||[]).map(r=>r.fecha),
@@ -8070,14 +8073,6 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
     ].filter(Boolean).sort();
     return ds.length ? ds[ds.length-1] : null;
   };
-  const labsHoy = pacientes.filter(p=>{
-    if ((p.consultas||[]).filter(c=>!c.esSoloCita).length === 0) return false; // sin consultas reales
-    const last = getLastLabDate(p);
-    if (!last) return true; // con consultas pero sin labs nunca
-    const dias = Math.floor((hoy.getTime()-new Date(last+"T00:00:00").getTime())/86400000);
-    return dias >= 90;
-  });
-
   // Citas del mes (con offset)
   const mesRef = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
   const finMes = new Date(mesRef.getFullYear(), mesRef.getMonth()+1, 0);
@@ -8806,30 +8801,6 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       );
                     })}
                   </div>
-
-                  {/* Alertas — labs vencidos */}
-                  {labsHoy.length>0 && (
-                    <div className="gft-panel" style={{borderLeft:"3px solid var(--gft-danger)"}}>
-                      <div className="gft-panel__header">
-                        <div className="gft-panel__title" style={{color:"var(--gft-danger)"}}>🚨 Alertas</div>
-                        <span className="gft-panel__count" style={{background:"var(--gft-danger-dim)",color:"var(--gft-danger)"}}>{labsHoy.length}</span>
-                      </div>
-                      {labsHoy.map((pac,i)=>{
-                        const sinLabs = !getLastLabDate(pac);
-                        return (
-                          <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                            padding:"8px 0",borderBottom:i<labsHoy.length-1?"1px solid var(--gft-border)":"none",
-                            cursor:"pointer"}} onClick={()=>onVer(pac)}>
-                            <div title={pac.nombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,marginRight:8}}>{pac.nombre}</div>
-                            {sinLabs
-                              ? <span className="gft-pill gft-pill--amber">Sin labs</span>
-                              : <span className="gft-pill gft-pill--red">+90 días</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               </div>
             </>
