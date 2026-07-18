@@ -8748,27 +8748,32 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       const terminada = c.estado==="completada";
                       const cancelada = c.estado==="cancelada";
                       return (
-                        <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,
+                        <div key={c.id} style={{
                           padding:"9px 0",borderBottom:i<citasV2Hoy.length-1?"1px solid var(--gft-border)":"none",
                           cursor:pac?"pointer":"default",opacity:terminada?0.55:1}}
                           onClick={()=>pac&&onVer(pac)}>
-                          <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
-                            color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div title={c.pacienteNombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:cancelada?"line-through":"none"}}>{c.pacienteNombre}</div>
-                            <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
-                              {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
+                              color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div title={c.pacienteNombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                                textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:cancelada?"line-through":"none"}}>{c.pacienteNombre}</div>
+                              <div style={{fontSize:11,color:"var(--gft-text-muted)",overflow:"hidden",
+                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
+                              </div>
                             </div>
+                            {terminada && (
+                              <span style={{flexShrink:0,fontSize:10,fontWeight:700,color:"var(--gft-success)",
+                                background:"var(--gft-success-dim)",borderRadius:10,padding:"2px 9px"}}>Terminada ✓</span>
+                            )}
+                            {cancelada && (
+                              <span style={{flexShrink:0,fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",
+                                background:"var(--gft-surface2)",borderRadius:10,padding:"2px 9px"}}>Cancelada</span>
+                            )}
                           </div>
-                          {terminada ? (
-                            <span style={{flexShrink:0,fontSize:10,fontWeight:700,color:"var(--gft-success)",
-                              background:"var(--gft-success-dim)",borderRadius:10,padding:"2px 9px"}}>Terminada ✓</span>
-                          ) : cancelada ? (
-                            <span style={{flexShrink:0,fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",
-                              background:"var(--gft-surface2)",borderRadius:10,padding:"2px 9px"}}>Cancelada</span>
-                          ) : (
-                            <div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                          {!terminada && !cancelada && (
+                            <div style={{display:"flex",gap:6,marginTop:8,justifyContent:"flex-end",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
                               <button title="Marcar terminada" className="gft-btn gft-btn--secondary gft-btn--sm"
                                 style={{fontSize:11}} onClick={()=>terminarCita(c)}>✅</button>
                               <button title="Cancelar cita" className="gft-btn gft-btn--secondary gft-btn--sm"
@@ -8802,22 +8807,25 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
                       const medTxt=c.medicamento?[c.medicamento,c.dosis].filter(Boolean).join(" "):"";
                       return (
-                        <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,
+                        <div key={c.id} style={{
                           padding:"9px 0",borderBottom:i<citasV2Manana.length-1?"1px solid var(--gft-border)":"none",
                           cursor:pac?"pointer":"default"}}
                           onClick={()=>pac&&onVer(pac)}>
-                          <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
-                            color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div title={c.pacienteNombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
-                              textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}</div>
-                            <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
-                              {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
+                              color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div title={c.pacienteNombre} style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",
+                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}</div>
+                              <div style={{fontSize:11,color:"var(--gft-text-muted)",overflow:"hidden",
+                                textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
+                              </div>
                             </div>
                           </div>
-                          <div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                          <div style={{display:"flex",gap:6,marginTop:8,justifyContent:"flex-end",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
                             <button title="Reagendar / editar cita" className="gft-btn gft-btn--secondary gft-btn--sm"
-                              style={{fontSize:11}} onClick={()=>setCitaEditar(c)}>🔄</button>
+                              style={{fontSize:11}} onClick={()=>setCitaEditar(c)}>🔄 Reagendar</button>
                             {pac&&(pac.telefono?(
                               <button className="gft-btn gft-btn--secondary gft-btn--sm"
                                 style={{fontSize:11}}
