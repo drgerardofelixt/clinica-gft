@@ -8803,7 +8803,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       const medTxt=c.medicamento?[c.medicamento,c.dosis].filter(Boolean).join(" "):"";
                       return (
                         <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,
-                          padding:"9px 0",borderBottom:i<citasV2Manana.length-1?"1px solid var(--gft-border)":"none"}}>
+                          padding:"9px 0",borderBottom:i<citasV2Manana.length-1?"1px solid var(--gft-border)":"none",
+                          cursor:pac?"pointer":"default"}}
+                          onClick={()=>pac&&onVer(pac)}>
                           <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,
                             color:chipColor,minWidth:44,textAlign:"center"}}>{hora||"—"}</div>
                           <div style={{flex:1,minWidth:0}}>
@@ -8813,18 +8815,22 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                               {(TIPO_ABREV_CITA[c.tipo]||c.tipo)}{[medTxt,c.origen].filter(Boolean).length?" · "+[medTxt,c.origen].filter(Boolean).join(" · "):""}
                             </div>
                           </div>
-                          {pac&&(pac.telefono?(
-                            <button className="gft-btn gft-btn--secondary gft-btn--sm"
-                              style={{flexShrink:0,fontSize:11}}
-                              onClick={e=>{e.stopPropagation();enviarRecordatorio({pac, fecha, hora});}}>
-                              📱 Recordatorio
-                            </button>
-                          ):(
-                            <span title="Sin teléfono registrado"
-                              style={{flexShrink:0,fontSize:16,opacity:0.35,cursor:"default",userSelect:"none"}}>
-                              📵
-                            </span>
-                          ))}
+                          <div style={{display:"flex",gap:4,flexShrink:0,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                            <button title="Reagendar / editar cita" className="gft-btn gft-btn--secondary gft-btn--sm"
+                              style={{fontSize:11}} onClick={()=>setCitaEditar(c)}>🔄</button>
+                            {pac&&(pac.telefono?(
+                              <button className="gft-btn gft-btn--secondary gft-btn--sm"
+                                style={{fontSize:11}}
+                                onClick={()=>enviarRecordatorio({pac, fecha, hora})}>
+                                📱 Recordatorio
+                              </button>
+                            ):(
+                              <span title="Sin teléfono registrado"
+                                style={{fontSize:16,opacity:0.35,cursor:"default",userSelect:"none",alignSelf:"center"}}>
+                                📵
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       );
                     })}
