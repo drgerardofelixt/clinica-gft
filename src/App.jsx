@@ -5582,6 +5582,126 @@ const ModalConfig = ({firmaB64, onSave, onClose, onMigrarCitas}) => {
 };
 
 // ── Vista Paciente ────────────────────────────────────────────
+// ── Timeline del expediente (8b) — historia unificada: consultas + recetas + labs + mediciones ──
+// Reemplaza la pestaña "Evolución". Conserva TODAS las acciones de consulta (Ver nota / Editar / Eliminar).
+const TimelineExpediente = ({p, onVerNota, onEditarConsulta, onEliminarConsulta, onNuevaConsulta, onVerReceta, repararInicial, onRepararInicial}) => {
+  const [filtro, setFiltro] = useState("todo");
+  const [expand, setExpand] = useState(null);   // id/clave de consulta expandida
+  const COLS = { consulta:"#4287F5", receta:"#27A98A", labs:"#E08910", medicion:"#7B3F3F" };
+  const COLS_TXT = { consulta:"var(--gft-accent-text)", receta:"var(--gft-success-text)", labs:"#E8A33F", medicion:"#C87A7A" };
+  const BADGE = { consulta:"Consulta", labs:"Labs", medicion:"Medición" };
+  const hoyTs = (()=>{ const n=new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime(); })();
+  const fmtFecha = (f)=>{ const t=parseFechaClinica(f); return t?new Date(t).toLocaleDateString("es-MX",{day:"numeric",month:"short"}):(f||"—"); };
+
+  // ── Fusión de eventos (fecha desc, con parseFechaClinica: soporta ISO y DD/MM/YYYY) ──
+  const eventos = [];
+  const consReales = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica);
+  consReales.forEach((c,idx)=>{
+    const dosis = c.medicamento ? `${c.medicamento}${c.dosis?" "+c.dosis:""}` : "";
+    const detalle = [c.peso?`Peso ${c.peso} kg`:null, c.comp?.grasa?`grasa ${c.comp.grasa}%`:null, dosis||null].filter(Boolean).join(" · ")
+      || (c.subjetivo||"").slice(0,70) || "Consulta registrada";
+    eventos.push({ tipo:"consulta", key:"c"+(c.id||idx), ts:parseFechaClinica(c.fecha), fecha:c.fecha, titulo:`Consulta ${idx+1}`, detalle, c });
+  });
+  (p.recetas||[]).forEach((r,i)=>{ eventos.push({ tipo:"receta", key:"r"+i, ts:parseFechaClinica(r.fecha), fecha:r.fecha,
+    titulo:"Receta emitida", detalle: r.med || {glp1:"GLP-1",lista:"Síntomas",libre:"Libre"}[r.tipo] || "Receta", r }); });
+  (p.resultadosLabs||[]).forEach((r,i)=>{
+    const map={hba1c:"HbA1c",homa:"HOMA-IR",glucosa:"Glucosa",colesterol:"Colesterol",tsh:"TSH"};
+    const parts=Object.keys(map).filter(k=>r[k]!=null&&r[k]!=="").map(k=>`${map[k]} ${r[k]}`);
+    eventos.push({ tipo:"labs", key:"l"+i, ts:parseFechaClinica(r.fecha), fecha:r.fecha, titulo:"Resultados de laboratorio",
+      detalle: (r.laboratorio?r.laboratorio+" · ":"")+(parts.slice(0,3).join(" · ")||"resultados registrados") }); });
+  if (p.labsI && p.labsI.fecha && Object.entries(p.labsI).some(([k,v])=>k!=="fecha"&&v&&v!=="")) {
+    const map={hba1c:"HbA1c",homa:"HOMA-IR",glucosa:"Glucosa"};
+    const parts=Object.keys(map).filter(k=>p.labsI[k]).map(k=>`${map[k]} ${p.labsI[k]}`);
+    eventos.push({ tipo:"labs", key:"li", ts:parseFechaClinica(p.labsI.fecha), fecha:p.labsI.fecha, titulo:"Laboratorios iniciales", detalle: parts.join(" · ")||"registro inicial" });
+  }
+  [...(p.composicion||[])].filter(c=>c.peso||c.grasa).forEach((c,i)=>{
+    const detalle=[c.peso?`Peso ${c.peso} kg`:null, c.grasa?`grasa ${c.grasa}%`:null, c.musculo?`músculo ${c.musculo} kg`:null].filter(Boolean).join(" · ");
+    eventos.push({ tipo:"medicion", key:"m"+(c.id||i), ts:parseFechaClinica(c.fecha), fecha:c.fecha, titulo:"Medición Tanita", detalle: detalle||"medición registrada" });
+  });
+  eventos.sort((a,b)=> (b.ts||0) - (a.ts||0));
+
+  const cnt = { todo:eventos.length, consultas:eventos.filter(e=>e.tipo==="consulta").length, labs:eventos.filter(e=>e.tipo==="labs").length,
+    recetas:eventos.filter(e=>e.tipo==="receta").length, mediciones:eventos.filter(e=>e.tipo==="medicion").length };
+  const FILT = { todo:null, consultas:"consulta", labs:"labs", recetas:"receta", mediciones:"medicion" };
+  const visibles = filtro==="todo" ? eventos : eventos.filter(e=>e.tipo===FILT[filtro]);
+  const CHIPS = [["todo","Todo"],["consultas","Consultas"],["labs","Labs"],["recetas","Recetas"],["mediciones","Mediciones"]];
+
+  return (
+    <div>
+      {repararInicial && (
+        <div style={{background:"#FFF7ED",border:"1.5px solid #FDBA74",borderRadius:10,padding:"12px 14px",
+          display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:14}}>
+          <div style={{fontSize:11,color:"#9A3412"}}><b>Falta la Consulta 1 de este paciente.</b> Su historia clínica no tiene una consulta vinculada.</div>
+          <Btn onClick={onRepararInicial} color={C.naranja} size="sm" icon="🔧">Reparar Consulta 1 faltante</Btn>
+        </div>
+      )}
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+        <div style={{fontSize:16,fontWeight:700,color:"var(--gft-text)"}}>Historia de {p.nombre}</div>
+        <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
+          {CHIPS.map(([id,label])=>(
+            <span key={id} onClick={()=>setFiltro(id)} style={{fontSize:11.5,fontWeight:600,padding:"6px 12px",borderRadius:20,cursor:"pointer",
+              background:filtro===id?"var(--gft-accent)":"var(--gft-surface)",border:filtro===id?"1px solid var(--gft-accent)":"1px solid var(--gft-border-md)",
+              color:filtro===id?"#fff":"var(--gft-text-2)"}}>{label} · {cnt[id]}</span>
+          ))}
+        </div>
+      </div>
+      {visibles.length===0 ? (
+        <div style={{textAlign:"center",padding:50,color:"var(--gft-text-muted)"}}>
+          <div style={{fontSize:40,marginBottom:10}}>🕐</div>
+          <div style={{fontWeight:700,fontSize:14,marginBottom:14}}>Sin eventos en la historia</div>
+          {onNuevaConsulta && <Btn onClick={onNuevaConsulta} color={C.azul}>Registrar primera consulta</Btn>}
+        </div>
+      ) : (
+        <div style={{position:"relative",paddingLeft:26}}>
+          <div style={{position:"absolute",left:6,top:6,bottom:6,width:2,background:"var(--gft-border-md)"}}/>
+          {visibles.map((e)=>{
+            const col=COLS[e.tipo], colTxt=COLS_TXT[e.tipo];
+            const esHoy = e.ts && e.ts===hoyTs;
+            const abierto = e.tipo==="consulta" && expand===e.key;
+            return (
+              <div key={e.key} style={{position:"relative",marginBottom:16}}>
+                <div style={{position:"absolute",left:-26,top:2,width:14,height:14,borderRadius:"50%",background:col,
+                  border:"3px solid var(--gft-bg)",boxShadow:`0 0 0 1px ${col}`}}/>
+                <div onClick={e.tipo==="consulta"?()=>setExpand(abierto?null:e.key):undefined}
+                  style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border)",borderLeft:`3px solid ${col}`,borderRadius:12,
+                    padding:"13px 16px",cursor:e.tipo==="consulta"?"pointer":"default"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{minWidth:60,flexShrink:0}}>
+                      <div className="d" style={{fontSize:13,fontWeight:700,color:colTxt}}>{fmtFecha(e.fecha)}</div>
+                      {esHoy && <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)"}}>hoy</div>}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)"}}>{e.titulo}</div>
+                      <div className="d" style={{fontSize:11,color:"var(--gft-text-2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:abierto?"normal":"nowrap"}}>{e.detalle}</div>
+                    </div>
+                    {e.tipo==="receta"
+                      ? <span onClick={(ev)=>{ev.stopPropagation(); onVerReceta&&onVerReceta(e.r);}} style={{fontSize:11,color:"var(--gft-accent-text)",cursor:"pointer",flexShrink:0,fontWeight:600}}>Ver PDF</span>
+                      : <span className="d" style={{fontSize:10,fontWeight:700,textTransform:"uppercase",padding:"3px 8px",borderRadius:5,flexShrink:0,
+                          background:`color-mix(in srgb, ${col} 18%, transparent)`,color:colTxt}}>{BADGE[e.tipo]}{e.tipo==="consulta"?` ${abierto?"▲":"▾"}`:""}</span>}
+                  </div>
+                  {/* Consulta expandida → detalle + TODAS las acciones existentes */}
+                  {abierto && (
+                    <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--gft-border)"}} onClick={ev=>ev.stopPropagation()}>
+                      {e.c.subjetivo && <div style={{fontSize:11.5,color:"var(--gft-text-2)",marginBottom:4}}>{e.c.subjetivo}</div>}
+                      {e.c.plan && <div style={{fontSize:11.5,color:"var(--gft-accent-text)",fontWeight:600,marginBottom:4}}>Plan: {e.c.plan}</div>}
+                      {e.c.proxCita && <div className="d" style={{fontSize:11,color:"var(--gft-success-text)",marginBottom:8}}>📅 Próxima cita: {fmtFecha(e.c.proxCita)}</div>}
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                        <Btn onClick={()=>onVerNota&&onVerNota(e.c)} outline color={C.azul} size="sm" icon="🖨️">Ver nota</Btn>
+                        <Btn onClick={()=>onEditarConsulta&&onEditarConsulta(e.c)} outline color={C.verde} size="sm" icon="✏️">Editar</Btn>
+                        <Btn onClick={()=>onEliminarConsulta&&onEliminarConsulta(e.c.id)} outline color={C.rojo} size="sm" icon="🗑️">Eliminar</Btn>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onCitaAgendada, gcalEventos}) => {
   const [tab, setTab] = useState("progreso");
   const [showC, setShowC] = useState(false);
@@ -6468,71 +6588,13 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         )}
 
         {tab==="consultas" && (
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {repararInicial && (
-              <div style={{background:"#FFF7ED",border:"1.5px solid #FDBA74",borderRadius:10,
-                padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",
-                gap:10,flexWrap:"wrap"}}>
-                <div style={{fontSize:11,color:"#9A3412"}}>
-                  <b>Falta la Consulta 1 de este paciente.</b> Su historia clínica
-                  {primera?.fecha?` (primera medición: ${fmtF(primera.fecha)})`:""} no tiene una consulta vinculada.
-                </div>
-                <Btn onClick={repararConsultaInicial} color={C.naranja} size="sm" icon="🔧">
-                  Reparar Consulta 1 faltante
-                </Btn>
-              </div>
-            )}
-            {(p.consultas||[]).length===0 ? (
-            <div style={{textAlign:"center",padding:60,color:C.suave}}>
-              <div style={{fontSize:48,marginBottom:12}}>📋</div>
-              <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>Sin consultas registradas</div>
-              <Btn onClick={()=>setShowC(true)} color={C.azul}>Registrar primera consulta</Btn>
-            </div>
-          ) : (
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              {[...(p.consultas||[])].sort(porFechaClinica).reverse().map((c,i,arr)=>{
-                const iO = arr.length-1-i;
-                return (
-                  <Card key={c.id||i}>
-                    <div style={{display:"flex",justifyContent:"space-between",
-                      alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
-                      <div style={{flex:1,minWidth:200}}>
-                        <div style={{display:"flex",gap:10,flexWrap:"wrap",
-                          alignItems:"center",marginBottom:6}}>
-                          <span style={{fontWeight:800,fontSize:13,color:C.azul}}>
-                            Consulta {iO+1} — {fmtFLargo(c.fecha)}
-                          </span>
-                          {c.peso && <Tag v={c.peso+" kg"} color={C.azul}/>}
-                          {c.comp&&c.comp.grasa && <Tag v={c.comp.grasa+"% grasa"} color={C.naranja}/>}
-                          {c.comp&&c.comp.musculo && <Tag v={c.comp.musculo+" kg músculo"} color={C.verde}/>}
-                        </div>
-                        {c.subjetivo && (
-                          <div style={{fontSize:11,color:C.suave,marginBottom:4}}>{c.subjetivo}</div>
-                        )}
-                        {c.plan && (
-                          <div style={{fontSize:11,color:C.azul,fontWeight:600}}>Plan: {c.plan}</div>
-                        )}
-                        {c.proxCita && (
-                          <div style={{fontSize:10,color:C.verde,marginTop:4}}>
-                            📅 Próxima cita: {fmtF(c.proxCita)}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                        <Btn onClick={()=>setDoc({tipo:"nota",consulta:c})}
-                          outline color={C.azul} size="sm" icon="🖨️">Ver nota</Btn>
-                        <Btn onClick={()=>setConsultaAEditar(c)}
-                          outline color={C.verde} size="sm" icon="✏️">Editar</Btn>
-                        <Btn onClick={()=>eliminarConsulta(c.id)}
-                          outline color={C.rojo} size="sm" icon="🗑️">Eliminar</Btn>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-          </div>
+          <TimelineExpediente p={p}
+            onVerNota={(c)=>setDoc({tipo:"nota",consulta:c})}
+            onEditarConsulta={(c)=>setConsultaAEditar(c)}
+            onEliminarConsulta={(id)=>eliminarConsulta(id)}
+            onNuevaConsulta={()=>setShowC(true)}
+            onVerReceta={(r)=>setDoc({tipo:"receta",receta:r})}
+            repararInicial={repararInicial} onRepararInicial={repararConsultaInicial}/>
         )}
         {tab==="labs" && (
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
