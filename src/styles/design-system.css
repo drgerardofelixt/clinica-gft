@@ -950,13 +950,42 @@ select.gft-input {
   margin-bottom: 16px;
 }
 
-/* ── Agenda unificada — calendario + rail derecho ── */
-.gft-agenda-layout {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 16px;
-  align-items: start;
+/* ── Agenda (5a) — topbar full-width + cuerpo flex [rejilla | rail] ── */
+.gft-agenda-v2 { display: flex; flex-direction: column; gap: 14px; }
+
+.gft-agenda-v2__topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
+
+/* Cuerpo: rejilla flexible (flex:1 min-width:0) + rail fijo → el rail SIEMPRE es
+   visible sin scroll horizontal (min-width:0 permite que la rejilla encoja). */
+.gft-agenda-v2__body { display: flex; gap: 16px; align-items: flex-start; }
+.gft-agenda-v2__grid { flex: 1; min-width: 0; }
+.gft-agenda-v2__rail { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; }
+
+/* Nav ‹ Hoy › */
+.gft-agenda-navbtn {
+  height: 28px; min-width: 28px; padding: 0 6px;
+  border-radius: 8px; border: 1px solid var(--gft-border-md);
+  background: var(--gft-surface); color: var(--gft-text-2);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.gft-agenda-navbtn:hover { color: var(--gft-text); border-color: var(--gft-accent); }
+
+/* Toggle Día / Semana / Mes */
+.gft-agenda-toggle {
+  display: flex; background: var(--gft-surface);
+  border: 1px solid var(--gft-border-md); border-radius: 9px; padding: 2px;
+}
+.gft-agenda-toggle span {
+  font-size: 12px; font-weight: 600; padding: 5px 12px;
+  border-radius: 7px; color: var(--gft-text-2); cursor: pointer; user-select: none;
+}
+.gft-agenda-toggle span.is-active { background: var(--gft-accent); color: #fff; }
 
 .gft-paciente-actual__metric {
   background: var(--gft-surface2);
@@ -990,7 +1019,8 @@ select.gft-input {
   .gft-dash-grid { grid-template-columns: 1fr; }
   .gft-dash-bottom { grid-template-columns: 1fr; }
   .gft-expediente-grid { grid-template-columns: 1fr; }
-  .gft-agenda-layout { grid-template-columns: 1fr; }
+  .gft-agenda-v2__body { flex-direction: column; }
+  .gft-agenda-v2__rail { width: 100%; }
 }
 
 @media (max-width: 900px) {
