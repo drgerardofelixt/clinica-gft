@@ -705,7 +705,7 @@ select.gft-input {
 }
 
 .gft-sidebar {
-  width: 260px;
+  width: 236px;
   flex-shrink: 0;
   background: var(--gft-titlebar);
   border-right: 1px solid var(--gft-border);
@@ -810,6 +810,23 @@ select.gft-input {
 
 .gft-topbar__info { flex: 1; min-width: 0; }
 
+/* Buscador del topbar */
+.gft-topbar__search { position: relative; width: 260px; flex-shrink: 0; }
+.gft-input--sm { padding: 7px 12px; font-size: 13px; border-radius: 9px; }
+.gft-topbar__search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  background: var(--gft-surface);
+  border: 1px solid var(--gft-border-md);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.55);
+  z-index: 200;
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* Botón hamburguesa — oculto en desktop, visible solo en móvil */
 .gft-hamburger {
   display: none;
@@ -900,20 +917,28 @@ select.gft-input {
   padding: 12px 0;
 }
 
-/* ── Paciente actual ─────────────────────────────────────── */
+/* ── Paciente actual (hero, ancho completo) ──────────────── */
 .gft-paciente-actual {
-  background: var(--gft-surface);
-  border: 1px solid var(--gft-border);
+  background: linear-gradient(120deg, #16233c 0%, #123a37 100%);
+  border: 1px solid var(--gft-frame-border);
   border-radius: 16px;
   padding: 20px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .gft-paciente-actual__metrics {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 10px;
   margin-bottom: 16px;
+}
+
+/* ── Fila inferior del dashboard — 3 columnas ────────────── */
+.gft-dash-bottom {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .gft-paciente-actual__metric {
@@ -946,10 +971,16 @@ select.gft-input {
 /* ── Responsive ──────────────────────────────────────────── */
 @media (max-width: 1100px) {
   .gft-dash-grid { grid-template-columns: 1fr; }
+  .gft-dash-bottom { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
   .gft-dash-stats { grid-template-columns: repeat(2, 1fr); }
+  .gft-paciente-actual__metrics { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 480px) {
+  .gft-paciente-actual__metrics { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 768px) {
@@ -976,6 +1007,7 @@ select.gft-input {
 
   .gft-content { padding: 12px; }
   .gft-topbar  { padding: 0 12px; gap: 8px; }
+  .gft-topbar__search { display: none; }  /* buscador se omite en móvil */
 
   /* Topbar — título truncado en pantallas pequeñas */
   .gft-topbar__info { overflow: hidden; }

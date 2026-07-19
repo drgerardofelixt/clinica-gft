@@ -8088,6 +8088,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [hovStat, setHovStat] = useState(null);
   const [quickAction, setQuickAction] = useState(null); // null | "receta" | "labs"
   const [quickBusq, setQuickBusq] = useState("");
+  const [topSearch, setTopSearch] = useState(""); // buscador del topbar → expediente
   // Lanza receta/labs rápida con un paciente existente o con un objeto de nombre libre {nombre,_libre}
   const lanzarRapida = (accion, objetivo) => {
     if (!objetivo || !objetivo.nombre) return;
@@ -8483,6 +8484,40 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
             <div className="gft-topbar__title">{topbarTitle}</div>
             <div className="gft-topbar__date">{fechaHoy}</div>
           </div>
+          {/* Buscador del topbar — autocomplete de pacientes → abre expediente */}
+          <div className="gft-topbar__search">
+            <input className="gft-input gft-input--sm" placeholder="🔍 Buscar paciente…"
+              value={topSearch} onChange={e=>setTopSearch(e.target.value)}
+              onKeyDown={e=>{
+                if(e.key==="Enter" && topSearch.trim()){
+                  const r=buscarPacientesSimilares(topSearch.trim(), pacientes, {umbral:0.5})[0];
+                  if(r){ onVer(r.paciente); setTopSearch(""); }
+                }
+                if(e.key==="Escape") setTopSearch("");
+              }}/>
+            {topSearch.trim() && (()=>{
+              const res=buscarPacientesSimilares(topSearch.trim(), pacientes, {umbral:0.5}).slice(0,6);
+              return (
+                <div className="gft-topbar__search-results">
+                  {res.length===0
+                    ? <div style={{padding:"10px 12px",fontSize:12,color:"var(--gft-text-muted)"}}>Sin coincidencias</div>
+                    : res.map(({paciente:p})=>(
+                        <div key={p.id} onClick={()=>{onVer(p); setTopSearch("");}}
+                          style={{padding:"9px 12px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",
+                            borderBottom:"1px solid var(--gft-border)"}}
+                          onMouseEnter={e=>e.currentTarget.style.background="var(--gft-surface2)"}
+                          onMouseLeave={e=>e.currentTarget.style.background=""}>
+                          <div className={`gft-avatar gft-avatar--sm gft-avatar--${getAvatarColor(p.nombre||"")}`}>{getIniciales(p.nombre)}</div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                            <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>{p.edad?p.edad+" años · ":""}{(p.consultas||[]).filter(c=>!c.esSoloCita).length} consultas</div>
+                          </div>
+                        </div>
+                      ))}
+                </div>
+              );
+            })()}
+          </div>
           <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>
             + Nuevo paciente
           </button>
@@ -8502,10 +8537,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               {/* Stats row */}
               <div className="gft-dash-stats">
                 {[
+                  {l:"Citas hoy",               v:citasV2Hoy.length,  unit:pendientesHoy>0?`${pendientesHoy} pendientes`:"agendadas", color:"var(--gft-accent)",  action:()=>setContentView("agenda")},
+                  {l:"Programadas del mes",     v:est.programadasMes, unit:"este mes",          color:"var(--gft-warning)", action:()=>setContentView("agenda")},
+                  {l:"Atendidas del mes",       v:est.atendidasMes,   unit:est.programadasMes>0?`${Math.round(est.atendidasMes/est.programadasMes*100)}% de programadas`:"completadas", color:"var(--gft-success)", action:()=>setContentView("stats")},
                   {l:"Pacientes activos",       v:est.activos,        unit:`de ${est.totales}`, color:"var(--gft-accent)",  action:()=>setContentView("stats")},
-                  {l:"Atendidos este mes",      v:est.atendidasMes,   unit:"completadas",       color:"var(--gft-success)", action:()=>setContentView("stats")},
-                  {l:"Atendidos en total",      v:est.atendidasTotal, unit:"histórico",         color:"var(--gft-warning)", action:()=>setContentView("stats")},
-                  {l:"Programadas del mes",     v:est.programadasMes, unit:"este mes",          color:"var(--gft-accent)",  action:()=>setContentView("agenda")},
                 ].map(s=>(
                   <div key={s.l} className="gft-stat"
                     style={{borderTop:`2px solid ${s.color}`,cursor:"pointer",
@@ -8521,21 +8556,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 ))}
               </div>
 
-              {/* Acciones rápidas */}
-              <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-                {[
-                  {l:"📝 Receta rápida",     k:"receta"},
-                  {l:"🧪 Orden de labs rápida", k:"labs"},
-                ].map(a=>(
-                  <button key={a.k} className="gft-btn gft-btn--secondary gft-btn--sm"
-                    style={{flex:"1 1 140px",justifyContent:"center",fontWeight:700}}
-                    onClick={()=>{setQuickAction(a.k);setQuickBusq("");}}>
-                    {a.l}
-                  </button>
-                ))}
-              </div>
-
-              {/* Patient picker modal para acciones rápidas */}
+              {/* Patient picker modal para acciones rápidas (los botones se movieron a la columna "Acciones rápidas") */}
               {quickAction&&(
                 <div style={{position:"fixed",inset:0,zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center"}}
                   onClick={()=>setQuickAction(null)}>
@@ -8599,13 +8620,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 </div>
               )}
 
-              {/* 2-col grid */}
-              <div className="gft-dash-grid">
-
-                {/* ── Columna izquierda ── */}
-                <div>
-                  {/* Paciente actual — cita en curso (0-60min) o la más próxima según la hora actual */}
-                  {(()=>{
+              {/* Hero — paciente actual (ancho completo) */}
+              {(()=>{
                     const ahora = new Date();
                     const minAhora = ahora.getHours()*60 + ahora.getMinutes();
                     // rango: 0=en curso (0-60min), 1=futura, 2=pasada (>60min); d=minutos desde la hora de la cita
@@ -8653,29 +8669,36 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                     const imcCalc = peso && pac.talla ? (parseFloat(peso)/((parseFloat(pac.talla)/100)**2)).toFixed(1) : null;
                     const imc = consUlt?.imc || imcCalc;
                     const grasa = compUlt?.grasa || compUlt?.grasaCorporal || compUlt?.masaGrasaPct;
+                    const musculo = compUlt?.musculo;
+                    const ca = consUlt?.ca || (pac.ef&&pac.ef.ca);
+                    const edadMet = compUlt?.edadMet;
                     const color = getAvatarColor(pac.nombre||"");
+                    const enCurso = citaHoy && rank(citaHoy.hora).r === 0;
                     return (
                       <div className="gft-paciente-actual">
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"var(--gft-text-muted)",textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"var(--gft-text-2)",textTransform:"uppercase",letterSpacing:"0.08em"}}>
                             Paciente actual
                           </div>
                           <button className="gft-section-action" onClick={()=>setContentView("pacientes")}>Ver todos →</button>
                         </div>
-                        <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
+                        <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,flexWrap:"wrap"}}>
                           <div className={`gft-avatar gft-avatar--lg gft-avatar--${color}`}>{getIniciales(pac.nombre)}</div>
                           <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:16,fontWeight:700,color:"var(--gft-text)",fontFamily:"var(--gft-font-display)",
+                            <div style={{fontSize:18,fontWeight:700,color:"var(--gft-text)",fontFamily:"var(--gft-font-display)",
                               overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pac.nombre}</div>
-                            <div style={{fontSize:12,color:"var(--gft-text-muted)",marginTop:2}}>
-                              {pac.edad} años · {pac.sexo}{(()=>{ const m=medLegibleCorto(tratamientoEfectivo(pac)); return m?" · "+m:""; })()}
+                            <div style={{fontFamily:"var(--gft-font-data)",fontSize:13,color:"var(--gft-text-2)",marginTop:3,
+                              textTransform:"uppercase",letterSpacing:"0.06em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                              {pac.edad} AÑOS · {pac.sexo}{pac.talla?" · "+pac.talla+" CM":""}{(()=>{ const m=medLegibleCorto(tratamientoEfectivo(pac)); return m?" · "+m.toUpperCase():""; })()}
                             </div>
-                            {citaHoy?.hora && (
-                              <div style={{fontSize:11,color:"var(--gft-accent)",marginTop:4,fontWeight:600}}>
-                                Hoy · {citaHoy.hora} hrs
-                              </div>
-                            )}
                           </div>
+                          {citaHoy?.hora && (
+                            <span style={{flexShrink:0,fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:20,
+                              background:enCurso?"var(--gft-success-dim)":"var(--gft-accent-dim)",
+                              color:enCurso?"var(--gft-success-text)":"var(--gft-accent-text)"}}>
+                              {enCurso?"En consulta":"Próxima"} · {citaHoy.hora}
+                            </span>
+                          )}
                         </div>
                         <div className="gft-paciente-actual__metrics">
                           <div className="gft-paciente-actual__metric">
@@ -8684,7 +8707,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                               <span className="gft-paciente-actual__metric-value">{peso||"—"}</span>
                               {peso&&<span className="gft-paciente-actual__metric-unit">kg</span>}
                             </div>
-                            {perd&&parseFloat(perd)>0&&<div style={{fontSize:11,color:"var(--gft-success)",fontWeight:600,marginTop:2}}>↓ {perd} kg</div>}
+                            {perd&&parseFloat(perd)>0&&<div style={{fontSize:11,color:"var(--gft-success-text)",fontWeight:600,marginTop:2}}>↓ {perd} kg</div>}
                           </div>
                           <div className="gft-paciente-actual__metric">
                             <div className="gft-paciente-actual__metric-label">IMC</div>
@@ -8697,45 +8720,48 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                               {grasa&&<span className="gft-paciente-actual__metric-unit">%</span>}
                             </div>
                           </div>
+                          <div className="gft-paciente-actual__metric">
+                            <div className="gft-paciente-actual__metric-label">Músculo</div>
+                            <div>
+                              <span className="gft-paciente-actual__metric-value">{musculo||"—"}</span>
+                              {musculo&&<span className="gft-paciente-actual__metric-unit">kg</span>}
+                            </div>
+                          </div>
+                          <div className="gft-paciente-actual__metric">
+                            <div className="gft-paciente-actual__metric-label">C. abdominal</div>
+                            <div>
+                              <span className="gft-paciente-actual__metric-value">{ca||"—"}</span>
+                              {ca&&<span className="gft-paciente-actual__metric-unit">cm</span>}
+                            </div>
+                          </div>
+                          <div className="gft-paciente-actual__metric">
+                            <div className="gft-paciente-actual__metric-label">Edad metab.</div>
+                            <div>
+                              <span className="gft-paciente-actual__metric-value">{edadMet||"—"}</span>
+                              {edadMet&&<span className="gft-paciente-actual__metric-unit">años</span>}
+                            </div>
+                          </div>
                         </div>
                         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                          <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>onVer(pac)}>Ver expediente</button>
-                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>onAgendar&&onAgendar(pac)}>Agendar cita</button>
-                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={onOrdenRapida}>Orden labs</button>
+                          <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>onVer(pac)}>Nueva consulta</button>
+                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>onRecetaRapida&&onRecetaRapida(pac)}>Receta</button>
+                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>onVer(pac)}>Cargar labs/Tanita</button>
+                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>onVer(pac)}>Reporte de progreso</button>
+                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>onVer(pac)}>Abrir expediente</button>
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* Google Calendar card */}
-                  <div className={"gft-card "+(gcalAuthed?"gft-card--success":"")} style={{marginBottom:0}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <span style={{fontSize:18}}>📅</span>
-                        <div>
-                          <div style={{fontWeight:700,fontSize:13,color:gcalAuthed?"var(--gft-success)":"var(--gft-text-2)"}}>
-                            {gcalAuthed?"Google Calendar conectado":"Google Calendar desconectado"}
-                          </div>
-                          <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
-                            {gcalAuthed?`${gcalEventos.length} eventos sincronizados`:"Conecta para sincronizar citas"}
-                          </div>
-                        </div>
-                      </div>
-                      {gcalAuthed ? (
-                        <div style={{display:"flex",gap:8}}>
-                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowImport(true)}>📥 Importar</button>
-                          <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}} onClick={onGcalDisconnect}>Desconectar</button>
-                        </div>
-                      ) : (
-                        <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={onGcalConnect}>🔗 Conectar</button>
-                      )}
-                    </div>
-                  </div>
+              {/* Fila inferior — 3 columnas: Siguen hoy · Mañana · Acciones rápidas */}
+              <div className="gft-dash-bottom">
 
+                {/* ── Col 1 — Siguen hoy (Cola del día) ── */}
+                <div>
                   {/* Cola del día — desde la tabla `citas` (v2), misma fuente que Agenda/Calendario */}
                   <div className="gft-panel">
                     <div className="gft-panel__header">
-                      <div className="gft-panel__title">Cola del día</div>
+                      <div className="gft-panel__title">Siguen hoy</div>
                       {pendientesHoy>0&&<span className="gft-panel__count" title="Pendientes de hoy">{pendientesHoy}</span>}
                     </div>
                     {citasV2Hoy.length===0 ? (
@@ -8791,7 +8817,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
                 </div>
 
-                {/* ── Columna derecha (panels) ── */}
+                {/* ── Col 2 — Mañana (Pacientes de mañana) ── */}
                 <div>
                   {/* Pacientes de mañana — desde la tabla `citas` (v2) */}
                   <div className="gft-panel">
@@ -8844,6 +8870,45 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                     })}
                   </div>
                 </div>
+
+                {/* ── Col 3 — Acciones rápidas + Google Calendar ── */}
+                <div>
+                  <div className="gft-panel">
+                    <div className="gft-panel__header"><div className="gft-panel__title">Acciones rápidas</div></div>
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      <button className="gft-btn gft-btn--secondary gft-btn--sm" style={{justifyContent:"flex-start",fontWeight:700}} onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>➕ Nuevo paciente</button>
+                      <button className="gft-btn gft-btn--secondary gft-btn--sm" style={{justifyContent:"flex-start",fontWeight:700}} onClick={()=>onAgendar&&onAgendar(null)}>📅 Agendar cita</button>
+                      <button className="gft-btn gft-btn--secondary gft-btn--sm" style={{justifyContent:"flex-start",fontWeight:700}} onClick={()=>{setQuickAction("receta");setQuickBusq("");}}>📝 Receta rápida</button>
+                      <button className="gft-btn gft-btn--secondary gft-btn--sm" style={{justifyContent:"flex-start",fontWeight:700}} onClick={()=>{setQuickAction("labs");setQuickBusq("");}}>🧪 Orden de labs rápida</button>
+                    </div>
+                  </div>
+
+                  {/* Google Calendar — estado + conexión (reubicado desde la columna del hero) */}
+                  <div className={"gft-card "+(gcalAuthed?"gft-card--success":"")} style={{marginBottom:0}}>
+                    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{fontSize:18}}>📅</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontWeight:700,fontSize:13,color:gcalAuthed?"var(--gft-success)":"var(--gft-text-2)"}}>
+                            {gcalAuthed?"Google Calendar conectado":"Google Calendar desconectado"}
+                          </div>
+                          <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>
+                            {gcalAuthed?`${gcalEventos.length} eventos sincronizados`:"Conecta para sincronizar citas"}
+                          </div>
+                        </div>
+                      </div>
+                      {gcalAuthed ? (
+                        <div style={{display:"flex",gap:8}}>
+                          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowImport(true)}>📥 Importar</button>
+                          <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}} onClick={onGcalDisconnect}>Desconectar</button>
+                        </div>
+                      ) : (
+                        <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={onGcalConnect}>🔗 Conectar</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </>
           )}
