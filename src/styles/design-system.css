@@ -950,6 +950,14 @@ select.gft-input {
   margin-bottom: 16px;
 }
 
+/* ── Agenda unificada — calendario + rail derecho ── */
+.gft-agenda-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+  align-items: start;
+}
+
 .gft-paciente-actual__metric {
   background: var(--gft-surface2);
   border-radius: 12px;
@@ -982,6 +990,7 @@ select.gft-input {
   .gft-dash-grid { grid-template-columns: 1fr; }
   .gft-dash-bottom { grid-template-columns: 1fr; }
   .gft-expediente-grid { grid-template-columns: 1fr; }
+  .gft-agenda-layout { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
