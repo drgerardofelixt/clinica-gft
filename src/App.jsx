@@ -3263,7 +3263,8 @@ const DocProgreso = ({p}) => {
   const primerNom = (p.nombre||"").split(" ")[0] || "";
   const grasaKgIni = grasaKgDe(primera);
   const grasaKgCambio = (grasaKgAct!=null && grasaKgIni!=null) ? parseFloat((grasaKgAct-grasaKgIni).toFixed(1)) : null;
-  const _mesIni = primera?.fecha ? new Date(normDate(primera.fecha)+"T00:00:00").toLocaleDateString("es-MX",{month:"long"}) : "el inicio";
+  // parseFechaClinica maneja ISO y DD/MM/YYYY; normDate devolvía DD/MM/YYYY que con "T00:00:00" daba Invalid Date
+  const _mesIni = primera?.fecha ? new Date(parseFechaClinica(primera.fecha)).toLocaleDateString("es-MX",{month:"long"}) : "el inicio";
   const _kg = v => Math.abs(v).toFixed(1);
   const saludo = (()=>{
     if (esPrimeraToma) return { titulo:`Tu punto de partida, ${primerNom}`, narr:"Estas son tus primeras mediciones. Con ellas armamos tu plan personalizado; en tu próxima consulta veremos tu avance." };
