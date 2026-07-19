@@ -1865,9 +1865,11 @@ const G4 = ({children}) => (
   </div>
 );
 
-const LogoDoc = ({compact=false}) => (
+// El logo CON cédula y registro (logo-02, IMG_LOGO_REPORTE) se usa SIEMPRE en documentos.
+// conCedula por defecto true; pasar false solo si alguna vez se quisiera el logo sin cédula.
+const LogoDoc = ({compact=false, conCedula=true}) => (
   <div style={{marginBottom:compact?10:16,paddingBottom:compact?8:12,borderBottom:"2px solid #1B3F8B20"}}>
-    <img src={IMG_LOGO} alt="Logo" style={{height:compact?72:92,width:"auto",maxWidth:"100%",display:"block"}}/>
+    <img src={conCedula?IMG_LOGO_REPORTE:IMG_LOGO} alt="Logo" style={{height:compact?84:104,width:"auto",maxWidth:"100%",display:"block"}}/>
   </div>
 );
 
@@ -2237,28 +2239,48 @@ const DocNota = ({p, consulta={}}) => {
     c.respuesta && ("Respuesta: "+c.respuesta),
     c.cambioDosis,
   ].filter(Boolean).join(" · ") || "—";
-  const tit = {fontWeight:700,color:C.azul,marginBottom:3,marginTop:4};
+  const tit = {fontWeight:700,color:C.azul,marginBottom:3,marginTop:10,fontSize:12,textTransform:"uppercase",letterSpacing:0.4};
+  const trat = c.medicamento ? (c.medicamento+(c.dosis?" · "+c.dosis:"")) : "";
+  // Celda de signo vital con fondo de campo (#F4F6FB)
+  const V = ({l, v}) => (
+    <div style={{background:"#F4F6FB",borderRadius:6,padding:"7px 10px",border:"1px solid #E2E8F0"}}>
+      <div style={{fontSize:8.5,color:"#64748B",fontWeight:700,textTransform:"uppercase",letterSpacing:0.4}}>{l}</div>
+      <div style={{fontSize:13,color:C.texto,fontWeight:700,marginTop:1}}>{v||"—"}</div>
+    </div>
+  );
   return (
     <div className="pdf-page" style={{width:816, minHeight:1056, boxSizing:"border-box",
       padding:"40px 48px", background:"white", display:"flex", flexDirection:"column",
       fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.5}}>
       <LogoDoc conCedula={true}/>
-      <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
-        NOTA DE EVOLUCIÓN
+
+      {/* Banda de paciente — gradiente 135deg navy→teal con texto blanco */}
+      <div style={{background:"linear-gradient(135deg,#1B3F8B 0%,#1D9E75 100%)",color:"#fff",
+        borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+        <div style={{fontSize:19,fontWeight:800,letterSpacing:0.2}}>{p.nombre}</div>
+        <div style={{fontSize:11,opacity:0.92,marginTop:3}}>
+          {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, trat||null].filter(Boolean).join("   ·   ")}
+        </div>
       </div>
-      <G4>
-        <CF l="Paciente" v={p.nombre} span={2}/>
-        <CF l="Edad" v={p.edad?p.edad+" años":""}/>
-        <CF l="Fecha" v={fmtFecha(c.fecha)}/>
-        <CF l="Peso" v={c.peso?c.peso+" kg":""}/>
-        <CF l="IMC" v={imc}/>
-        <CF l="Circ. Abd." v={c.ca?c.ca+" cm":""}/>
-        <CF l="TA" v={c.ta}/>
-        <CF l="FC" v={c.fc}/>
-        <CF l="SpO₂" v={c.spo2}/>
-        {c.medicamento && <CF l="Medicamento" v={c.medicamento+(c.dosis?" · "+c.dosis:"")} span={2}/>}
-      </G4>
-      <hr style={{border:"1px solid "+C.grisMedio,margin:"4px 0 8px"}}/>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+        <div style={{fontWeight:800,fontSize:14,color:C.azul,letterSpacing:0.3}}>NOTA DE EVOLUCIÓN</div>
+        <div style={{fontSize:11,color:"#64748B"}}>Fecha: <b style={{color:C.texto}}>{fmtFecha(c.fecha)}</b></div>
+      </div>
+
+      {/* Signos vitales — grilla con fondo de campo */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:12}}>
+        <V l="Peso" v={c.peso?c.peso+" kg":""}/>
+        <V l="IMC" v={imc}/>
+        <V l="Circ. Abd." v={c.ca?c.ca+" cm":""}/>
+        <V l="TA" v={c.ta}/>
+        <V l="FC" v={c.fc}/>
+        <V l="SpO₂" v={c.spo2}/>
+      </div>
+
+      {/* Separador de marca navy→teal (#1D9E75) */}
+      <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#1D9E75)",borderRadius:1,marginBottom:4}}/>
+
       <div style={tit}>Subjetivo</div>
       <div>{c.subjetivo || c.motivo || "—"}</div>
       <div style={tit}>Objetivo</div>
@@ -2271,6 +2293,7 @@ const DocNota = ({p, consulta={}}) => {
       <div style={{marginTop:"auto"}}>
         <Firma/>
         <FooterDoc/>
+        <OlasDoc colores={["#1B3F8B","#1D9E75","#1D9E75"]} opac={[0.35,0.22,0.5]}/>
       </div>
     </div>
   );
@@ -2283,12 +2306,14 @@ const SepDoc = () => (
     margin:"12px 0 16px",borderRadius:1}}/>
 );
 
-const OlasDoc = () => (
+// Onda decorativa del pie. Colores/opacidades parametrizables; el default conserva el aspecto
+// actual (Labs/Receta no cambian). DocNota pasa el esquema navy+teal de marca nueva.
+const OlasDoc = ({colores=["#C5B8E0","#5B8DB8","#5BC4A0"], opac=[0.4,0.3,0.45]}={}) => (
   <svg viewBox="0 0 800 80" preserveAspectRatio="none"
     style={{width:"100%",display:"block",marginTop:"auto"}}>
-    <path d="M0,40 Q100,20 200,40 Q300,60 400,40 Q500,20 600,40 Q700,60 800,40 L800,80 L0,80 Z" fill="#C5B8E0" opacity="0.4"/>
-    <path d="M0,48 Q100,28 200,48 Q300,68 400,48 Q500,28 600,48 Q700,68 800,48 L800,80 L0,80 Z" fill="#5B8DB8" opacity="0.3"/>
-    <path d="M0,55 Q100,35 200,55 Q300,75 400,55 Q500,35 600,55 Q700,75 800,55 L800,80 L0,80 Z" fill="#5BC4A0" opacity="0.45"/>
+    <path d="M0,40 Q100,20 200,40 Q300,60 400,40 Q500,20 600,40 Q700,60 800,40 L800,80 L0,80 Z" fill={colores[0]} opacity={opac[0]}/>
+    <path d="M0,48 Q100,28 200,48 Q300,68 400,48 Q500,28 600,48 Q700,68 800,48 L800,80 L0,80 Z" fill={colores[1]} opacity={opac[1]}/>
+    <path d="M0,55 Q100,35 200,55 Q300,75 400,55 Q500,35 600,55 Q700,75 800,55 L800,80 L0,80 Z" fill={colores[2]} opacity={opac[2]}/>
   </svg>
 );
 
