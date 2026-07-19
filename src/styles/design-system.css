@@ -1004,6 +1004,13 @@ select.gft-input {
   .gft-rep-charts { grid-template-columns: 1fr; }
 }
 
+/* ── Ajustes (5d) — sub-nav + panel ── */
+.gft-ajustes-layout { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: start; }
+@media (max-width: 820px) {
+  .gft-ajustes-layout { grid-template-columns: 1fr; }
+  .gft-ajustes-nav { flex-direction: row !important; flex-wrap: wrap; }
+}
+
 .gft-paciente-actual__metric {
   background: var(--gft-surface2);
   border-radius: 12px;

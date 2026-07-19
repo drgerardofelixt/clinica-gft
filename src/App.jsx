@@ -314,6 +314,12 @@ const parseFechaClinica = (f) => {
 };
 // Comparador para .sort() — siempre sobre una copia, nunca mutar el array original
 const porFechaClinica = (a,b) => parseFechaClinica(a.fecha) - parseFechaClinica(b.fecha);
+
+// ── Preferencias del doctor (Ajustes). localStorage → lectura SÍNCRONA para gatear funciones ──
+// Claves: sugerencia_dosis, labs_ia (cableadas a su función real) · recordatorio_wa (preferencia
+// guardada pero INERTE hoy: los recordatorios de WhatsApp son manuales, no hay envío automático).
+const getPref = (k, def=true) => { try { const v=localStorage.getItem("gft_pref_"+k); return v==null?def:v==="1"; } catch { return def; } };
+const setPref = (k, val) => { try { localStorage.setItem("gft_pref_"+k, val?"1":"0"); } catch(_){} };
 // Migración puntual: genera la "Consulta 1" faltante para pacientes creados antes del fix f8c0f70
 // (composición inicial en p.composicion sin consulta vinculada en p.consultas).
 // Devuelve el paciente actualizado, o null si no hay nada que migrar. Idempotente (seguro de correr varias veces).
@@ -3913,6 +3919,18 @@ const LabsUp = ({nombre, onApply}) => {
   const border = {idle:C.grisMedio, loading:C.morado, ok:C.verde, error:C.rojo}[st]||C.grisMedio;
   const bg = {ok:C.verdePale, loading:C.moradoPale, error:C.rojoPale}[st]||C.gris;
 
+  // Toggle "Lectura de labs con IA" (Ajustes → Preferencias): si está apagado, no se ofrece el parseo IA.
+  if (!getPref("labs_ia")) {
+    return (
+      <div style={{marginBottom:12,padding:14,borderRadius:10,border:"2px dashed var(--gft-border-md)",
+        background:"var(--gft-surface2)",textAlign:"center"}}>
+        <div style={{fontSize:20,marginBottom:4}}>🧪</div>
+        <div style={{fontSize:11,color:"var(--gft-text-muted)",lineHeight:1.5}}>
+          Lectura de labs con IA desactivada.<br/>Actívala en <b style={{color:"var(--gft-text-2)"}}>Ajustes → Preferencias</b>.
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{marginBottom:12,padding:14,borderRadius:10,
       border:"2px dashed "+border,background:bg,transition:"all 0.2s"}}>
@@ -5972,7 +5990,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                       <div className="gft-panel" style={{marginBottom:0}}>
                         <div className="gft-panel__header"><div className="gft-panel__title">Tratamiento actual</div></div>
                         <div style={{fontSize:15,fontWeight:700,color:"var(--gft-text)"}}>{trat||"Sin tratamiento"}</div>
-                        {sug&&sug.texto&&(
+                        {sug&&sug.texto&&getPref("sugerencia_dosis")&&(
                           <div style={{marginTop:8,fontSize:12,color:"var(--gft-accent-text)",background:"var(--gft-accent-dim)",
                             borderRadius:8,padding:"8px 10px"}}>💡 {sug.texto}</div>
                         )}
@@ -8573,6 +8591,196 @@ const autogenerarSnapshotFaltante = async () => {
   } catch(e) { console.warn("autogenerar snapshot (no crítico):", e); return false; }
 };
 
+// ── VISTA AJUSTES (5d) — perfil/firma · consultorio · GCal · preferencias · respaldo ──
+const AjustesView = ({pacientes=[], firmaB64, onSaveFirma, gcalAuthed, gcalEventos=[], onGcalConnect, onGcalDisconnect, onMigrarCitas}) => {
+  const [sec, setSec] = useState("perfil");
+  const [prefs, setPrefs] = useState({ recordatorio_wa:getPref("recordatorio_wa"), sugerencia_dosis:getPref("sugerencia_dosis"), labs_ia:getPref("labs_ia") });
+  const [migrando, setMigrando] = useState(false);
+  const firmaInput = useRef(null);
+  const togglePref = (k) => { const v=!prefs[k]; setPref(k,v); setPrefs(p=>({...p,[k]:v})); };
+  // Calendarios personales que cuentan como "ocupado" (absorbido del modal de config anterior)
+  const [cals, setCals] = useState([]); const [calsSel, setCalsSel] = useState([]); const [calsLoading, setCalsLoading] = useState(true);
+  const consultorioId = getCalendarioConsultorioId();
+  useEffect(()=>{ let vivo=true;
+    if(!gcalAuthed){ setCalsLoading(false); return; }
+    setCalsLoading(true);
+    Promise.all([listarCalendariosDisponibles(), getCalendariosOcupado()])
+      .then(([list,sel])=>{ if(!vivo)return; setCals(list||[]); setCalsSel(sel||[]); })
+      .catch(e=>console.warn("cargar calendarios:",e))
+      .finally(()=>{ if(vivo) setCalsLoading(false); });
+    return ()=>{vivo=false;};
+  }, [gcalAuthed]);
+  const toggleCal = (id)=>{ const next=calsSel.includes(id)?calsSel.filter(x=>x!==id):[...calsSel,id]; setCalsSel(next); setCalendariosOcupado(next); };
+  const cargarFirma = (file) => { if(!file) return; const rd=new FileReader(); rd.onload=()=>onSaveFirma&&onSaveFirma(rd.result); rd.readAsDataURL(file); };
+  const exportarRespaldo = () => {
+    try{
+      const blob=new Blob([JSON.stringify(pacientes,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob); const a=document.createElement("a");
+      a.href=url; a.download=`respaldo-pacientes-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(url);
+    }catch(e){ alert("No se pudo exportar: "+(e?.message||e)); }
+  };
+  const NAV=[["perfil","Perfil y firma"],["consultorio","Datos del consultorio"],["gcal","Google Calendar"],
+    ["plantillas","Plantillas de receta"],["medicamentos","Medicamentos frecuentes"],["respaldo","Respaldo de datos"]];
+  const Card = ({titulo, children, style}) => (
+    <div style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border)",borderRadius:14,padding:"16px 18px",...style}}>
+      {titulo && <div className="d" style={{fontSize:11,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",color:"var(--gft-text-muted)",marginBottom:12}}>{titulo}</div>}
+      {children}
+    </div>
+  );
+  const Toggle = ({on, onClick})=>(
+    <div onClick={onClick} style={{width:38,height:22,borderRadius:20,flexShrink:0,cursor:"pointer",position:"relative",
+      background:on?"var(--gft-success)":"var(--gft-surface2)",transition:"background .15s"}}>
+      <div style={{position:"absolute",top:2,left:on?18:2,width:18,height:18,borderRadius:"50%",
+        background:on?"#fff":"var(--gft-text-2)",transition:"left .15s"}}/>
+    </div>
+  );
+  const Field = ({label, value}) => (
+    <div style={{minWidth:0}}>
+      <div className="d" style={{fontSize:10,fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",color:"var(--gft-text-muted)",marginBottom:5}}>{label}</div>
+      <div className="d" style={{background:"var(--gft-bg)",border:"1px solid var(--gft-border-md)",borderRadius:9,padding:"9px 12px",fontSize:14,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis"}}>{value}</div>
+    </div>
+  );
+  return (
+    <div className="gft-ajustes-layout">
+      <div className="gft-ajustes-nav" style={{display:"flex",flexDirection:"column",gap:3}}>
+        {NAV.map(([id,label])=>(
+          <div key={id} onClick={()=>setSec(id)} style={{fontSize:13,fontWeight:sec===id?600:500,padding:"9px 12px",borderRadius:9,cursor:"pointer",whiteSpace:"nowrap",
+            background:sec===id?"var(--gft-surface)":"transparent",color:sec===id?"var(--gft-text)":"var(--gft-text-2)"}}>{label}</div>
+        ))}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:14,minWidth:0}}>
+        {sec==="perfil" && (<>
+          <Card titulo="Perfil del médico">
+            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:18}}>
+              <div style={{width:60,height:60,borderRadius:"50%",flexShrink:0,background:"var(--gft-success)",color:"#06110D",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:22}}>GF</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:17,fontWeight:700,color:"var(--gft-text)"}}>Dr. Gerardo Félix Tapia</div>
+                <div className="d" style={{fontSize:12,color:"var(--gft-text-2)"}}>Medicina General · Medicina Integral</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <Field label="Cédula profesional" value="15131213"/>
+              <Field label="Registro SSA" value="10361/16"/>
+            </div>
+            <div style={{marginTop:12}}>
+              <div className="d" style={{fontSize:10,fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",color:"var(--gft-text-muted)",marginBottom:5}}>Firma para recetas y reportes</div>
+              <div style={{background:"var(--gft-bg)",border:"1px dashed var(--gft-border-md)",borderRadius:9,padding:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                {firmaB64
+                  ? <img src={firmaB64} alt="Firma" style={{height:34,maxWidth:180,objectFit:"contain"}}/>
+                  : <span className="d" style={{fontSize:13,color:"var(--gft-text-2)",fontStyle:"italic"}}>Sin firma cargada</span>}
+                <input ref={firmaInput} type="file" accept="image/*" style={{display:"none"}} onChange={e=>cargarFirma(e.target.files&&e.target.files[0])}/>
+                <button onClick={()=>firmaInput.current&&firmaInput.current.click()} style={{border:"none",borderRadius:8,background:"var(--gft-accent-dim)",color:"var(--gft-accent-text)",fontWeight:600,fontSize:12,padding:"7px 12px",cursor:"pointer",flexShrink:0}}>
+                  {firmaB64?"Actualizar firma":"Cargar firma"}</button>
+              </div>
+            </div>
+          </Card>
+          <Card titulo="Preferencias">
+            {[["recordatorio_wa","Recordatorio automático WhatsApp"],["sugerencia_dosis","Sugerencia de dosis GLP-1"],["labs_ia","Lectura de labs con IA"]].map(([k,label],i)=>(
+              <div key={k} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:i<2?11:0}}>
+                <span style={{fontSize:12.5,color:"var(--gft-text)"}}>{label}</span>
+                <Toggle on={prefs[k]} onClick={()=>togglePref(k)}/>
+              </div>
+            ))}
+            <div style={{fontSize:10.5,color:"var(--gft-text-muted)",marginTop:12,lineHeight:1.5}}>
+              El recordatorio de WhatsApp es <b>manual</b> hoy (se envía al hacer clic); esta preferencia queda guardada para cuando exista el envío automático.
+            </div>
+          </Card>
+        </>)}
+        {sec==="consultorio" && (
+          <Card titulo="Datos del consultorio">
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <Field label="Nombre" value="Dr. Gerardo Félix Tapia — Medicina Integral"/>
+              <Field label="Dirección" value="Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP 83150 · Hermosillo, Sonora"/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <Field label="Teléfono" value="(662) 298-4145"/>
+                <Field label="Correo" value="dr.gerardofelix@gmail.com"/>
+              </div>
+            </div>
+            <div style={{fontSize:10.5,color:"var(--gft-text-muted)",marginTop:12}}>Estos datos aparecen en los documentos. Edición próximamente.</div>
+          </Card>
+        )}
+        {sec==="gcal" && (
+          <Card titulo="Google Calendar" style={{maxWidth:440}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+              <span style={{width:9,height:9,borderRadius:"50%",flexShrink:0,background:gcalAuthed?"var(--gft-success-text)":"var(--gft-text-muted)"}}/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:600,color:gcalAuthed?"var(--gft-success-text)":"var(--gft-text-2)"}}>{gcalAuthed?"Conectado":"Desconectado"}</div>
+                <div className="d" style={{fontSize:11,color:"var(--gft-text-muted)"}}>{gcalAuthed?`${gcalEventos.length} eventos sincronizados`:"Conecta tu cuenta para sincronizar la agenda"}</div>
+              </div>
+            </div>
+            {gcalAuthed
+              ? <button onClick={onGcalDisconnect} style={{width:"100%",border:"1px solid color-mix(in srgb, var(--gft-danger) 30%, transparent)",borderRadius:9,background:"color-mix(in srgb, var(--gft-danger) 8%, transparent)",color:"var(--gft-danger)",fontWeight:600,fontSize:12,padding:9,cursor:"pointer"}}>Desconectar</button>
+              : <button onClick={onGcalConnect} className="gft-btn gft-btn--primary" style={{width:"100%",justifyContent:"center"}}>🔗 Conectar Google Calendar</button>}
+            {gcalAuthed && (
+              <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid var(--gft-border)"}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--gft-text)",marginBottom:4}}>Calendarios a considerar como “ocupado”</div>
+                <div style={{fontSize:10.5,color:"var(--gft-text-muted)",marginBottom:8,lineHeight:1.5}}>Sus eventos se ven como ocupado al agendar (solo lectura; nunca se escribe en ellos).</div>
+                {calsLoading ? <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>Cargando calendarios…</div>
+                  : cals.filter(c=>c.id!==consultorioId).length===0 ? <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>No se encontraron calendarios.</div>
+                  : <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {cals.filter(c=>c.id!==consultorioId).map(c=>(
+                        <label key={c.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"var(--gft-text)",cursor:"pointer"}}>
+                          <input type="checkbox" checked={calsSel.includes(c.id)} onChange={()=>toggleCal(c.id)}/>
+                          <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.summary||c.id}</span>
+                        </label>
+                      ))}
+                    </div>}
+              </div>
+            )}
+          </Card>
+        )}
+        {sec==="plantillas" && (
+          <Card titulo="Plantillas de receta">
+            <div style={{textAlign:"center",padding:"18px 0",color:"var(--gft-text-muted)"}}>
+              <div style={{fontSize:26,marginBottom:8}}>📝</div>
+              <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text-2)"}}>Próximamente</div>
+              <div style={{fontSize:11,marginTop:4}}>Gestión de plantillas de receta reutilizables.</div>
+            </div>
+          </Card>
+        )}
+        {sec==="medicamentos" && (
+          <Card titulo="Medicamentos frecuentes">
+            <div style={{fontSize:11,color:"var(--gft-text-muted)",marginBottom:12}}>Catálogo usado en recetas (solo lectura · edición próximamente).</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {Object.values(PLANTILLAS).filter(m=>m&&m.nombre&&m.med).map(m=>(
+                <div key={m.id} style={{display:"flex",alignItems:"center",gap:9,background:"var(--gft-bg)",border:"1px solid var(--gft-border)",borderRadius:9,padding:"9px 11px",minWidth:0}}>
+                  <span style={{fontSize:15,flexShrink:0}}>{m.icon||"💊"}</span>
+                  <span style={{fontSize:12.5,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.nombre}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+        {sec==="respaldo" && (<>
+          <Card>
+            <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:180}}>
+                <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)"}}>Respaldo de datos</div>
+                <div className="d" style={{fontSize:11,color:"var(--gft-text-muted)",marginTop:2}}>Automático diario a Supabase · {pacientes.length} pacientes</div>
+              </div>
+              <button onClick={exportarRespaldo} className="gft-btn gft-btn--secondary" style={{flexShrink:0}}>⬇ Exportar respaldo (JSON)</button>
+            </div>
+          </Card>
+          {onMigrarCitas && (
+            <Card titulo="Mantenimiento">
+              <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:180,fontSize:11,color:"var(--gft-text-muted)"}}>Migrar citas futuras al formato Agenda v2 (seguro, no duplica).</div>
+                <button disabled={migrando} onClick={async()=>{
+                  if(!confirm("Se migrarán las citas futuras a la Agenda v2. Las viejas NO se borran. ¿Continuar?")) return;
+                  setMigrando(true);
+                  try{ const r=await onMigrarCitas(); alert(`✅ Migración completada.\nMigradas: ${r.migradas} de ${r.pacientes} paciente(s).`+(r.fallidas?`\n⚠️ Fallidas: ${r.fallidas}`:"")); }
+                  catch(e){ alert("⚠️ La migración falló. Revisa la consola."); console.error(e); }
+                  finally{ setMigrando(false); }
+                }} className="gft-btn gft-btn--secondary" style={{flexShrink:0}}>{migrando?"Migrando…":"🔄 Migrar citas a Agenda v2"}</button>
+              </div>
+            </Card>
+          )}
+        </>)}
+      </div>
+    </div>
+  );
+};
+
 // ── VISTA REPORTES (5c) — resumen ejecutivo de la clínica (KPIs + gráficas + top) ──
 const ReportesView = ({pacientes=[], citasV2=[], onVer}) => {
   const [periodo, setPeriodo] = useState("trimestre");   // mes | trimestre | año
@@ -8902,7 +9110,7 @@ const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
   );
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
+const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita, firmaB64, onSaveFirma, onMigrarCitas}) => {
   const pedirWA = useWA();  // envío WhatsApp con fallback a modal si el paciente no tiene teléfono
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
@@ -9150,6 +9358,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       contentView==="pacientes"?"Pacientes":
                       contentView==="citas"?"Modificar cita":
                       contentView==="admincitas"?"Administrar citas":
+                      contentView==="ajustes"?"Ajustes":
                       contentView==="stats"?"Reportes":"Dashboard";
 
   return (
@@ -9199,7 +9408,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
             onClick={()=>setContentView("stats")}>
             <span className="gft-sidebar__icon">📊</span>Reportes
           </button>
-          <button className="gft-sidebar__item" onClick={onAjustes}>
+          <button className={"gft-sidebar__item"+(contentView==="ajustes"?" gft-sidebar__item--active":"")}
+            onClick={()=>setContentView("ajustes")}>
             <span className="gft-sidebar__icon">⚙️</span>Ajustes
           </button>
 
@@ -9661,6 +9871,11 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
           {/* ── VISTA PACIENTES (5b) ─────────────────────────── */}
           {contentView==="pacientes" && <PacientesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
+
+          {/* ── VISTA AJUSTES (5d) ─────────────────────────────── */}
+          {contentView==="ajustes" && <AjustesView pacientes={pacientes} firmaB64={firmaB64} onSaveFirma={onSaveFirma}
+            gcalAuthed={gcalAuthed} gcalEventos={gcalEventos} onGcalConnect={onGcalConnect} onGcalDisconnect={onGcalDisconnect}
+            onMigrarCitas={onMigrarCitas}/>}
 
           {/* ── VISTA AGENDA ─────────────────────────────────── */}
           {contentView==="calendario" && (()=>{
@@ -10396,6 +10611,9 @@ export default function App() {
         onCancelarCita={cancelarCitaDashboard}
         onImportarGCal={importarPacientesGCal}
         onAjustes={()=>setShowConfig(true)}
+        firmaB64={firmaB64}
+        onSaveFirma={saveFirma}
+        onMigrarCitas={()=>migrarCitasFuturas(pacientes)}
         onRecetaRapida={p=>setRapidaRecetaPac(p)}
         onLabsRapida={p=>setRapidaLabsPac(p)}
         onMoverCita={moverCita}
