@@ -7243,15 +7243,28 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   // (Sin drag&drop en v2: mover una cita se hace desde el editor con su fecha/hora.)
   const soltar = () => { setOverKey(null); };
 
-  // Clic en un bloque → abre el editor de la cita (editar/borrar) vía callback del padre.
-  const Bloque = ({e, compact}) => (
-    <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}`}
-      style={{background:e.color+"22", borderLeft:`3px solid ${e.color}`, borderRadius:6,
-        padding:compact?"1px 5px":"3px 7px", margin:"2px 0", cursor:"pointer", fontSize:compact?9:11,
-        color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
-      {!compact && <b style={{color:e.color}}>{e.hora} </b>}{e.nombre}
-    </div>
-  );
+  // Sufijo de tipo (no "Labs": no existe ese tipo de cita) e indicador de cita en curso.
+  const TIPO_SUF = { primera_vez:"1ª vez", seguimiento:"Seg." };
+  const ahoraMin = (()=>{ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
+  const enCursoDe = (e) => {
+    if (e.fecha!==hoyStr) return false;
+    const [h,m]=(e.hora||"0:0").split(":").map(Number); const ini=h*60+m;
+    return ahoraMin>=ini && ahoraMin<=ini+(e.dur||30);
+  };
+  // Clic en un bloque → abre el menú contextual (Reagendar/Recordatorio/Editar/Cancelar).
+  const Bloque = ({e, compact}) => {
+    const suf = TIPO_SUF[e.tipo] || "";
+    const enCurso = enCursoDe(e);
+    return (
+      <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}`}
+        style={{background:e.color+"22", borderLeft:`3px solid ${e.color}`, borderRadius:6,
+          padding:compact?"1px 5px":"3px 7px", margin:"2px 0", cursor:"pointer", fontSize:compact?9:11,
+          color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
+        {!compact && <b style={{color:e.color}}>{enCurso ? `${e.hora} · ahora ` : `${e.hora} `}</b>}{e.nombre}
+        {!compact && suf && <span style={{opacity:0.65}}> · {suf}</span>}
+      </div>
+    );
+  };
 
   // Bloque "ocupado" (calendario personal, solo lectura): estilo gris rayado con candado.
   const BloqueOcupado = ({e, compact}) => (
@@ -7332,7 +7345,11 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   const tituloRango = vista==="mes" ? `${MESES[ref.getMonth()]} ${ref.getFullYear()}`
     : vista==="dia" ? new Date(refStr+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})
     : (()=>{ const ini=new Date(ref); ini.setDate(ref.getDate()-((ref.getDay()+6)%7)); const fin=new Date(ini); fin.setDate(ini.getDate()+5);
-        return `${ini.getDate()} ${MESES[ini.getMonth()].slice(0,3)} – ${fin.getDate()} ${MESES[fin.getMonth()].slice(0,3)}`; })();
+        // "14–19 julio 2026" (mes completo en minúscula + año; si cruza de mes, "28 jun – 3 julio 2026")
+        const mesL = m => MESES[m].toLowerCase();
+        return ini.getMonth()===fin.getMonth()
+          ? `${ini.getDate()}–${fin.getDate()} ${mesL(fin.getMonth())} ${fin.getFullYear()}`
+          : `${ini.getDate()} ${mesL(ini.getMonth())} – ${fin.getDate()} ${mesL(fin.getMonth())} ${fin.getFullYear()}`; })();
 
   return (
     <div>
@@ -7378,9 +7395,20 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
             <div onClick={e=>e.stopPropagation()} style={{position:"fixed",left:x,top:y,width:200,
               background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:12,
               boxShadow:"0 20px 60px rgba(0,0,0,.6)",overflow:"hidden",padding:4}}>
-              <div style={{padding:"8px 10px",fontSize:11,fontWeight:700,color:"var(--gft-text-muted)",
-                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderBottom:"1px solid var(--gft-border)"}}>
-                {c.pacienteNombre||"Cita"}
+              <div style={{padding:"8px 10px",borderBottom:"1px solid var(--gft-border)"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)",
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre||"Cita"}</div>
+                {(()=>{
+                  const {fecha,hora}=isoAInputsHmo(c.inicio);
+                  const d=new Date(fecha+"T00:00:00");
+                  const dia=isNaN(d)?"":DIAS_SEM[d.getDay()]+" "+d.getDate();
+                  const tipo={primera_vez:"Primera vez",seguimiento:"Seguimiento"}[c.tipo]||"";
+                  return (
+                    <div style={{fontSize:11,color:"var(--gft-text-muted)",fontWeight:600,marginTop:2}}>
+                      {[dia, hora, tipo].filter(Boolean).join(" · ")}
+                    </div>
+                  );
+                })()}
               </div>
               {items.map(it=>(
                 <button key={it.l} onClick={()=>{ it.fn(); cerrar(); }}
@@ -8716,8 +8744,18 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
   const fechaHoy = hoy.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 
-  const CalendarioGrid = () => (
+  const CalendarioGrid = () => {
+    const mesRef = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
+    return (
     <div className="gft-card" style={{padding:"14px 12px"}}>
+      {/* Título del mes + navegación ◀▶ (re-cableada tras la consolidación de Fase 5) */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <button onClick={()=>setMesOffset(o=>o-1)} className="gft-btn gft-btn--secondary gft-btn--sm" style={{padding:"3px 9px"}} title="Mes anterior">◀</button>
+        <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text)",textTransform:"capitalize"}}>
+          {mesRef.toLocaleDateString("es-MX",{month:"long",year:"numeric"})}
+        </div>
+        <button onClick={()=>setMesOffset(o=>o+1)} className="gft-btn gft-btn--secondary gft-btn--sm" style={{padding:"3px 9px"}} title="Mes siguiente">▶</button>
+      </div>
       <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap"}}>
         {[{color:COLOR_TIPO_CITA.primera_vez,label:"Primera vez"},{color:COLOR_TIPO_CITA.seguimiento,label:"Seguimiento"}].map(l=>(
           <div key={l.label} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--gft-text-muted)"}}>
@@ -8818,7 +8856,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
         </div>
       )}
     </div>
-  );
+  ); };
 
   const topbarTitle = contentView==="dash"?"Buenos días, Dr. Félix":
                       contentView==="calendario"?"Agenda":
@@ -9343,7 +9381,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                   <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12,fontWeight:700,
                     color:gcalAuthed?"var(--gft-success)":"var(--gft-text-muted)"}}>
                     <span style={{fontSize:8}}>●</span>
-                    {gcalAuthed?`Google Calendar · ${gcalEventos.length} eventos`:"Google Calendar desconectado"}
+                    {gcalAuthed?`Google Calendar · ${gcalEventos.length} sinc.`:"Google Calendar desconectado"}
                     {gcalAuthed
                       ? <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowImport(true)}>📥 Importar</button>
                       : <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={onGcalConnect}>🔗 Conectar</button>}
@@ -9361,27 +9399,35 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 <CalendarioGrid/>
 
                 <div className="gft-panel" style={{marginBottom:0}}>
-                  <div className="gft-panel__header"><div className="gft-panel__title">Hoy</div>
-                    {citasV2Hoy.length>0&&<span className="gft-panel__count">{citasV2Hoy.length}</span>}</div>
+                  <div className="gft-panel__header"><div className="gft-panel__title">Hoy · {citasV2Hoy.length} cita{citasV2Hoy.length!==1?"s":""}</div></div>
                   {citasV2Hoy.length===0 ? <div className="gft-panel__empty">Sin citas hoy</div>
                     : citasV2Hoy.map((c,i)=>{ const {hora}=isoAInputsHmo(c.inicio); const pac=pacById(c.pacienteId);
                       const col=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const suf={primera_vez:"1ª vez",seguimiento:"Seg."}[c.tipo]||"";
                       return (
                         <div key={c.id} onClick={()=>pac&&onVer(pac)} style={{display:"flex",alignItems:"center",gap:8,
                           padding:"7px 0",borderBottom:i<citasV2Hoy.length-1?"1px solid var(--gft-border)":"none",cursor:pac?"pointer":"default"}}>
                           <span style={{fontFamily:"var(--gft-font-data)",fontSize:14,fontWeight:700,color:col,minWidth:40}}>{hora||"—"}</span>
-                          <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}</span>
+                          <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}{suf&&<span style={{color:"var(--gft-text-muted)",fontWeight:500}}> · {suf}</span>}</span>
                         </div>
                       ); })}
                 </div>
 
                 <div className="gft-panel" style={{marginBottom:0}}>
-                  <div className="gft-panel__header"><div className="gft-panel__title">Mañana</div>
-                    {citasV2Manana.length>0&&<span className="gft-panel__count">{citasV2Manana.length}</span>}</div>
-                  {citasV2Manana.length===0 ? <div className="gft-panel__empty">Sin citas mañana</div> : (
-                    <button className="gft-btn gft-btn--primary gft-btn--sm" style={{width:"100%",justifyContent:"center",fontWeight:700}}
-                      onClick={enviarRecordatoriosLote}>📱 Enviar recordatorios de mañana</button>
-                  )}
+                  <div className="gft-panel__header"><div className="gft-panel__title">Mañana · {citasV2Manana.length} cita{citasV2Manana.length!==1?"s":""}</div></div>
+                  {citasV2Manana.length===0 ? <div className="gft-panel__empty">Sin citas mañana</div> : (<>
+                    {citasV2Manana.map((c,i)=>{ const {hora}=isoAInputsHmo(c.inicio);
+                      const col=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const suf={primera_vez:"1ª vez",seguimiento:"Seg."}[c.tipo]||"";
+                      return (
+                        <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:"1px solid var(--gft-border)"}}>
+                          <span style={{fontFamily:"var(--gft-font-data)",fontSize:14,fontWeight:700,color:col,minWidth:40}}>{hora||"—"}</span>
+                          <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre}{suf&&<span style={{color:"var(--gft-text-muted)",fontWeight:500}}> · {suf}</span>}</span>
+                        </div>
+                      ); })}
+                    <button className="gft-btn gft-btn--primary gft-btn--sm" style={{width:"100%",justifyContent:"center",fontWeight:700,marginTop:10}}
+                      onClick={enviarRecordatoriosLote}>📱 Enviar {citasV2Manana.length} recordatorio{citasV2Manana.length!==1?"s":""}</button>
+                  </>)}
                 </div>
               </div>
             </div>
