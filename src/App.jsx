@@ -3414,11 +3414,6 @@ const DocProgreso = ({p}) => {
         )}
       </div>
 
-      <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"11px 14px",marginTop:12,marginBottom:12}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#B9772E",marginBottom:2}}>En resumen</div>
-        <div style={{fontSize:11,color:C.texto,lineHeight:1.4}}>{notaImc}</div>
-      </div>
-
       <Pie n={1}/>
     </div>
 
