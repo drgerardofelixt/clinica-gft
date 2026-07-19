@@ -2979,7 +2979,7 @@ const DocProgreso = ({p}) => {
   ];
 
   // Barra de rango con DEGRADADO continuo (píldora) + punto blanco marcador.
-  const RangoGrad = ({ zonas, valor, domMin, domMax, unidad = '' }) => {
+  const RangoGrad = ({ zonas, valor, domMin, domMax, unidad = '', nota = '' }) => {
     const v = parseFloat(valor);
     if (valor == null || valor === "" || isNaN(v)) return null;
     const total = (domMax - domMin) || 1;
@@ -3024,6 +3024,12 @@ const DocProgreso = ({p}) => {
         {zonas.some(z => z.rango) && (
           <div style={{ fontSize: 8, color: '#8A99AC', marginTop: 5, lineHeight: 1.4, textAlign: 'center' }}>
             {zonas.map(z => z.rango ? `${z.label} ${z.rango}` : z.label).join('   ·   ')}
+          </div>
+        )}
+        {nota && (
+          <div style={{ background:'#fff', border:'1px solid #E2E8F0', borderRadius:8, padding:'8px 11px', marginTop:9 }}>
+            <span style={{ fontSize:9, fontWeight:700, color:'#1B3F8B' }}>Qué significa: </span>
+            <span style={{ fontSize:10, color:'#26324A' }}>{nota}</span>
           </div>
         )}
       </div>
@@ -3260,6 +3266,68 @@ const DocProgreso = ({p}) => {
     </div>
   );
 
+  // ── Fase 4B (aditivo): saludo personalizado + narrativa + chips, según la dirección real del paciente ──
+  const primerNom = (p.nombre||"").split(" ")[0] || "";
+  const grasaKgIni = grasaKgDe(primera);
+  const grasaKgCambio = (grasaKgAct!=null && grasaKgIni!=null) ? parseFloat((grasaKgAct-grasaKgIni).toFixed(1)) : null;
+  const _mesIni = primera?.fecha ? new Date(normDate(primera.fecha)+"T00:00:00").toLocaleDateString("es-MX",{month:"long"}) : "el inicio";
+  const _kg = v => Math.abs(v).toFixed(1);
+  const saludo = (()=>{
+    if (esPrimeraToma) return { titulo:`Tu punto de partida, ${primerNom}`, narr:"Estas son tus primeras mediciones. Con ellas armamos tu plan personalizado; en tu próxima consulta veremos tu avance." };
+    const bajoPeso = pesoChange!=null && pesoChange<-0.2;
+    const bajoGrasa = (grasaKgCambio!=null && grasaKgCambio<-0.1) || (grasaChange!=null && grasaChange<-0.2);
+    const subioPeso = pesoChange!=null && pesoChange>0.5;
+    const ganoMusc  = musculoChange!=null && musculoChange>0.3;
+    if (bajoPeso || bajoGrasa) {
+      const partes = [];
+      if (pesoChange!=null && pesoChange<0) partes.push(`bajaste ${_kg(pesoChange)} kg en total`);
+      if (grasaKgCambio!=null && grasaKgCambio<0) partes.push(`${_kg(grasaKgCambio)} kg de grasa`);
+      let narr = partes.length ? `Desde ${_mesIni} ${partes.join(" y ")}` : `Desde ${_mesIni} vas mejorando`;
+      if (ganoMusc) narr += `, y además ganaste ${_kg(musculoChange)} kg de músculo`;
+      narr += ". Vas en la dirección correcta.";
+      return { titulo:`Vas muy bien, ${primerNom} 🎉`, narr };
+    }
+    if (subioPeso && !bajoGrasa) {
+      const partes = [];
+      if (pesoChange!=null && pesoChange>0) partes.push(`tu peso subió ${_kg(pesoChange)} kg`);
+      if (grasaKgCambio!=null && grasaKgCambio>0) partes.push(`la grasa ${_kg(grasaKgCambio)} kg`);
+      const narr = `Desde ${_mesIni} ${partes.join(" y ")||"hubo un pequeño retroceso"}. No te preocupes: ajustamos el plan juntos y, con constancia, lo revertimos. Un mes no define el resultado.`;
+      return { titulo:`Sigamos trabajando, ${primerNom} 💪`, narr };
+    }
+    let narr = "Tu peso se mantuvo estable";
+    if (grasaKgCambio!=null && grasaKgCambio<0) narr += `, pero bajaste ${_kg(grasaKgCambio)} kg de grasa`;
+    if (ganoMusc) narr += `${(grasaKgCambio!=null&&grasaKgCambio<0)?" y":", pero"} ganaste ${_kg(musculoChange)} kg de músculo`;
+    narr += ". Tu cuerpo está mejorando aunque la báscula no cambie mucho.";
+    return { titulo:`Buen camino, ${primerNom}`, narr };
+  })();
+  const chips = esPrimeraToma ? [] : [
+    grasaKgCambio!=null ? {t:`${grasaKgCambio<0?"↓":"↑"} ${_kg(grasaKgCambio)} kg de grasa`, ok:grasaKgCambio<0} : null,
+    musculoChange!=null ? {t:`${musculoChange>=0?"↑":"↓"} ${_kg(musculoChange)} kg de músculo`, ok:musculoChange>=0} : null,
+    pesoChange!=null ? {t:`${pesoChange<0?"↓":"↑"} ${_kg(pesoChange)} kg de peso total`, ok:pesoChange<0} : null,
+  ].filter(Boolean);
+  // "Qué significa" — texto en lenguaje claro por métrica y zona (revisado y aprobado)
+  const QS = {
+    imc: { "Bajo":"Tu peso está por debajo de lo saludable para tu estatura. Conviene subir un poco, cuidando tu masa muscular.",
+      "Saludable":"Tu peso está en el rango saludable para tu estatura. Mantengámoslo así.",
+      "Sobrepeso":"Tu peso está un poco por encima de lo saludable para tu estatura. Con el plan actual vamos bajando hacia tu rango ideal.",
+      "Obesidad":"Tu peso está bastante por encima de lo saludable. Bajarlo reduce riesgos para tu salud; vamos paso a paso." },
+    grasa: { "Atleta":"Tu porcentaje de grasa está muy bajo, en nivel atlético. Cuida no bajarlo de más.",
+      "Saludable":"Tu porcentaje de grasa está en un rango muy bueno para tu sexo. Sigue así.",
+      "Aceptable":"Tu porcentaje de grasa está en un rango aceptable. Podemos mejorarlo un poco más.",
+      "Alto":"Tu porcentaje de grasa está algo elevado. Reducirlo mejora tu energía y tu salud; cada mes vamos avanzando." },
+    cintura: { "Saludable":"Tu cintura está en un rango saludable, con bajo riesgo para el corazón.",
+      "Precaución":"Tu cintura está en precaución. Reducirla unos centímetros baja el riesgo cardiovascular.",
+      "Elevado":"Tu cintura indica mayor riesgo cardiovascular. Reducirla unos centímetros es una de las mejoras más importantes para tu salud." },
+    ffmi: { "Bajo":"Tu masa muscular está por debajo de lo ideal. Cuidarla con proteína y ejercicio de fuerza protege tu metabolismo.",
+      "Adecuado":"Tu masa muscular está en buen nivel. Mantenerla conserva tu metabolismo activo.",
+      "Adecuada":"Tu masa muscular está en buen nivel. Mantenerla conserva tu metabolismo activo.",
+      "Bueno":"Tienes buena masa muscular — excelente para tu metabolismo y tu fuerza.",
+      "Buena":"Tienes buena masa muscular — excelente para tu metabolismo y tu fuerza.",
+      "Atlético":"Tu masa muscular está en nivel atlético. Muy buen trabajo.",
+      "Atlética":"Tu masa muscular está en nivel atlético. Muy buen trabajo." },
+  };
+  const qs = (metric, zonaLabel) => (QS[metric]||{})[zonaLabel] || "";
+
   const pageStyle = {width:"816px",minHeight:"1056px",padding:"48px 56px",boxSizing:"border-box",
     background:"white",fontFamily:"Gotham, Arial, sans-serif",fontSize:11,color:C.texto,lineHeight:1.4,
     display:"flex",flexDirection:"column"};
@@ -3270,47 +3338,83 @@ const DocProgreso = ({p}) => {
       <Encabezado/>
       <Banda derecha={`HOY · ${fechaHoy}`}/>
 
-      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>¿Cómo estás hoy?</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:18}}>
-        {[
-          {l:"PESO", v:ultima?.peso, u:"kg", chip:zonaDe(ultima?.imc,ZONAS_IMC)?.color},
-          {l:"GRASA", v:grasaKgAct, u:"kg", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color,
-            sub2:(!esPrimeraToma && grasaKgPrev!=null)?`Mes anterior: ${grasaKgPrev} kg`:null},
-          {l:"MÚSCULO TOTAL", v:ultima?.musculo, u:"kg", chip:"#1D9E75",
-            sub2:(!esPrimeraToma && musculoPrev!=null)?`Mes anterior: ${musculoPrev} kg`:null},
-          {l:"C. ABDOMINAL", v:caAct, u:"cm", chip:colorCintura(caAct), sub:zonaCA(caAct)?.label, subColor:colorCintura(caAct)},
-          {l:"EDAD METABÓLICA", v:edadMetAct, u:"años", chip:edadMetColor,
-            sub: edadMetMenor==null?null:(edadMetMenor?"Menor que tu edad":"Mayor que tu edad"), subColor:edadMetColor,
-            sub2: (!isNaN(edadRealNum))?`Tu edad: ${Math.round(edadRealNum)} años`:null},
-        ].map((m,i)=>(
-          <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"11px 11px",position:"relative"}}>
-            <span style={{position:"absolute",top:10,right:10,width:8,height:8,borderRadius:"50%",background:m.chip||C.suave}}/>
-            <div style={{fontSize:7.5,fontWeight:700,color:C.suave,letterSpacing:"0.3px"}}>{m.l}</div>
-            <div className="d" style={{fontSize:21,fontWeight:700,lineHeight:1.05,color:C.azul,marginTop:3}}>
-              {m.v!=null&&m.v!==""?m.v:"—"}<span style={{fontSize:11,fontWeight:600,color:C.suave}}> {m.u}</span></div>
-            {m.sub && <div style={{fontSize:8,fontWeight:700,color:m.subColor||C.suave,marginTop:2}}>{m.sub}</div>}
-            {m.sub2 && <div style={{fontSize:7.5,color:C.suave,marginTop:1}}>{m.sub2}</div>}
-          </div>
-        ))}
+      {/* Saludo personalizado + narrativa + chips (Fase 4B) */}
+      <div style={{fontSize:22,fontWeight:800,color:C.azul,marginBottom:5,lineHeight:1.1}}>{saludo.titulo}</div>
+      <div style={{fontSize:12,color:C.texto,lineHeight:1.5,marginBottom:chips.length?10:16,maxWidth:620}}>{saludo.narr}</div>
+      {chips.length>0 && (
+        <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:18}}>
+          {chips.map((c,i)=>(
+            <span key={i} style={{fontSize:11,fontWeight:700,borderRadius:20,padding:"5px 12px",
+              background:c.ok?"#E7F6EF":"#FBEDE3",color:c.ok?"#0D8A63":"#B9772E"}}>{c.t}</span>
+          ))}
+        </div>
+      )}
+
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>Tus números de hoy</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:18}}>
+        {(()=>{
+          const dmStr = (act,prev,u,baja=true)=>{
+            if(act==null||act===""||prev==null||prev==="")return null;
+            const d=parseFloat((parseFloat(act)-parseFloat(prev)).toFixed(1));
+            if(isNaN(d))return null;
+            if(d===0)return {t:"Sin cambio este mes",c:C.suave};
+            const bueno=baja?d<0:d>0;
+            return {t:`${d<0?"↓":"↑"} ${Math.abs(d)}${u} este mes`,c:bueno?"#0D8A63":"#B9772E"};
+          };
+          const caPrev = caPuntos.length>=2 ? caPuntos[caPuntos.length-2].ca : null;
+          const imcAct = ultima?.imc || calcIMC(ultima?.peso, p.talla);
+          const imcPrev = penultima ? (penultima.imc || calcIMC(penultima.peso, p.talla)) : null;
+          return [
+            {l:"PESO", v:ultima?.peso, u:"kg", chip:zonaDe(imcAct,ZONAS_IMC)?.color, dm:esPrimeraToma?null:dmStr(ultima?.peso, penultima?.peso, " kg")},
+            {l:"IMC", v:imcAct, u:"", chip:zonaDe(imcAct,ZONAS_IMC)?.color, sub:zonaDe(imcAct,ZONAS_IMC)?.label, subColor:zonaDe(imcAct,ZONAS_IMC)?.color, dm:esPrimeraToma?null:dmStr(imcAct, imcPrev, "")},
+            {l:"GRASA", v:grasaKgAct, u:"kg", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color, dm:esPrimeraToma?null:dmStr(grasaKgAct, grasaKgPrev, " kg")},
+            {l:"MÚSCULO", v:ultima?.musculo, u:"kg", chip:"#1D9E75", dm:esPrimeraToma?null:dmStr(ultima?.musculo, musculoPrev, " kg", false)},
+            {l:"CINTURA", v:caAct, u:"cm", chip:colorCintura(caAct), sub:zonaCA(caAct)?.label, subColor:colorCintura(caAct), dm:esPrimeraToma?null:dmStr(caAct, caPrev, " cm")},
+            {l:"EDAD METAB.", v:edadMetAct, u:"años", chip:edadMetColor, sub: edadMetMenor==null?null:(edadMetMenor?"Menor que tu edad":"Mayor"), subColor:edadMetColor},
+          ].map((m,i)=>(
+            <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"11px 10px",position:"relative"}}>
+              <span style={{position:"absolute",top:9,right:9,width:8,height:8,borderRadius:"50%",background:m.chip||C.suave}}/>
+              <div style={{fontSize:7,fontWeight:700,color:C.suave,letterSpacing:"0.2px"}}>{m.l}</div>
+              <div className="d" style={{fontSize:19,fontWeight:700,lineHeight:1.05,color:C.azul,marginTop:3}}>
+                {m.v!=null&&m.v!==""?m.v:"—"}{m.u&&<span style={{fontSize:10,fontWeight:600,color:C.suave}}> {m.u}</span>}</div>
+              {m.dm && <div style={{fontSize:7.5,fontWeight:700,color:m.dm.c,marginTop:2}}>{m.dm.t}</div>}
+              {m.sub && <div style={{fontSize:7.5,fontWeight:700,color:m.subColor||C.suave,marginTop:1}}>{m.sub}</div>}
+            </div>
+          ));
+        })()}
       </div>
 
-      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>¿En qué rango te encuentras?</div>
-      <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>Rangos ajustados a tu sexo. El punto blanco marca dónde estás hoy.</div>
-      <div style={{background:"#F4F6FB",borderRadius:11,padding:"18px 20px",marginBottom:18}}>
-        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Índice de Masa Corporal</div>
-        <RangoGrad zonas={ZONAS_IMC} valor={ultima?.imc} domMin={15} domMax={35}/>
+      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>¿En qué rango estás?</div>
+      <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>El punto blanco marca dónde estás hoy. Los rangos están ajustados a tu edad y sexo.</div>
+      {/* 4 medidores en 2 columnas (2×2) para que la hoja quepa cómoda en una página */}
+      <div style={{background:"#F4F6FB",borderRadius:11,padding:"16px 18px",marginBottom:16,
+        display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:22,rowGap:2}}>
+        {(()=>{ const imcV = ultima?.imc || calcIMC(ultima?.peso, p.talla); return (
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Índice de Masa Corporal</div>
+          <RangoGrad zonas={ZONAS_IMC} valor={imcV} domMin={15} domMax={35}
+            nota={qs("imc", zonaDe(imcV, ZONAS_IMC)?.label)}/>
+        </div>); })()}
 
-        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa corporal</div>
-        <RangoGrad zonas={ZONAS_GRASA[sexoKey]} valor={ultima?.grasa} domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"/>
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa corporal</div>
+          <RangoGrad zonas={ZONAS_GRASA[sexoKey]} valor={ultima?.grasa} domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
+            nota={qs("grasa", zonaDe(ultima?.grasa, ZONAS_GRASA[sexoKey])?.label)}/>
+        </div>
 
-        <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa visceral</div>
-        <RangoGrad zonas={ZONAS_VISCERAL} valor={ultima?.visceral} domMin={1} domMax={20}/>
+        <div>
+          <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Cintura — riesgo cardiovascular</div>
+          <RangoGrad zonas={ZONAS_CA[sexoKey]} valor={caAct} domMin={0} domMax={130} unidad="cm"
+            nota={qs("cintura", zonaCA(caAct)?.label)}/>
+        </div>
 
-        {ffmi!=null && (<>
-          <div style={{fontSize:14,fontWeight:500,color:'#26324A',marginBottom:2}}>Índice de Masa Muscular Libre de Grasa</div>
-          <div style={{fontSize:12,color:'#8A99AC',marginBottom:10}}>Índice de masa libre de grasa, ajustado a tu estatura.</div>
-          <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"/>
-        </>)}
+        {ffmi!=null && (
+          <div>
+            <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular (FFMI)</div>
+            <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"
+              nota={qs("ffmi", zonaDe(ffmi, ZONAS_FFMI[sexoKey])?.label)}/>
+          </div>
+        )}
       </div>
 
       <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"13px 16px",marginBottom:16}}>
