@@ -7734,13 +7734,15 @@ const MiniCalendario = ({ fecha, onPick, min }) => {
   const diasMes = new Date(ver.y, ver.mo+1, 0).getDate();
   const mesStr = new Date(ver.y, ver.mo, 1).toLocaleDateString("es-MX",{month:"long",year:"numeric"});
   const navMes = (n)=>setVer(v=>{ const d=new Date(v.y, v.mo+n, 1); return {y:d.getFullYear(), mo:d.getMonth()}; });
-  const navBtn = {border:"1px solid "+C.grisMedio,background:"white",borderRadius:7,width:30,height:30,cursor:"pointer",fontSize:12,color:C.azul,flexShrink:0};
+  const navBtn = {border:"1px solid "+C.grisMedio,background:"white",borderRadius:7,width:28,height:28,cursor:"pointer",
+    fontSize:18,lineHeight:1,fontWeight:700,color:C.azul,flexShrink:0,padding:0,
+    display:"flex",alignItems:"center",justifyContent:"center"};
   return (
     <div style={{background:"#F8FAFC",border:"1px solid "+C.grisMedio,borderRadius:10,padding:"8px 10px",marginBottom:12}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-        <button type="button" onClick={()=>navMes(-1)} style={navBtn}>◀</button>
+        <button type="button" onClick={()=>navMes(-1)} style={navBtn} title="Mes anterior">‹</button>
         <div style={{fontWeight:800,fontSize:12,textTransform:"capitalize",color:C.azul}}>{mesStr}</div>
-        <button type="button" onClick={()=>navMes(1)} style={navBtn}>▶</button>
+        <button type="button" onClick={()=>navMes(1)} style={navBtn} title="Mes siguiente">›</button>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
         {["D","L","M","M","J","V","S"].map((d,i)=>(
