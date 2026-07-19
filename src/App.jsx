@@ -8089,6 +8089,17 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [quickAction, setQuickAction] = useState(null); // null | "receta" | "labs"
   const [quickBusq, setQuickBusq] = useState("");
   const [topSearch, setTopSearch] = useState(""); // buscador del topbar → expediente
+  // Buscador del topbar: substring insensible a acentos (método principal) +
+  // buscarPacientesSimilares como fallback SOLO para typos (nombres que no cayeron por includes).
+  const buscarTop = (texto) => {
+    const q = normalizarNombre(texto);
+    if (!q) return [];
+    const inc = (pacientes||[]).filter(p => normalizarNombre(p.nombre||"").includes(q));
+    const vistos = new Set(inc.map(p=>p.id));
+    const fuzzy = buscarPacientesSimilares(texto, pacientes, {umbral:0.55})
+      .map(r=>r.paciente).filter(p=>!vistos.has(p.id));
+    return [...inc, ...fuzzy];
+  };
   // Lanza receta/labs rápida con un paciente existente o con un objeto de nombre libre {nombre,_libre}
   const lanzarRapida = (accion, objetivo) => {
     if (!objetivo || !objetivo.nombre) return;
@@ -8490,18 +8501,18 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               value={topSearch} onChange={e=>setTopSearch(e.target.value)}
               onKeyDown={e=>{
                 if(e.key==="Enter" && topSearch.trim()){
-                  const r=buscarPacientesSimilares(topSearch.trim(), pacientes, {umbral:0.5})[0];
-                  if(r){ onVer(r.paciente); setTopSearch(""); }
+                  const r=buscarTop(topSearch.trim())[0];
+                  if(r){ onVer(r); setTopSearch(""); }
                 }
                 if(e.key==="Escape") setTopSearch("");
               }}/>
             {topSearch.trim() && (()=>{
-              const res=buscarPacientesSimilares(topSearch.trim(), pacientes, {umbral:0.5}).slice(0,6);
+              const res=buscarTop(topSearch.trim()).slice(0,6);
               return (
                 <div className="gft-topbar__search-results">
                   {res.length===0
                     ? <div style={{padding:"10px 12px",fontSize:12,color:"var(--gft-text-muted)"}}>Sin coincidencias</div>
-                    : res.map(({paciente:p})=>(
+                    : res.map((p)=>(
                         <div key={p.id} onClick={()=>{onVer(p); setTopSearch("");}}
                           style={{padding:"9px 12px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",
                             borderBottom:"1px solid var(--gft-border)"}}
