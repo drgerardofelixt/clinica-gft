@@ -9,7 +9,7 @@
 // Pendientes (requieren editar googleCalendar.js):
 //   #3 Persistencia token Google Calendar entre sesiones
 //   #4 Si los horarios no aparecen, revisar día de la semana seleccionado
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, createContext, useContext, useCallback } from "react";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles } from "./googleCalendar.js";
@@ -1098,6 +1098,73 @@ const enviarReprogramacionCita = (cita, paciente) => {
   const tel = (paciente && paciente.telefono) || "";
   const nombre = (cita && cita.pacienteNombre) || (paciente && paciente.nombre) || "paciente";
   return enviarWA(tel, construirMsgReprogramada(cita, nombre));
+};
+// Mensaje de recordatorio de cita (antes inline en el Dashboard; ahora compartido).
+const construirMsgRecordatorio = (c) => {
+  const fechaMx = new Date(c.fecha+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
+  const nombre = (c.pac?.nombre||"paciente").split(" ")[0];
+  return `Hola ${nombre}, le recordamos y confirmamos su cita de mañana.\n`
+    + `Fecha: ${fechaMx}\n`
+    + (c.hora?`Hora: ${c.hora} hrs\n`:"")
+    + `Médico: Dr. Gerardo Félix Tapia\n`
+    + `¿Nos confirma su asistencia? Quedamos al pendiente. Gracias.`;
+};
+
+// ── WhatsApp sin teléfono — modal compartido (copiar mensaje / agregar teléfono y enviar) ──
+// pedirWA(paciente, mensaje): si el paciente tiene teléfono válido, envía por WhatsApp; si no,
+// abre el modal con 2 opciones. Un solo componente reutilizado en todos los puntos de envío.
+const SinTelCtx = createContext(null);
+const useWA = () => useContext(SinTelCtx);
+
+const ModalSinTelefono = ({ paciente, mensaje, onClose, onGuardar }) => {
+  const [tel, setTel] = useState("");
+  const [copiado, setCopiado] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const nombre = (paciente && paciente.nombre) || "El paciente";
+  const telOk = String(tel).replace(/\D/g,"").length >= 10;
+  const copiar = async () => { try { await navigator.clipboard.writeText(mensaje); setCopiado(true); } catch(e){ alert("No se pudo copiar el mensaje."); } };
+  const guardar = async () => { if(!telOk) return; setGuardando(true); try { await onGuardar(tel); } finally { setGuardando(false); } };
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:10000,background:"rgba(0,0,0,.55)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:16,padding:20,width:"min(420px,92vw)",boxShadow:"0 24px 80px rgba(0,0,0,.7)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)"}}>📱 Sin teléfono registrado</div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"var(--gft-text-muted)",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
+        </div>
+        <div style={{fontSize:13,color:"var(--gft-text-2)",marginBottom:14}}><b style={{color:"var(--gft-text)"}}>{nombre}</b> no tiene teléfono registrado. Elige una opción:</div>
+        <button className="gft-btn gft-btn--secondary" style={{width:"100%",justifyContent:"center",marginBottom:6}} onClick={copiar}>📋 Copiar mensaje al portapapeles</button>
+        {copiado && <div style={{fontSize:12,color:"var(--gft-success-text)",fontWeight:700,textAlign:"center",marginBottom:6}}>Copiado ✓ — pégalo manualmente en WhatsApp</div>}
+        <div style={{height:1,background:"var(--gft-border)",margin:"12px 0"}}/>
+        <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text-2)",marginBottom:6}}>Agregar teléfono ahora y enviar</div>
+        <div style={{display:"flex",gap:8}}>
+          <input className="gft-input" inputMode="tel" placeholder="10 dígitos" value={tel} onChange={e=>setTel(e.target.value)} style={{flex:1}}/>
+          <button className="gft-btn gft-btn--primary" disabled={!telOk||guardando} onClick={guardar} style={{whiteSpace:"nowrap"}}>{guardando?"…":"Guardar y enviar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SinTelProvider = ({ children, onGuardarTelefono }) => {
+  const [req, setReq] = useState(null); // { paciente, mensaje }
+  const pedirWA = useCallback((paciente, mensaje) => {
+    const tel = String((paciente&&paciente.telefono)||"").replace(/\D/g,"");
+    if (tel.length >= 10) { enviarWA(tel, mensaje); return true; }
+    setReq({ paciente, mensaje });
+    return false;
+  }, []);
+  return (
+    <SinTelCtx.Provider value={pedirWA}>
+      {children}
+      {req && <ModalSinTelefono paciente={req.paciente} mensaje={req.mensaje}
+        onClose={()=>setReq(null)}
+        onGuardar={async(nuevoTel)=>{
+          if (onGuardarTelefono) { try { await onGuardarTelefono(req.paciente, nuevoTel); } catch(e){ console.error("guardar teléfono:",e); } }
+          enviarWA(nuevoTel, req.mensaje);
+          setReq(null);
+        }}/>}
+    </SinTelCtx.Provider>
+  );
 };
 
 // FASE B — Migración automática de citas FUTURAS (hoy en adelante) anidadas en p.consultas (esSoloCita)
@@ -7470,6 +7537,7 @@ const CampoFechaCita = ({ label, fecha, onChange }) => {
 
 // C1 — Formulario UNIFICADO de agendar. Único punto para crear cualquier cita (todos los entry points lo abren).
 const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null, onClose, onCreada }) => {
+  const pedirWA = useWA();
   const tipoInicial = tipoSugerido
     || (pacientePre && (pacientePre.consultas||[]).filter(c=>!c.esSoloCita).length>0 ? "seguimiento" : "primera_vez");
   const [tipo,setTipo]       = useState(tipoInicial);
@@ -7594,12 +7662,9 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       // TAREA 1 — Confirmación por WhatsApp LO ANTES POSIBLE (antes de la sync con Google) para
       // no perder el user-gesture y evitar el bloqueo de popup en Safari.
       const telConfirm = (telefono && telefono.trim()) || (pacienteLink && pacienteLink.telefono) || "";
-      if (telConfirm) {
-        try { enviarConfirmacionCita(creada, { telefono: telConfirm, nombre: nombre.trim() }); }
-        catch(e){ console.warn("Confirmación WA falló (no crítico):", e); }
-      } else {
-        alert("Cita agendada. Sin teléfono para enviar confirmación.");
-      }
+      // pedirWA: con teléfono envía; sin teléfono abre el modal (copiar / agregar y enviar).
+      try { pedirWA({ telefono: telConfirm, nombre: nombre.trim(), id: (pacienteLink&&pacienteLink.id)||pacienteId }, construirMsgConfirmacion(creada, nombre.trim())); }
+      catch(e){ console.warn("Confirmación WA falló (no crítico):", e); }
       // Fase 1 — Actualiza el tratamiento actual del paciente desde esta cita (fuente de verdad). No crítico.
       if (cita.medicamento) {
         const pacTrat = pacienteLink || (pacientes||[]).find(pp=>pp.id===pacienteId) || null;
@@ -7727,6 +7792,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
 };
 
 const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) => {
+  const pedirWA = useWA();
   const ini = isoAInputsHmo(cita.inicio);
   const [nombre,setNombre] = useState(cita.pacienteNombre||"");
   const [tipo,setTipo]     = useState(cita.tipo==="primera_vez" ? "primera_vez" : "seguimiento"); // degrada cita_rapida vieja → seguimiento
@@ -7784,8 +7850,9 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
       // Google) para no perder el user-gesture y evitar el bloqueo de popup en Safari — igual que al agendar.
       if (huboCambioFecha && estado !== "cancelada") {
         try {
-          const pacWA = (pacientes||[]).find(pp=>pp.id===cita.pacienteId) || null;
-          enviarReprogramacionCita({ ...cita, ...cambios }, pacWA);
+          const pacWA = (pacientes||[]).find(pp=>pp.id===cita.pacienteId) || {nombre:cita.pacienteNombre};
+          const nom = pacWA.nombre || cita.pacienteNombre || "paciente";
+          pedirWA(pacWA, construirMsgReprogramada({ ...cita, ...cambios }, nom));
         } catch(e){ console.warn("WA reprogramación (no crítico):", e); }
       }
       // Fase 1 — Actualiza el tratamiento actual del paciente vinculado desde esta edición. No crítico.
@@ -8111,7 +8178,7 @@ const AdminCitas = ({ pacientes=[] }) => {
               </div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 <button className="gft-btn gft-btn--secondary gft-btn--sm"
-                  onClick={()=>enviarConfirmacionCita(c, (pacientes||[]).find(p=>p.id===c.pacienteId))}>📱 Enviar confirmación</button>
+                  onClick={()=>{ const _p=(pacientes||[]).find(p=>p.id===c.pacienteId); pedirWA(_p||{nombre:c.pacienteNombre}, construirMsgConfirmacion(c, c.pacienteNombre||_p?.nombre||"paciente")); }}>📱 Enviar confirmación</button>
                 <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setEditar(c)}>✏️ Editar</button>
                 <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}}
                   onClick={()=>borrar(c)}>🗑️ Borrar</button>
@@ -8254,6 +8321,7 @@ const autogenerarSnapshotFaltante = async () => {
 };
 
 const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
+  const pedirWA = useWA();  // envío WhatsApp con fallback a modal si el paciente no tiene teléfono
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false); // menú lateral en móvil
@@ -8447,16 +8515,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
   const enviarRecordatorio = (c) => {
     if (!c || !c.pac) return;
-    const fechaMx = new Date(c.fecha+"T00:00:00").toLocaleDateString("es-MX",{
-      weekday:"long",day:"numeric",month:"long"
-    });
-    const nombre = (c.pac?.nombre||"paciente").split(" ")[0];
-    const msg = `Hola ${nombre}, le recordamos y confirmamos su cita de mañana.\n`
-      + `Fecha: ${fechaMx}\n`
-      + (c.hora?`Hora: ${c.hora} hrs\n`:"")
-      + `Médico: Dr. Gerardo Félix Tapia\n`
-      + `¿Nos confirma su asistencia? Quedamos al pendiente. Gracias.`;
-    enviarWA(c.pac?.telefono||"sin telefono", msg);
+    pedirWA(c.pac, construirMsgRecordatorio(c));  // si no tiene teléfono → modal (copiar / agregar y enviar)
   };
 
   const cancelarCita = (cita) => {
@@ -8997,7 +9056,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                               <button title="Reagendar" className="gft-btn gft-btn--secondary gft-btn--sm"
                                 style={{fontSize:11}} onClick={()=>setCitaEditar(c)}>🔄</button>
                               <button title="Enviar confirmación por WhatsApp" className="gft-btn gft-btn--secondary gft-btn--sm"
-                                style={{fontSize:11}} onClick={()=>enviarConfirmacionCita(c, pac)}>📱</button>
+                                style={{fontSize:11}} onClick={()=>pedirWA(pac||{nombre:c.pacienteNombre}, construirMsgConfirmacion(c, c.pacienteNombre||pac?.nombre||"paciente"))}>📱</button>
                             </div>
                           )}
                         </div>
@@ -9805,6 +9864,13 @@ export default function App() {
       setActivo(p);
     } catch(e) { console.error("Error actualizando paciente:", e); }
   };
+  // Guarda SOLO el teléfono en el registro COMPLETO del paciente (usado por el modal WhatsApp sin teléfono).
+  const guardarTelefonoPaciente = async (pac, tel) => {
+    const full = pacientes.find(x => x.id === (pac && pac.id));
+    if (!full) return;                          // nombre libre / sin id → no persiste (el envío igual ocurre)
+    try { await savePaciente({...full, telefono: tel}); await cargarPacientes(); }
+    catch(e){ console.error("guardar teléfono paciente:", e); }
+  };
   const cancelarCitaDashboard = async (p) => {
     try {
       await savePaciente(p);
@@ -9912,6 +9978,7 @@ export default function App() {
 
   if (activo) {
     return (
+      <SinTelProvider onGuardarTelefono={guardarTelefonoPaciente}>
       <VistaPaciente
         p={activo}
         firmaB64={firmaB64}
@@ -9920,11 +9987,12 @@ export default function App() {
         onCitaAgendada={setUltimaCita}
         gcalEventos={gcalEventos}
       />
+      </SinTelProvider>
     );
   }
 
   return (
-    <>
+    <SinTelProvider onGuardarTelefono={guardarTelefonoPaciente}>
       <Dashboard
         pacientes={pacientes}
         onVer={p=>setActivo(p)}
@@ -9985,7 +10053,7 @@ export default function App() {
           onCreada={()=>{ setAgendarPara(false); cargarPacientes(); }}
         />
       )}
-    </>
+    </SinTelProvider>
   );
 }
 
