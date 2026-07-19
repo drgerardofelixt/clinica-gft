@@ -7191,7 +7191,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   const [refStr, setRefStr] = useState(() => fmtD(new Date()));
   const [overKey, setOverKey] = useState(null);        // (legacy, sin drag)
   const [menu, setMenu] = useState(null);              // menú contextual de cita: {cita, x, y}
-  const [dayMenu, setDayMenu] = useState(null);        // popup de día: {fecha, x, y} → lista de citas
+  const [railDia, setRailDia] = useState(null);        // día seleccionado: el rail muestra sus citas (fecha "YYYY-MM-DD")
 
   const ref = new Date(refStr+"T00:00:00");
   const hoyStr = fmtD(new Date());
@@ -7291,14 +7291,14 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
         {Array.from({length:dias}).map((_,i)=>{
           const fechaDia = `${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`;
           const evs = evDe(fechaDia);
-          const esHoy = fechaDia===hoyStr, over = overKey===fechaDia;
+          const esHoy = fechaDia===hoyStr, over = overKey===fechaDia, sel = fechaDia===railDia;
           return (
             <div key={i}
               onDragOver={e=>{e.preventDefault(); setOverKey(fechaDia);}} onDrop={e=>{e.preventDefault(); soltar(fechaDia, null);}}
               onClick={()=>{ setRefStr(fechaDia); setVista("dia"); }}
-              style={{minHeight:84,border:"1px solid "+(over?"var(--gft-accent)":"var(--gft-border)"),
-                borderRadius:8,padding:5,background:over?"var(--gft-accent-dim)":esHoy?"var(--gft-surface2)":"transparent",cursor:"pointer"}}>
-              <div onClick={(ev)=>{ ev.stopPropagation(); setDayMenu({fecha:fechaDia, x:ev.clientX, y:ev.clientY}); }}
+              style={{minHeight:84,minWidth:0,border:"1px solid "+(over||sel?"var(--gft-accent)":"var(--gft-border)"),
+                borderRadius:8,padding:5,background:over||sel?"var(--gft-accent-dim)":esHoy?"var(--gft-surface2)":"transparent",cursor:"pointer"}}>
+              <div onClick={(ev)=>{ ev.stopPropagation(); setRailDia(sel?null:fechaDia); }}
                 title="Ver citas del día"
                 style={{display:"inline-block",fontSize:11,fontWeight:esHoy?800:600,color:esHoy?"var(--gft-accent)":"var(--gft-text)",
                   marginBottom:2,cursor:"pointer",padding:"1px 5px",borderRadius:5}}>{i+1}</div>
@@ -7317,17 +7317,20 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   const HH = []; for (let h=7; h<=20; h++) HH.push(h);
   const horaBucket = (hora) => { const h=parseInt((hora||"7").split(":")[0],10); return isNaN(h)?7:Math.max(7,Math.min(20,h)); };
   const renderGrid = (fechas) => {
-    const cols = `48px repeat(${fechas.length},1fr)`;
+    // minmax(0,1fr): columnas de día EXACTAMENTE iguales; sin esto (1fr=minmax(auto,1fr)) un día
+    // con cita se ensancha y el vecino vacío se angosta → el bloque parecía invadir el día vacío.
+    const cols = `48px repeat(${fechas.length},minmax(0,1fr))`;
     return (
       <div style={{display:"flex",flexDirection:"column",border:"1px solid var(--gft-border)",borderRadius:10,overflow:"hidden",minWidth:0}}>
-        {/* Encabezados de día (2 líneas; hoy = círculo azul) */}
+        {/* Encabezados de día (2 líneas; hoy = círculo azul; día seleccionado = resaltado) */}
         <div style={{display:"grid",gridTemplateColumns:cols,borderBottom:"1px solid var(--gft-border)",flexShrink:0,background:"var(--gft-surface2)"}}>
           <div/>
           {fechas.map(f=>{
-            const d=new Date(f+"T00:00:00"); const esHoy=f===hoyStr;
+            const d=new Date(f+"T00:00:00"); const esHoy=f===hoyStr; const sel=f===railDia;
             return (
-              <div key={f} onClick={(ev)=>setDayMenu({fecha:f, x:ev.clientX, y:ev.clientY})} title="Ver citas del día"
-                style={{textAlign:"center",padding:"7px 0",borderLeft:"1px solid var(--gft-border)",cursor:"pointer"}}>
+              <div key={f} onClick={()=>setRailDia(sel?null:f)} title="Ver citas del día"
+                style={{textAlign:"center",padding:"7px 0",borderLeft:"1px solid var(--gft-border)",cursor:"pointer",minWidth:0,
+                  background:sel?"var(--gft-accent-dim)":"transparent",boxShadow:sel?"inset 0 -2px 0 var(--gft-accent)":"none"}}>
                 <div className="d" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".05em",
                   fontWeight:esHoy?700:400,color:esHoy?"var(--gft-accent)":"var(--gft-text-muted)"}}>{DIAS_SEM[d.getDay()]}</div>
                 {esHoy
@@ -7345,12 +7348,14 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
               <div key={h+"-lbl"} className="d" style={{fontSize:11,color:"var(--gft-text-muted)",textAlign:"right",
                 padding:"3px 6px 0 0",borderTop:"1px solid var(--gft-border)"}}>{String(h).padStart(2,"0")}:00</div>,
               ...fechas.map(f=>{
-                const esHoy=f===hoyStr;
+                const esHoy=f===hoyStr; const sel=f===railDia;
                 const evs = evDe(f).filter(e=>horaBucket(e.hora)===h);
                 const ocs = ocupDe(f).filter(e=>horaBucket(e.hora)===h);
+                const bg = sel ? "color-mix(in srgb, var(--gft-accent) 12%, transparent)"
+                  : esHoy ? "color-mix(in srgb, var(--gft-accent) 5%, transparent)" : "transparent";
                 return (
                   <div key={f+h} style={{borderTop:"1px solid var(--gft-border)",borderLeft:"1px solid var(--gft-border)",
-                    minHeight:46,padding:1,background:esHoy?"color-mix(in srgb, var(--gft-accent) 5%, transparent)":"transparent"}}>
+                    minWidth:0,minHeight:46,padding:1,background:bg}}>
                     {ocs.map(e=><BloqueOcupado key={e.key} e={e}/>)}
                     {evs.map(e=><Bloque key={e.key} e={e}/>)}
                   </div>
@@ -7405,7 +7410,44 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
         <div className="gft-agenda-v2__grid">
           {vista==="mes" ? renderMes() : vista==="semana" ? renderSemana() : renderDia()}
         </div>
-        {rail && <div className="gft-agenda-v2__rail">{rail}</div>}
+        <div className="gft-agenda-v2__rail">
+          {railDia ? (()=>{
+            // Panel de "Citas del día" en el rail (reemplaza Hoy/Mañana temporalmente).
+            const evs = evDe(railDia);
+            const d = new Date(railDia+"T00:00:00");
+            const titulo = isNaN(d) ? railDia : d.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
+            return (
+              <div className="gft-panel" style={{marginBottom:0}}>
+                <div className="gft-panel__header" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div style={{minWidth:0}}>
+                    <div className="gft-panel__title" style={{textTransform:"capitalize",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{titulo}</div>
+                    <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{evs.length} cita{evs.length!==1?"s":""}</div>
+                  </div>
+                  <button onClick={()=>setRailDia(null)} title="Volver a Hoy/Mañana"
+                    style={{flexShrink:0,display:"flex",alignItems:"center",gap:4,background:"var(--gft-surface2)",border:"1px solid var(--gft-border-md)",
+                      borderRadius:8,color:"var(--gft-text-2)",fontSize:12,fontWeight:600,padding:"5px 9px",cursor:"pointer"}}>‹ Volver</button>
+                </div>
+                {evs.length===0
+                  ? <div className="gft-panel__empty">Sin citas este día</div>
+                  : evs.map((e,i)=>{
+                      const suf = TIPO_SUF[e.tipo] || "";
+                      return (
+                        <div key={e.key} onClick={(ev)=>setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY})}
+                          style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",cursor:"pointer",
+                            borderBottom:i<evs.length-1?"1px solid var(--gft-border)":"none"}}
+                          onMouseEnter={ev=>ev.currentTarget.style.background="var(--gft-surface2)"}
+                          onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                          <span className="d" style={{fontSize:14,fontWeight:700,color:e.color,minWidth:42}}>{e.hora}</span>
+                          <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {e.nombre}{suf && <span style={{color:"var(--gft-text-muted)",fontWeight:500}}> · {suf}</span>}</span>
+                          <span style={{color:"var(--gft-text-muted)",fontSize:14,flexShrink:0}}>›</span>
+                        </div>
+                      );
+                    })}
+              </div>
+            );
+          })() : rail}
+        </div>
       </div>
 
       {/* Menú contextual (referencia 5a): popover con íconos SVG */}
@@ -7449,47 +7491,6 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
                   {it.icon}{it.l}
                 </div>
               ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Popup del día (clic en el número/encabezado del día): lista TODAS las citas de ese día.
-          Clic en una cita de la lista → abre el mismo menú de 4 acciones (Reagendar/Recordatorio/Editar/Cancelar). */}
-      {dayMenu && (()=>{
-        const cerrar = () => setDayMenu(null);
-        const evs = evDe(dayMenu.fecha);
-        const d = new Date(dayMenu.fecha+"T00:00:00");
-        const titulo = isNaN(d) ? dayMenu.fecha : d.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
-        const w = 230;
-        const x = Math.min(dayMenu.x, (typeof window!=="undefined"?window.innerWidth:900)-w-8);
-        const y = Math.min(dayMenu.y, (typeof window!=="undefined"?window.innerHeight:700)-Math.min(360, 92+evs.length*40)-8);
-        return (
-          <div style={{position:"fixed",inset:0,zIndex:9000}} onClick={cerrar}>
-            <div onClick={e=>e.stopPropagation()} style={{position:"fixed",left:x,top:Math.max(8,y),width:w,maxHeight:360,overflowY:"auto",
-              background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:11,
-              boxShadow:"0 18px 44px rgba(0,0,0,.6)",padding:6}}>
-              <div style={{padding:"8px 10px 9px",borderBottom:"1px solid var(--gft-border)",marginBottom:5}}>
-                <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text)",textTransform:"capitalize",
-                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{titulo}</div>
-                <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{evs.length} cita{evs.length!==1?"s":""}</div>
-              </div>
-              {evs.length===0
-                ? <div style={{padding:"10px",fontSize:12,color:"var(--gft-text-muted)",textAlign:"center"}}>Sin citas este día</div>
-                : evs.map(e=>{
-                    const suf = TIPO_SUF[e.tipo] || "";
-                    return (
-                      <div key={e.key} onClick={(ev)=>{ setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); setDayMenu(null); }}
-                        style={{display:"flex",alignItems:"center",gap:9,padding:"7px 10px",borderRadius:8,cursor:"pointer"}}
-                        onMouseEnter={ev=>ev.currentTarget.style.background="var(--gft-surface2)"}
-                        onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
-                        <span className="d" style={{fontSize:13,fontWeight:700,color:e.color,minWidth:42}}>{e.hora}</span>
-                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                          {e.nombre}{suf && <span style={{color:"var(--gft-text-muted)",fontWeight:500}}> · {suf}</span>}</span>
-                        <span style={{color:"var(--gft-text-muted)",fontSize:14,flexShrink:0}}>›</span>
-                      </div>
-                    );
-                  })}
             </div>
           </div>
         );
