@@ -8573,6 +8573,154 @@ const autogenerarSnapshotFaltante = async () => {
   } catch(e) { console.warn("autogenerar snapshot (no crítico):", e); return false; }
 };
 
+// ── VISTA PACIENTES (5b) — tabla filtrable/ordenable sobre los pacientes reales ──
+const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
+  const [pacBusca, setPacBusca] = useState("");
+  const [pacFiltro, setPacFiltro] = useState("todos");   // todos | glp1 | labs | sinagendar | meta
+  const [pacOrden, setPacOrden]  = useState("proxima");  // proxima | nombre | progreso | peso
+  const fmtD = (d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const hoyStr = fmtD(new Date());
+  const mananaStr = (()=>{ const m=new Date(); m.setDate(m.getDate()+1); return fmtD(m); })();
+  const AMBER = "#E8A33F";
+  const MESES_C = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  const DIAS_ABBR = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  // Próxima cita (futura, no cancelada) por paciente
+  const proxPorPac = {}; const nowTs = Date.now();
+  (citasV2||[]).forEach(c=>{
+    if(c.estado==="cancelada" || !c.inicio) return;
+    if(new Date(c.inicio).getTime() <= nowTs) return;
+    const cur = proxPorPac[c.pacienteId];
+    if(!cur || new Date(c.inicio) < new Date(cur.inicio)) proxPorPac[c.pacienteId] = c;
+  });
+  // Deriva datos por paciente (reutiliza helpers existentes)
+  const filas = (pacientes||[]).map(p=>{
+    const comps=[...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
+    const ult=comps[comps.length-1], pri=comps[0];
+    const peso = (ult?.peso!=null && ult?.peso!=="") ? parseFloat(ult.peso) : null;
+    const imc = ult?.imc || calcIMC(ult?.peso, p.talla) || null;
+    const tEf = tratamientoEfectivo(p);
+    const medNom = formatearTratamiento(tEf);
+    const esGLP1 = !!tEf.medicamento;
+    const est = estadoLabsPaciente(p);
+    const labsPend = esGLP1 && (est.nivel==="rojo" || (est.nivel==="amarillo" && est.dias===null));
+    const objetivo = parseFloat(p.pesoObjetivo);
+    const metaOk = !isNaN(objetivo) && peso!=null && peso<=objetivo;
+    let progNum=null, progTxt="—", progSub="1ª medición", progCol="var(--gft-text-muted)";
+    if(comps.length>=2 && peso!=null && pri?.peso!=null && pri?.peso!==""){
+      progNum = parseFloat((peso - parseFloat(pri.peso)).toFixed(1));
+      if(progNum!==0){ progTxt = `${progNum<0?"↓":"↑"} ${Math.abs(progNum)} kg`; progCol = progNum<0?"var(--gft-success-text)":AMBER; }
+      else progTxt = "Sin cambio";
+      const md = pri?.fecha ? new Date(parseFechaClinica(pri.fecha)) : null;
+      progSub = metaOk ? "✓ meta lograda" : (md && !isNaN(md) ? `desde ${MESES_C[md.getMonth()]}` : "desde el inicio");
+    }
+    const fechasAct = [ult?.fecha, ...(p.consultas||[]).map(c=>c.fecha)].filter(Boolean);
+    const ultAct = fechasAct.length ? Math.max(...fechasAct.map(parseFechaClinica)) : 0;
+    const prox = proxPorPac[p.id];
+    return { p, ini:getIniciales(p.nombre), col:getAvatarColor(p.nombre||""), peso, imc, medNom, esGLP1,
+      labsPend, metaOk, progNum, progTxt, progSub, progCol, prox, sinAgendar:!prox, ultAct };
+  });
+  const cnt = { todos:filas.length, glp1:filas.filter(f=>f.esGLP1).length, labs:filas.filter(f=>f.labsPend).length,
+    sinagendar:filas.filter(f=>f.sinAgendar).length, meta:filas.filter(f=>f.metaOk).length };
+  const pasaFiltro = (f)=> pacFiltro==="glp1"?f.esGLP1 : pacFiltro==="labs"?f.labsPend
+    : pacFiltro==="sinagendar"?f.sinAgendar : pacFiltro==="meta"?f.metaOk : true;
+  const q=(pacBusca||"").trim().toLowerCase();
+  const pasaBusca=(f)=> !q || (f.p.nombre||"").toLowerCase().includes(q) || (f.p.telefono||"").toLowerCase().includes(q);
+  const proxTs=(f)=> f.prox ? new Date(f.prox.inicio).getTime() : Infinity;
+  const visibles = filas.filter(f=>pasaFiltro(f) && pasaBusca(f)).sort((a,b)=>
+    pacOrden==="nombre" ? (a.p.nombre||"").localeCompare(b.p.nombre||"")
+    : pacOrden==="peso" ? (b.peso||0)-(a.peso||0)
+    : pacOrden==="progreso" ? (a.progNum??0)-(b.progNum??0)
+    : proxTs(a)-proxTs(b));
+  const CHIPS=[["todos","Todos",cnt.todos,null],["glp1","En GLP-1",cnt.glp1,null],
+    ["labs","Labs pendientes",cnt.labs,AMBER],["sinagendar","Sin agendar",cnt.sinagendar,null],
+    ["meta","Meta alcanzada",cnt.meta,null]];
+  const ORDENES=[["proxima","Próxima cita"],["nombre","Nombre"],["peso","Peso"],["progreso","Progreso"]];
+  const fmtProx=(f)=>{
+    if(!f.prox){
+      const sem = f.ultAct>0 ? Math.max(0,Math.round((nowTs-f.ultAct)/604800000)) : null;
+      return { l1:"Sin agendar", l1col:AMBER, l2: sem!=null?`últ. hace ${sem} sem`:"sin historial", l2col:"var(--gft-text-muted)" };
+    }
+    const {fecha,hora}=isoAInputsHmo(f.prox.inicio);
+    const d=new Date(fecha+"T00:00:00");
+    const cuando = fecha===hoyStr ? "Hoy" : fecha===mananaStr ? "Mañana" : (isNaN(d)?fecha:`${DIAS_ABBR[d.getDay()]} ${d.getDate()}`);
+    const tipoTxt = f.labsPend ? "Labs pendientes" : ({seguimiento:"Seguimiento",primera_vez:"Primera vez"}[f.prox.tipo]||"");
+    const tipoCol = f.labsPend ? AMBER : (f.prox.tipo==="primera_vez"?"var(--gft-success-text)":"var(--gft-text-muted)");
+    return { l1:`${cuando} · ${hora}`, l1col:"var(--gft-text)", l2:tipoTxt, l2col:tipoCol };
+  };
+  return (
+    <div style={{display:"flex",flexDirection:"column",minHeight:0}}>
+      {/* Búsqueda de la lista (filtra la tabla) */}
+      <div style={{display:"flex",alignItems:"center",gap:9,background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",
+        borderRadius:10,padding:"8px 13px",marginBottom:15,maxWidth:380}}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--gft-text-muted)" strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input value={pacBusca} onChange={e=>setPacBusca(e.target.value)} placeholder="Buscar por nombre o teléfono…"
+          style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",color:"var(--gft-text)",fontSize:13}}/>
+        {pacBusca && <span onClick={()=>setPacBusca("")} style={{cursor:"pointer",color:"var(--gft-text-muted)",fontSize:14}}>✕</span>}
+      </div>
+      {/* Filtros (chips exclusivos) + orden */}
+      <div style={{display:"flex",gap:7,marginBottom:15,flexWrap:"wrap",alignItems:"center"}}>
+        {CHIPS.map(([id,label,n,col])=>{
+          const activo = pacFiltro===id;
+          return (
+            <span key={id} onClick={()=>setPacFiltro(id)}
+              style={{fontSize:12,fontWeight:600,padding:"6px 13px",borderRadius:20,cursor:"pointer",whiteSpace:"nowrap",
+                background:activo?"var(--gft-accent)":"var(--gft-surface)",
+                border:activo?"1px solid var(--gft-accent)":"1px solid var(--gft-border-md)",
+                color:activo?"#fff":(col||"var(--gft-text-2)")}}>{label} · {n}</span>
+          );
+        })}
+        <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,fontFamily:"var(--gft-font-data)",fontSize:12,color:"var(--gft-text-muted)"}}>
+          Ordenar:
+          <select value={pacOrden} onChange={e=>setPacOrden(e.target.value)}
+            style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:7,outline:"none",
+              color:"var(--gft-text-2)",fontWeight:700,fontFamily:"var(--gft-font-data)",fontSize:12,cursor:"pointer",padding:"3px 6px"}}>
+            {ORDENES.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        </span>
+      </div>
+      {/* Encabezado de tabla */}
+      <div className="gft-pac-grid" style={{padding:"0 14px 8px",fontFamily:"var(--gft-font-data)",fontSize:10,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",color:"var(--gft-text-muted)"}}>
+        <span>Paciente</span><span>Tratamiento</span><span className="gft-pac-hide-sm">Peso · IMC</span>
+        <span className="gft-pac-hide-sm">Progreso</span><span>Próxima cita</span><span/>
+      </div>
+      {/* Filas */}
+      <div style={{display:"flex",flexDirection:"column",gap:8,overflowY:"auto",paddingBottom:8}}>
+        {visibles.length===0
+          ? <div style={{padding:"28px",textAlign:"center",color:"var(--gft-text-muted)",fontSize:13}}>Sin pacientes que coincidan</div>
+          : visibles.map(f=>{ const px=fmtProx(f); return (
+            <div key={f.p.id} className="gft-pac-grid gft-pac-row" onClick={()=>onVer&&onVer(f.p)}>
+              <div style={{display:"flex",alignItems:"center",gap:11,minWidth:0}}>
+                <div className={`gft-avatar gft-avatar--sm gft-avatar--${f.col}`} style={{flexShrink:0}}>{f.ini}</div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.p.nombre}</div>
+                  <div className="d" style={{fontSize:11,color:"var(--gft-text-muted)"}}>{[f.p.edad?`${f.p.edad} años`:null,f.p.sexo].filter(Boolean).join(" · ")||"—"}</div>
+                </div>
+              </div>
+              <div style={{minWidth:0}}>
+                {f.medNom
+                  ? <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                      background:"var(--gft-success-dim)",color:"var(--gft-success-text)",border:"1px solid color-mix(in srgb, var(--gft-success) 28%, transparent)"}}>● {f.medNom}</span>
+                  : <span style={{fontSize:11,fontWeight:600,padding:"3px 9px",borderRadius:20,background:"var(--gft-surface2)",color:"var(--gft-text-2)"}}>Sin tratamiento</span>}
+              </div>
+              <div className="gft-pac-hide-sm">
+                <div className="d" style={{fontSize:17,fontWeight:700,color:"var(--gft-accent-text)"}}>{f.peso!=null?f.peso:"—"}</div>
+                <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)"}}>IMC {f.imc||"—"}</div>
+              </div>
+              <div className="gft-pac-hide-sm" style={{fontSize:11.5,fontWeight:600,color:f.progCol}}>
+                {f.progTxt}<div className="d" style={{fontSize:10,color:f.metaOk?"var(--gft-success-text)":"var(--gft-text-muted)",fontWeight:400}}>{f.progSub}</div>
+              </div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:600,color:px.l1col,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{px.l1}</div>
+                <div className="d" style={{fontSize:10,color:px.l2col}}>{px.l2}</div>
+              </div>
+              <div style={{textAlign:"center",color:"var(--gft-text-muted)",fontSize:16}}>›</div>
+            </div>
+          ); })}
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita}) => {
   const pedirWA = useWA();  // envío WhatsApp con fallback a modal si el paciente no tiene teléfono
   const [mesOffset, setMesOffset] = useState(0);
@@ -9329,6 +9477,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               </div>
             </>
           )}
+
+          {/* ── VISTA PACIENTES (5b) ─────────────────────────── */}
+          {contentView==="pacientes" && <PacientesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
 
           {/* ── VISTA AGENDA ─────────────────────────────────── */}
           {contentView==="calendario" && (()=>{

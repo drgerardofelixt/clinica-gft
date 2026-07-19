@@ -987,6 +987,15 @@ select.gft-input {
 }
 .gft-agenda-toggle span.is-active { background: var(--gft-accent); color: #fff; }
 
+/* ── Pacientes (5b) — tabla en grid ── */
+.gft-pac-grid { display: grid; grid-template-columns: 2.4fr 1.4fr 1fr 1fr 1.3fr 40px; gap: 12px; align-items: center; }
+.gft-pac-row { background: var(--gft-surface); border: 1px solid var(--gft-border); border-radius: 12px; padding: 11px 14px; cursor: pointer; }
+.gft-pac-row:hover { border-color: var(--gft-accent); background: color-mix(in srgb, var(--gft-accent) 6%, var(--gft-surface)); }
+@media (max-width: 900px) {
+  .gft-pac-grid { grid-template-columns: 2fr 1.4fr 1.3fr 34px; }
+  .gft-pac-hide-sm { display: none; }
+}
+
 .gft-paciente-actual__metric {
   background: var(--gft-surface2);
   border-radius: 12px;
