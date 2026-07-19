@@ -2984,58 +2984,46 @@ const DocProgreso = ({p}) => {
   ];
 
   // Barra de rango con DEGRADADO continuo (píldora) + punto blanco marcador.
-  const RangoGrad = ({ zonas, valor, domMin, domMax, unidad = '', nota = '' }) => {
+  // Medidor de rango (hoja 1): segmentos SÓLIDOS por zona (distinto del degradado CONTINUO de MetaBarra en hoja 2).
+  // Compacto para stackear en 1 columna: título + valor en una fila, rango numérico bajo cada color, caja "Qué significa".
+  const RangoGrad = ({ titulo, zonas, valor, domMin, domMax, unidad = '', nota = '', mb = 18 }) => {
     const v = parseFloat(valor);
     if (valor == null || valor === "" || isNaN(v)) return null;
-    const total = (domMax - domMin) || 1;
-    const stops = [];
-    let pct = 0;
-    zonas.forEach((z, i) => {
-      const w = ((z.max - z.min) / total) * 100;
-      stops.push(`${z.color} ${pct.toFixed(1)}%`);
-      pct += w;
-      stops.push(`${z.color} ${pct.toFixed(1)}%`);
-      if (i < zonas.length - 1) {
-        const next = zonas[i + 1].color;
-        stops[stops.length - 1] = `${z.color} ${(pct - 2).toFixed(1)}%`;
-        stops.push(`${next} ${(pct + 2).toFixed(1)}%`);
-      }
-    });
-    const gradient = `linear-gradient(to right, ${stops.join(', ')})`;
-    const pos = Math.min(99, Math.max(1, ((v - domMin) / total) * 100));
+    const span = (domMax - domMin) || 1;
+    // ancho de cada zona en %, recortando la última zona abierta (max grande, ej. cintura 300) al dominio → suman 100%
+    const wz = z => Math.max(0, (Math.min(z.max, domMax) - Math.max(z.min, domMin)) / span * 100);
     const zonaActual = zonas.find(z => v >= z.min && v < z.max) || zonas[zonas.length - 1];
+    const pos = Math.min(97, Math.max(3, ((v - domMin) / span) * 100));
+    const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(1);
     return (
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 10 }}>
-          <div className="d" style={{ fontSize: 20, fontWeight: 500, color: '#1B3F8B' }}>
-            {v.toFixed(1)}
-            {unidad && <span style={{ fontSize: 12, color: '#8A99AC', marginLeft: 3 }}>{unidad}</span>}
-          </div>
+      <div style={{ marginBottom: mb }}>
+        {/* Header: título + valor en la misma fila */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 7 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#26324A' }}>{titulo}</span>
+          <span className="d" style={{ fontSize: 18, fontWeight: 700, color: zonaActual.color }}>
+            {fmt(v)}{unidad ? ` ${unidad}` : ''}</span>
         </div>
-        <div style={{ position: 'relative', height: 12, borderRadius: 30, overflow: 'visible', background: gradient }}>
+        {/* Track: segmentos sólidos por zona */}
+        <div style={{ position: 'relative', height: 12, borderRadius: 30, display: 'flex', overflow: 'hidden' }}>
+          {zonas.map((z, i) => (<div key={i} style={{ width: `${wz(z)}%`, background: z.color }} />))}
           <div style={{
             position: 'absolute', top: '50%', left: `${pos}%`, transform: 'translate(-50%, -50%)',
             width: 18, height: 18, borderRadius: '50%', background: '#fff',
-            border: `3px solid ${zonaActual.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.18)', boxSizing: 'border-box', zIndex: 2,
+            border: `3px solid ${zonaActual.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.25)', boxSizing: 'border-box',
           }} />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#A4AEBD', marginTop: 7 }}>
-          {zonas.map(z => (
-            <span key={z.label} style={v >= z.min && v < z.max ? { color: zonaActual.color, fontWeight: 500 } : {}}>
-              {z.label}{v >= z.min && v < z.max ? ' ●' : ''}
-            </span>
-          ))}
+        {/* Etiquetas de zona: nombre + límite numérico bajo cada color */}
+        <div style={{ display: 'flex', marginTop: 6, fontSize: 9, fontWeight: 700, textAlign: 'center' }}>
+          {zonas.map((z, i) => { const activa = v >= z.min && v < z.max; return (
+            <div key={i} style={{ width: `${wz(z)}%` }}>
+              <div style={{ color: z.color }}>{z.label}{activa ? ' ●' : ''}</div>
+              {z.rango && <div className="d" style={{ color: '#94A3B8' }}>{z.rango}</div>}
+            </div>
+          ); })}
         </div>
-        {zonas.some(z => z.rango) && (
-          <div style={{ fontSize: 8, color: '#8A99AC', marginTop: 5, lineHeight: 1.4, textAlign: 'center' }}>
-            {zonas.map(z => z.rango ? `${z.label} ${z.rango}` : z.label).join('   ·   ')}
-          </div>
-        )}
         {nota && (
-          <div style={{ background:'#fff', border:'1px solid #E2E8F0', borderRadius:8, padding:'8px 11px', marginTop:9 }}>
-            <span style={{ fontSize:9, fontWeight:700, color:'#1B3F8B' }}>Qué significa: </span>
-            <span style={{ fontSize:10, color:'#26324A' }}>{nota}</span>
-          </div>
+          <div style={{ fontSize: 11, color: '#26324A', marginTop: 7, background: '#F4F6FB', borderRadius: 8, padding: '8px 11px', lineHeight: 1.4 }}>
+            <b>Qué significa:</b> {nota}</div>
         )}
       </div>
     );
@@ -3250,7 +3238,7 @@ const DocProgreso = ({p}) => {
   const Encabezado = () => (
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
       paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B2E"}}>
-      <img src={IMG_LOGO_REPORTE} alt="Logo" style={{height:132,width:"auto",display:"block"}}/>
+      <img src={IMG_LOGO_REPORTE} alt="Logo" style={{height:112,width:"auto",display:"block"}}/>
       <div className="d" style={{fontSize:14,fontWeight:700,color:C.azul,letterSpacing:"1.5px",
         textTransform:"uppercase"}}>Reporte de progreso</div>
     </div>
@@ -3305,10 +3293,11 @@ const DocProgreso = ({p}) => {
     narr += ". Tu cuerpo está mejorando aunque la báscula no cambie mucho.";
     return { titulo:`Buen camino, ${primerNom}`, narr };
   })();
-  const chips = esPrimeraToma ? [] : [
-    grasaKgCambio!=null ? {t:`${grasaKgCambio<0?"↓":"↑"} ${_kg(grasaKgCambio)} kg de grasa`, ok:grasaKgCambio<0} : null,
-    musculoChange!=null ? {t:`${musculoChange>=0?"↑":"↓"} ${_kg(musculoChange)} kg de músculo`, ok:musculoChange>=0} : null,
-    pesoChange!=null ? {t:`${pesoChange<0?"↓":"↑"} ${_kg(pesoChange)} kg de peso total`, ok:pesoChange<0} : null,
+  // Chips numéricos del titular (grasa/músculo/peso total) dentro de la caja de degradado — layout referencia
+  const titularCards = esPrimeraToma ? [] : [
+    grasaKgCambio!=null ? {v:grasaKgCambio, lbl:"kg de grasa",     col:"#D97706", bd:"#F0DEC4"} : null,
+    musculoChange!=null ? {v:musculoChange, lbl:"kg de músculo",   col:"#7B3F3F", bd:"#E4D2D2"} : null,
+    pesoChange!=null    ? {v:pesoChange,    lbl:"kg de peso total", col:C.azul,    bd:"#D5E6DF"} : null,
   ].filter(Boolean);
   // "Qué significa" — texto en lenguaje claro por métrica y zona (revisado y aprobado)
   const QS = {
@@ -3343,20 +3332,24 @@ const DocProgreso = ({p}) => {
       <Encabezado/>
       <Banda derecha={`HOY · ${fechaHoy}`}/>
 
-      {/* Saludo personalizado + narrativa + chips (Fase 4B) */}
-      <div style={{fontSize:22,fontWeight:800,color:C.azul,marginBottom:5,lineHeight:1.1}}>{saludo.titulo}</div>
-      <div style={{fontSize:12,color:C.texto,lineHeight:1.5,marginBottom:chips.length?10:16,maxWidth:620}}>{saludo.narr}</div>
-      {chips.length>0 && (
-        <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:18}}>
-          {chips.map((c,i)=>(
-            <span key={i} style={{fontSize:11,fontWeight:700,borderRadius:20,padding:"5px 12px",
-              background:c.ok?"#E7F6EF":"#FBEDE3",color:c.ok?"#0D8A63":"#B9772E"}}>{c.t}</span>
-          ))}
-        </div>
-      )}
+      {/* Titular en lenguaje claro (caja degradada) + chips numéricos de delta — layout referencia */}
+      <div style={{background:"linear-gradient(135deg,#E1F5EE,#EAF2FC)",borderRadius:14,padding:"14px 18px",marginBottom:16}}>
+        <div style={{fontSize:20,fontWeight:800,color:"#0D8A63",letterSpacing:"-0.01em",lineHeight:1.15}}>{saludo.titulo}</div>
+        <div style={{fontSize:12.5,color:"#26324A",lineHeight:1.45,marginTop:5}}>{saludo.narr}</div>
+        {titularCards.length>0 && (
+          <div style={{display:"flex",gap:10,marginTop:14}}>
+            {titularCards.map((c,i)=>(
+              <div key={i} style={{flex:1,background:"#fff",borderRadius:10,padding:"9px 12px",textAlign:"center",border:`1px solid ${c.bd}`}}>
+                <div className="d" style={{fontSize:22,fontWeight:700,color:c.col}}>{c.v>0?"+":c.v<0?"−":""}{Math.abs(c.v)}</div>
+                <div style={{fontSize:10,color:"#64748B",fontWeight:600}}>{c.lbl}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:8}}>Tus números de hoy</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:18}}>
+      <div style={{fontSize:15,fontWeight:700,color:C.azul,marginBottom:8}}>Tus números de hoy</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
         {(()=>{
           const dmStr = (act,prev,u,baja=true)=>{
             if(act==null||act===""||prev==null||prev==="")return null;
@@ -3366,65 +3359,64 @@ const DocProgreso = ({p}) => {
             const bueno=baja?d<0:d>0;
             return {t:`${d<0?"↓":"↑"} ${Math.abs(d)}${u} este mes`,c:bueno?"#0D8A63":"#B9772E"};
           };
+          const prevTxt = (v,u)=> (v==null||v==="")?null:`Mes anterior: ${v}${u}`;
           const caPrev = caPuntos.length>=2 ? caPuntos[caPuntos.length-2].ca : null;
           const imcAct = ultima?.imc || calcIMC(ultima?.peso, p.talla);
           const imcPrev = penultima ? (penultima.imc || calcIMC(penultima.peso, p.talla)) : null;
+          const zIMC = zonaDe(imcAct,ZONAS_IMC);
+          // Grasa: delta en kg + % al lado (referencia)
+          const grasaLinea = esPrimeraToma ? null : (()=>{
+            const d = dmStr(grasaKgAct, grasaKgPrev, " kg");
+            const pct = (ultima?.grasa!=null&&ultima?.grasa!=="") ? `${ultima.grasa}%` : "";
+            if(d) return {t: pct?`${d.t} · ${pct}`:d.t, c:d.c};
+            return pct ? {t:pct, c:C.suave} : null;
+          })();
           return [
-            {l:"PESO", v:ultima?.peso, u:"kg", chip:zonaDe(imcAct,ZONAS_IMC)?.color, dm:esPrimeraToma?null:dmStr(ultima?.peso, penultima?.peso, " kg")},
-            {l:"IMC", v:imcAct, u:"", chip:zonaDe(imcAct,ZONAS_IMC)?.color, sub:zonaDe(imcAct,ZONAS_IMC)?.label, subColor:zonaDe(imcAct,ZONAS_IMC)?.color, dm:esPrimeraToma?null:dmStr(imcAct, imcPrev, "")},
-            {l:"GRASA", v:grasaKgAct, u:"kg", chip:zonaDe(ultima?.grasa,ZONAS_GRASA[sexoKey])?.color, dm:esPrimeraToma?null:dmStr(grasaKgAct, grasaKgPrev, " kg")},
-            {l:"MÚSCULO", v:ultima?.musculo, u:"kg", chip:"#1D9E75", dm:esPrimeraToma?null:dmStr(ultima?.musculo, musculoPrev, " kg", false)},
-            {l:"CINTURA", v:caAct, u:"cm", chip:colorCintura(caAct), sub:zonaCA(caAct)?.label, subColor:colorCintura(caAct), dm:esPrimeraToma?null:dmStr(caAct, caPrev, " cm")},
-            {l:"EDAD METAB.", v:edadMetAct, u:"años", chip:edadMetColor, sub: edadMetMenor==null?null:(edadMetMenor?"Menor que tu edad":"Mayor"), subColor:edadMetColor},
+            {l:"Peso", v:ultima?.peso, u:" kg", vc:C.azul,
+              linea:esPrimeraToma?null:dmStr(ultima?.peso, penultima?.peso, " kg"), prev:esPrimeraToma?null:prevTxt(penultima?.peso," kg")},
+            {l:"Índice de masa corporal", v:imcAct, u:"", vc:C.azul,
+              linea:zIMC?{t:zIMC.label,c:zIMC.color}:null, prev:esPrimeraToma?null:prevTxt(imcPrev,"")},
+            {l:"Grasa corporal", v:grasaKgAct, u:" kg", vc:"#D97706", accent:"#D97706",
+              linea:grasaLinea, prev:esPrimeraToma?null:prevTxt(grasaKgPrev," kg")},
+            {l:"Masa muscular", v:ultima?.musculo, u:" kg", vc:"#7B3F3F", accent:"#7B3F3F",
+              linea:esPrimeraToma?null:dmStr(ultima?.musculo, musculoPrev, " kg", false), prev:esPrimeraToma?null:prevTxt(musculoPrev," kg")},
+            {l:"Cintura", v:caAct, u:" cm", vc:C.azul,
+              linea:esPrimeraToma?null:dmStr(caAct, caPrev, " cm"), prev:esPrimeraToma?null:prevTxt(caPrev," cm")},
+            {l:"Edad metabólica", v:edadMetAct, u:" años", vc:C.azul,
+              linea:edadMetMenor==null?null:{t:edadMetMenor?"Menor que tu edad":"Mayor que tu edad",c:edadMetColor}, prev:esPrimeraToma?null:prevTxt(penultima?.edadMet," años")},
           ].map((m,i)=>(
-            <div key={i} style={{background:"#F4F6FB",borderRadius:11,padding:"11px 10px",position:"relative"}}>
-              <span style={{position:"absolute",top:9,right:9,width:8,height:8,borderRadius:"50%",background:m.chip||C.suave}}/>
-              <div style={{fontSize:7,fontWeight:700,color:C.suave,letterSpacing:"0.2px"}}>{m.l}</div>
-              <div className="d" style={{fontSize:19,fontWeight:700,lineHeight:1.05,color:C.azul,marginTop:3}}>
-                {m.v!=null&&m.v!==""?m.v:"—"}{m.u&&<span style={{fontSize:10,fontWeight:600,color:C.suave}}> {m.u}</span>}</div>
-              {m.dm && <div style={{fontSize:7.5,fontWeight:700,color:m.dm.c,marginTop:2}}>{m.dm.t}</div>}
-              {m.sub && <div style={{fontSize:7.5,fontWeight:700,color:m.subColor||C.suave,marginTop:1}}>{m.sub}</div>}
+            <div key={i} style={{background:"#F4F6FB",borderRadius:12,padding:"11px 14px",position:"relative",overflow:"hidden"}}>
+              {m.accent && <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:m.accent}}/>}
+              <div className="d" style={{fontSize:10,fontWeight:700,letterSpacing:"0.4px",color:"#64748B",textTransform:"uppercase"}}>{m.l}</div>
+              <div className="d" style={{fontSize:28,fontWeight:700,lineHeight:1,color:m.vc,marginTop:3}}>
+                {m.v!=null&&m.v!==""?m.v:"—"}{m.u&&<span style={{fontSize:13,color:"#94A3B8"}}>{m.u}</span>}</div>
+              {m.linea && <div style={{fontSize:11,fontWeight:600,color:m.linea.c,marginTop:3}}>{m.linea.t}</div>}
+              {m.prev && <div className="d" style={{fontSize:10,color:"#94A3B8",marginTop:1}}>{m.prev}</div>}
             </div>
           ));
         })()}
       </div>
 
-      <div style={{fontSize:13,fontWeight:800,color:C.azul,marginBottom:2}}>¿En qué rango estás?</div>
-      <div style={{fontSize:9.5,color:C.suave,marginBottom:10}}>El punto blanco marca dónde estás hoy. Los rangos están ajustados a tu edad y sexo.</div>
-      {/* 4 medidores en 2 columnas (2×2) para que la hoja quepa cómoda en una página */}
-      <div style={{background:"#F4F6FB",borderRadius:11,padding:"16px 18px",marginBottom:16,
-        display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:22,rowGap:2}}>
+      <div style={{fontSize:15,fontWeight:700,color:C.azul,marginBottom:3}}>¿En qué rango estás?</div>
+      <div style={{fontSize:12,color:"#64748B",marginBottom:14}}>El punto blanco marca dónde estás hoy. Los rangos están ajustados a tu edad y sexo.</div>
+      {/* 4 medidores compactos en 2×2 para que la hoja quepa cómoda en una página */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:20,marginBottom:4}}>
         {(()=>{ const imcV = ultima?.imc || calcIMC(ultima?.peso, p.talla); return (
-        <div>
-          <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Índice de Masa Corporal</div>
-          <RangoGrad zonas={ZONAS_IMC} valor={imcV} domMin={15} domMax={35}
-            nota={qs("imc", zonaDe(imcV, ZONAS_IMC)?.label)}/>
-        </div>); })()}
-
-        <div>
-          <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Grasa corporal</div>
-          <RangoGrad zonas={ZONAS_GRASA[sexoKey]} valor={ultima?.grasa} domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
-            nota={qs("grasa", zonaDe(ultima?.grasa, ZONAS_GRASA[sexoKey])?.label)}/>
-        </div>
-
-        <div>
-          <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Cintura — riesgo cardiovascular</div>
-          <RangoGrad zonas={ZONAS_CA[sexoKey]} valor={caAct} domMin={0} domMax={130} unidad="cm"
-            nota={qs("cintura", zonaCA(caAct)?.label)}/>
-        </div>
-
+          <RangoGrad titulo="Índice de masa corporal" zonas={ZONAS_IMC} valor={imcV} domMin={15} domMax={35} mb={12}
+            nota={qs("imc", zonaDe(imcV, ZONAS_IMC)?.label)}/> ); })()}
+        <RangoGrad titulo="Grasa corporal" zonas={ZONAS_GRASA[sexoKey]} valor={ultima?.grasa} domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%" mb={12}
+          nota={qs("grasa", zonaDe(ultima?.grasa, ZONAS_GRASA[sexoKey])?.label)}/>
+        <RangoGrad titulo="Cintura (riesgo cardiovascular)" zonas={ZONAS_CA[sexoKey]} valor={caAct} domMin={0} domMax={130} unidad="cm" mb={12}
+          nota={qs("cintura", zonaCA(caAct)?.label)}/>
         {ffmi!=null && (
-          <div>
-            <div style={{fontSize:13,fontWeight:500,color:'#26324A',marginBottom:2}}>Masa muscular (FFMI)</div>
-            <RangoGrad zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²"
-              nota={qs("ffmi", zonaDe(ffmi, ZONAS_FFMI[sexoKey])?.label)}/>
-          </div>
+          <RangoGrad titulo="Índice de masa muscular (FFMI)" zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²" mb={12}
+            nota={qs("ffmi", zonaDe(ffmi, ZONAS_FFMI[sexoKey])?.label)}/>
         )}
       </div>
 
-      <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"13px 16px",marginBottom:16}}>
+      <div style={{background:"#FBF8F1",border:"1px solid #E0A45F40",borderRadius:11,padding:"11px 14px",marginTop:12,marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:"#B9772E",marginBottom:2}}>En resumen</div>
-        <div style={{fontSize:11,color:C.texto,lineHeight:1.45}}>{notaImc}</div>
+        <div style={{fontSize:11,color:C.texto,lineHeight:1.4}}>{notaImc}</div>
       </div>
 
       <Pie n={1}/>
