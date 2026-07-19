@@ -3637,7 +3637,7 @@ const DocProgreso = ({p}) => {
 
       <div style={{display:"flex",gap:12,marginBottom:8,alignItems:"stretch"}}>
         <div style={{flex:1,background:"linear-gradient(135deg,#E1F5EE,#E6F1FB)",borderRadius:11,padding:"10px 14px"}}>
-          <div style={{fontWeight:800,color:"#1D9E75",marginBottom:2}}>{motivTitle}</div>
+          <div style={{fontSize:13,fontWeight:800,color:"#0D8A63",marginBottom:3}}>En resumen</div>
           <div style={{fontSize:10,lineHeight:1.35}}>{motiv}</div>
         </div>
         {proxCitaReal && (()=>{ const {fecha,hora}=isoAInputsHmo(proxCitaReal.inicio); return (
