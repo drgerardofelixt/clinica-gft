@@ -2409,43 +2409,81 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
 
 const DocLabs = ({p, labs={}, firmaB64}) => {
   const estudios = labs.estudios||[];
-  // Ancho FIJO de hoja carta (.pdf-page) → captura idéntica en compu y celular, y construirPDF la
-  // escala a UNA sola página preservando proporción (el pie SIEMPRE entra, nunca se parte ni duplica).
-  // 2 columnas cuando la lista es larga para que 15+ estudios + firma + pie quepan a tamaño casi natural.
-  const dosCols = estudios.length > 8;
+  const trat = (()=>{ const t=formatearTratamiento(tratamientoEfectivo(p)); return t||""; })();
+  // Variante "selección" cuando son pocos estudios (≤4): filas verdes con ✓, sin catálogo de casillas vacías.
+  // Variante "completa" (>4): catálogo canónico en 2 columnas con casillas marcadas/vacías + extras al final.
+  const seleccion = estudios.length > 0 && estudios.length <= 4;
+  const catalogo = LABS_PRESET.iniciales;                       // 11 estudios canónicos
+  const extras = estudios.filter(e => !catalogo.includes(e));   // ordenados fuera del catálogo
+  // Casilla del catálogo (marcada = teal con ✓, vacía = borde gris)
+  const Casilla = ({nombre, marcado}) => (
+    <div style={{display:"flex",alignItems:"center",gap:9,padding:"6px 0",borderBottom:"1px solid #E2E8F0"}}>
+      <span style={{width:16,height:16,borderRadius:4,flexShrink:0,display:"inline-flex",alignItems:"center",
+        justifyContent:"center",fontSize:11,fontWeight:900,color:"#fff",
+        border:marcado?"none":"1.5px solid #94A3B8",background:marcado?"#1D9E75":"transparent"}}>{marcado?"✓":""}</span>
+      <span style={{color:marcado?C.texto:"#94A3B8",fontWeight:marcado?600:400}}>{nombre}</span>
+    </div>
+  );
+  // Fila verde de la variante selección
+  const FilaSel = ({nombre}) => (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",
+      background:"#F0FDF6",border:"1px solid #1D9E7540",borderRadius:8}}>
+      <span style={{width:20,height:20,borderRadius:5,flexShrink:0,background:"#1D9E75",color:"#fff",
+        display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:900}}>✓</span>
+      <span style={{fontWeight:700,color:"#0D8A63"}}>{nombre}</span>
+    </div>
+  );
   return (
   <div className="pdf-page" style={{width:816, minHeight:1056, boxSizing:"border-box",
     padding:"40px 48px", background:"white", display:"flex", flexDirection:"column",
     fontFamily:"Arial,sans-serif", fontSize:11, color:C.texto, lineHeight:1.5}}>
     <LogoDoc compact conCedula={true}/>
-    <SepDoc/>
-    <G4>
-      <CF l="Paciente" v={p.nombre} span={2}/>
-      <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
-      <CF l="Fecha" v={fmtFecha(labs.fecha)}/>
-    </G4>
-    <SepDoc/>
-    <div style={{fontSize:13,fontWeight:700,marginBottom:10,color:C.azul}}>
-      Realizar los siguientes laboratorios:
-    </div>
-    <div style={{display:"grid", gridTemplateColumns: dosCols?"1fr 1fr":"1fr", columnGap:28, rowGap:0}}>
-      {estudios.map((e,i)=>(
-        <div key={i} style={{display:"flex",alignItems:"flex-start",gap:8,
-          padding:"4px 0",borderBottom:"1px solid "+C.grisMedio}}>
-          <span style={{color:C.azul,fontWeight:700,flexShrink:0}}>•</span>
-          <span>{e}</span>
-        </div>
-      ))}
-    </div>
-    {labs.notas&&(
-      <div style={{marginTop:12,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:10.5}}>
-        <b>Indicaciones:</b> {labs.notas}
+
+    {/* Banda de paciente — gradiente 135deg navy→teal */}
+    <div style={{background:"linear-gradient(135deg,#1B3F8B 0%,#1D9E75 100%)",color:"#fff",
+      borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+      <div style={{fontSize:19,fontWeight:800,letterSpacing:0.2}}>{p.nombre}</div>
+      <div style={{fontSize:11,opacity:0.92,marginTop:3}}>
+        {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, trat||null].filter(Boolean).join("   ·   ")}
       </div>
+    </div>
+
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
+      <div style={{fontWeight:800,fontSize:14,color:C.azul,letterSpacing:0.3}}>ORDEN DE LABORATORIO</div>
+      <div style={{fontSize:11,color:"#64748B"}}>Fecha: <b style={{color:C.texto}}>{fmtFecha(labs.fecha)}</b></div>
+    </div>
+    <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#1D9E75)",borderRadius:1,marginBottom:14}}/>
+
+    <div style={{fontSize:12,fontWeight:700,marginBottom:10,color:C.azul}}>Estudios solicitados:</div>
+
+    {seleccion ? (
+      <div style={{display:"grid",gridTemplateColumns: estudios.length>2?"1fr 1fr":"1fr",gap:8}}>
+        {estudios.map((e,i)=><FilaSel key={i} nombre={e}/>)}
+      </div>
+    ) : (
+      <>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:28,rowGap:0}}>
+          {catalogo.map((e,i)=><Casilla key={i} nombre={e} marcado={estudios.includes(e)}/>)}
+        </div>
+        {extras.length>0 && (
+          <div style={{marginTop:6}}>
+            {extras.map((e,i)=><Casilla key={"x"+i} nombre={e} marcado={true}/>)}
+          </div>
+        )}
+      </>
     )}
+
+    {/* Indicaciones de ayuno (default clínico estándar) + notas del médico */}
+    <div style={{marginTop:14,padding:"10px 12px",background:"#F4F6FB",borderRadius:6,
+      border:"1px solid #E2E8F0",fontSize:10.5}}>
+      <b style={{color:C.azul}}>Indicaciones de ayuno:</b> Ayuno de 8 a 12 horas (puede tomar agua). Evite ejercicio intenso y alcohol 24 h antes de la toma.
+      {labs.notas && <div style={{marginTop:5}}>{labs.notas}</div>}
+    </div>
+
     <div style={{marginTop:"auto"}}>
       <Firma fecha={labs.fecha} firmaB64={firmaB64}/>
       <FooterDoc/>
-      <OlasDoc/>
+      <OlasDoc colores={["#1B3F8B","#1D9E75","#1D9E75"]} opac={[0.35,0.22,0.5]}/>
     </div>
   </div>
   );
