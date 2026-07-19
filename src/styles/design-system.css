@@ -1004,6 +1004,12 @@ select.gft-input {
   .gft-rep-charts { grid-template-columns: 1fr; }
 }
 
+/* ── Compartir documento (9a) — preview + panel; en móvil solo el panel ── */
+@media (max-width: 720px) {
+  .gft-compartir-modal { flex-direction: column !important; max-width: 440px !important; }
+  .gft-compartir-preview { display: none !important; }
+}
+
 /* ── Ajustes (5d) — sub-nav + panel ── */
 .gft-ajustes-layout { display: grid; grid-template-columns: 200px 1fr; gap: 20px; align-items: start; }
 @media (max-width: 820px) {

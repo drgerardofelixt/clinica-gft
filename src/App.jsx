@@ -2046,11 +2046,80 @@ const compartirOAbrirPDF = async ({file, url, filename}) => {
   setTimeout(() => { try { URL.revokeObjectURL(blobURL); } catch(e) {} }, 300000);
 };
 
+// Mensaje pre-cargado para compartir un documento por WhatsApp/Correo (editable en el modal 9a).
+const mensajeCompartir = (tipo, p) => {
+  const nom = (p?.nombre||"").split(" ")[0] || "";
+  const saludo = nom ? `Hola ${nom}, ` : "Hola, ";
+  const cuerpo = {
+    receta: "le comparto su receta de la consulta de hoy. Cualquier duda quedo a sus órdenes.",
+    labs: "le comparto su orden de laboratorios. Recuerde las indicaciones de ayuno.",
+    progreso: "le comparto su reporte de progreso. ¡Muy buen avance!",
+    nota: "le comparto su nota de evolución.",
+  }[tipo] || "le comparto su documento.";
+  return saludo + cuerpo + " — Dr. Gerardo Félix Tapia";
+};
+
+// ── Modal Compartir (9a) — vista previa + contacto + mensaje editable + WhatsApp/Correo/Descargar/Imprimir ──
+const ModalCompartir = ({titulo, docRef, paciente, mensajeInicial, filename, onImprimir, onClose}) => {
+  const [mensaje, setMensaje] = useState(mensajeInicial||"");
+  const [busy, setBusy] = useState("");
+  const pedirWA = useWA();
+  const tel = (paciente?.telefono||"").replace(/\D/g,"");
+  const genPDF = async () => { try { return await generarPDFBlob(docRef, filename, {singlePage:false}); } catch(e){ console.warn("pdf compartir:",e); return null; } };
+  const enviarWhats = async () => { setBusy("wa"); try { const pdf=await genPDF(); if(pdf) await compartirOAbrirPDF({file:pdf.file,url:pdf.url,filename}); pedirWA(paciente||{nombre:titulo}, mensaje); } finally { setBusy(""); } };
+  const enviarCorreo = async () => { setBusy("mail"); try { await genPDF(); const asunto=encodeURIComponent(`${titulo||"Documento"}${paciente?.nombre?" — "+paciente.nombre:""}`); const cuerpo=encodeURIComponent(mensaje+"\n\n(Adjunte el PDF que se acaba de descargar.)"); window.location.href=`mailto:${paciente?.correo||""}?subject=${asunto}&body=${cuerpo}`; } finally { setBusy(""); } };
+  const descargar = async () => { setBusy("dl"); try { const pdf=await genPDF(); if(pdf){ const a=document.createElement("a"); a.href=pdf.url; a.download=filename; a.click(); } } finally { setBusy(""); } };
+  const previewHTML = docRef?.current?.innerHTML || "";
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:3200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"var(--gft-surface)",borderRadius:16,width:"100%",maxWidth:820,maxHeight:"92vh",overflow:"hidden",display:"flex",border:"1px solid var(--gft-border-md)"}} className="gft-compartir-modal">
+        <div className="gft-compartir-preview" style={{flex:1,minWidth:0,background:"var(--gft-bg)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:22,borderRight:"1px solid var(--gft-border)",overflow:"hidden"}}>
+          <div style={{width:660,transform:"scale(.46)",transformOrigin:"top center",flexShrink:0,pointerEvents:"none"}}>
+            <div style={{background:"white",padding:"16px 24px 24px",borderRadius:8}} dangerouslySetInnerHTML={{__html:previewHTML}}/>
+          </div>
+        </div>
+        <div style={{width:400,flexShrink:0,padding:"22px 24px",display:"flex",flexDirection:"column",maxHeight:"92vh",overflowY:"auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:17,fontWeight:700,color:"var(--gft-text)",textTransform:"capitalize"}}>Compartir {(titulo||"documento").toLowerCase()}</div>
+              <div className="d" style={{fontSize:12,color:"var(--gft-text-muted)",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{filename}</div>
+            </div>
+            <button onClick={onClose} style={{background:"none",border:"none",color:"var(--gft-text-muted)",fontSize:20,cursor:"pointer",lineHeight:1,flexShrink:0}}>×</button>
+          </div>
+          {paciente && (<>
+            <div className="d" style={{fontSize:10,fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",color:"var(--gft-text-muted)",margin:"18px 0 6px"}}>Enviar a</div>
+            <div style={{display:"flex",alignItems:"center",gap:11,background:"var(--gft-surface2)",border:"1px solid var(--gft-border-md)",borderRadius:11,padding:"11px 13px"}}>
+              <div className={`gft-avatar gft-avatar--sm gft-avatar--${getAvatarColor(paciente.nombre||"")}`} style={{flexShrink:0}}>{getIniciales(paciente.nombre)}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{paciente.nombre}</div>
+                <div className="d" style={{fontSize:11,color:tel.length>=10?"var(--gft-text-muted)":"var(--gft-warning)"}}>{tel.length>=10?`📱 ${paciente.telefono}`:"Sin teléfono registrado"}</div>
+              </div>
+            </div>
+          </>)}
+          <div className="d" style={{fontSize:10,fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",color:"var(--gft-text-muted)",margin:"16px 0 6px"}}>Mensaje</div>
+          <textarea value={mensaje} onChange={e=>setMensaje(e.target.value)} rows={4}
+            style={{background:"var(--gft-surface2)",border:"1px solid var(--gft-border-md)",borderRadius:11,padding:"12px 14px",fontSize:12.5,color:"var(--gft-text)",lineHeight:1.5,resize:"vertical",fontFamily:"inherit",outline:"none",marginBottom:16}}/>
+          <button onClick={enviarWhats} disabled={!!busy} style={{border:"none",borderRadius:11,background:"#25D366",color:"#06240F",fontWeight:700,fontSize:14,padding:13,cursor:busy?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:9,marginBottom:9,opacity:busy&&busy!=="wa"?.6:1}}>
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2zm0 2a8 8 0 1 1-4.1 14.9l-.3-.2-2.8.9.9-2.7-.2-.3A8 8 0 0 1 12 4zm4.5 10.3c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.3.2-.5.1-.7-.3-1.4-.7-2-1.4-.4-.5-.1-.5.2-1.1.1-.1 0-.3 0-.4l-.7-1.6c-.2-.4-.4-.4-.5-.4h-.5c-.2 0-.4.1-.6.3-.7.7-.8 1.6-.4 2.6.5 1.2 1.3 2.2 2.5 3 1.7 1.1 2.9 1.2 3.6 1.1.5-.1 1.4-.6 1.6-1.1.2-.5.2-1 .1-1.1z"/></svg>
+            {busy==="wa"?"Preparando…":"Enviar por WhatsApp"}</button>
+          <div style={{display:"flex",gap:9}}>
+            <button onClick={enviarCorreo} disabled={!!busy} className="gft-btn gft-btn--secondary" style={{flex:1,justifyContent:"center"}}>Correo</button>
+            <button onClick={descargar} disabled={!!busy} className="gft-btn gft-btn--secondary" style={{flex:1,justifyContent:"center"}}>{busy==="dl"?"…":"Descargar PDF"}</button>
+            <button onClick={()=>onImprimir&&onImprimir()} className="gft-btn gft-btn--secondary" style={{flex:1,justifyContent:"center"}}>Imprimir</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Print Modal ───────────────────────────────────────────────
 // onWAConPDF(ref, titulo, done) — descarga PDF + abre WhatsApp Desktop
-const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, pdfFilename}) => {
+const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, pdfFilename, paciente, docTipo, mensajeInicial}) => {
   const ref = useRef();
   const isGenerating = useRef(false);
+  const [showCompartir, setShowCompartir] = useState(false);
+  const fnameDoc = pdfFilename || (sanitizeFilename(titulo||"Documento") + ".pdf");
 
   const print = () => {
     try {
@@ -2096,19 +2165,10 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, p
           <span style={{fontWeight:800,color:"white",fontSize:13}}>{titulo}</span>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {extraHeader}
-            {(onWA || onWAConPDF) && (
-              <button onClick={handleWA} style={{padding:"7px 16px",borderRadius:8,border:"none",
-                background:"#25D366",color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                📱 WhatsApp
-              </button>
-            )}
-            <button onClick={handleCompartirPDF} style={{padding:"7px 16px",borderRadius:8,border:"none",
-              background:C.morado,color:"white",cursor:"pointer",fontWeight:700,fontSize:12}}>
-              📤 Compartir PDF
-            </button>
-            <button onClick={print} style={{padding:"7px 16px",borderRadius:8,border:"none",
-              background:"white",color:C.azul,cursor:"pointer",fontWeight:700,fontSize:12}}>
-              🖨️ Imprimir
+            {/* Un solo camino para compartir → modal 9a (WhatsApp/Correo/Descargar/Imprimir + mensaje editable) */}
+            <button onClick={()=>setShowCompartir(true)} style={{padding:"7px 16px",borderRadius:8,border:"none",
+              background:"#25D366",color:"#06240F",cursor:"pointer",fontWeight:700,fontSize:12}}>
+              📤 Compartir
             </button>
             <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",
               fontSize:20,cursor:"pointer",color:"white",borderRadius:6,padding:"2px 8px"}}>×</button>
@@ -2120,6 +2180,104 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, p
             {children}
           </div>
         </div>
+      </div>
+      {showCompartir && (
+        <ModalCompartir titulo={titulo} docRef={ref} paciente={paciente}
+          mensajeInicial={mensajeInicial || mensajeCompartir(docTipo, paciente)}
+          filename={fnameDoc} onImprimir={print} onClose={()=>setShowCompartir(false)}/>
+      )}
+    </div>
+  );
+};
+
+// ── Comparador de composición por rango (9c) — tabla multi-fecha + mini gráfica ──
+const ModalComparador = ({p, onClose}) => {
+  const [rango, setRango] = useState("todo");   // todo | 3m | custom
+  const [desde, setDesde] = useState(""); const [hasta, setHasta] = useState("");
+  // Cintura por fecha (consultas[].ca + ef.ca), como en DocProgreso
+  const caByFecha = (()=>{ const m={}; if(p.ef&&p.ef.ca!=null&&p.ef.ca!=="") m[normDate(p.fechaInicio||(p.composicion||[])[0]?.fecha||"")]=p.ef.ca;
+    (p.consultas||[]).forEach(c=>{ if(c.ca!=null&&c.ca!=="") m[normDate(c.fecha)]=c.ca; }); return m; })();
+  let comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
+  const nowTs = Date.now();
+  if(rango==="3m") comps = comps.filter(c=>parseFechaClinica(c.fecha) >= nowTs-90*86400000);
+  else if(rango==="custom"){ const d=desde?parseFechaClinica(desde):0, h=hasta?parseFechaClinica(hasta)+86400000:Infinity; comps = comps.filter(c=>{const t=parseFechaClinica(c.fecha); return t>=d && t<=h;}); }
+  // >5 mediciones → primera + últimas 4 (decisión confirmada); ≤5 → todas
+  const cols = comps.length>5 ? [comps[0], ...comps.slice(-4)] : comps;
+  const fmtCol = (f)=>{ const t=parseFechaClinica(f); if(!t) return f; const d=new Date(t); return isNaN(d)?f:d.toLocaleDateString("es-MX",{day:"numeric",month:"short"}); };
+  const val = (c, k)=>{
+    if(k==="peso")    return (c.peso!=null&&c.peso!=="")?parseFloat(c.peso):null;
+    if(k==="grasa")   return grasaKgDe(c);
+    if(k==="musculo") return (c.musculo!=null&&c.musculo!=="")?parseFloat(c.musculo):null;
+    if(k==="cintura"){ const ca=caByFecha[normDate(c.fecha)]; return (ca!=null&&ca!=="")?parseFloat(ca):null; }
+    if(k==="imc"){ const v=c.imc||calcIMC(c.peso,p.talla); return v?parseFloat(v):null; }
+    return null;
+  };
+  const METRICAS=[
+    {k:"peso",label:"Peso (kg)",baja:true,bg:"transparent",act:"var(--gft-text)"},
+    {k:"grasa",label:"Grasa (kg)",baja:true,bg:"color-mix(in srgb, var(--gft-warning) 5%, transparent)",act:"#E8A33F"},
+    {k:"musculo",label:"Músculo (kg)",baja:false,bg:"color-mix(in srgb, #7B3F3F 8%, transparent)",act:"#C87A7A"},
+    {k:"cintura",label:"Cintura (cm)",baja:true,bg:"transparent",act:"var(--gft-text)"},
+    {k:"imc",label:"IMC",baja:true,bg:"color-mix(in srgb, var(--gft-accent) 5%, transparent)",act:"var(--gft-text)"},
+  ];
+  const fmtNum = (v)=> v==null?"—":(Number.isInteger(v)?String(v):v.toFixed(1));
+  const totalDe = (m)=>{ const vs=cols.map(c=>val(c,m.k)).filter(v=>v!=null); if(vs.length<2) return null;
+    const d=parseFloat((vs[vs.length-1]-vs[0]).toFixed(1)); const bueno=m.baja?d<0:d>0;
+    return { d, txt:(d>0?"+":d<0?"−":"")+Math.abs(d), col: d===0?"var(--gft-text-muted)":(bueno?"var(--gft-success-text)":"#E8A33F") }; };
+  const rangoTxt = cols.length ? `${fmtCol(cols[0].fecha)} → ${fmtCol(cols[cols.length-1].fecha)}` : "sin mediciones";
+  // Mini gráfica: peso por columna (o grasa si no hay peso)
+  const barVals = cols.map(c=>val(c,"peso"));
+  const validBars = barVals.filter(v=>v!=null);
+  const bMax = validBars.length?Math.max(...validBars):1, bMin = validBars.length?Math.min(...validBars):0;
+  const barPct = (v)=> v==null?0:(bMax===bMin?100:Math.round(35+(v-bMin)/(bMax-bMin)*65));
+  const CHIP=(id,label)=>(<span key={id} onClick={()=>setRango(id)} style={{fontSize:11.5,fontWeight:600,padding:"6px 12px",borderRadius:20,cursor:"pointer",
+    background:rango===id?"var(--gft-accent)":"var(--gft-surface)",border:rango===id?"1px solid var(--gft-accent)":"1px solid var(--gft-border-md)",color:rango===id?"#fff":"var(--gft-text-2)"}}>{label}</span>);
+  const gridCols = `1.4fr repeat(${Math.max(cols.length,1)}, 1fr) 0.9fr`;
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:16,width:"100%",maxWidth:860,maxHeight:"92vh",overflow:"auto",padding:"22px 26px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18,flexWrap:"wrap"}}>
+          <div style={{fontSize:16,fontWeight:700,color:"var(--gft-text)",textTransform:"capitalize"}}>Evolución por rango · {rangoTxt}</div>
+          <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            {CHIP("3m","Últimos 3 meses")}{CHIP("todo","Todo el tratamiento")}{CHIP("custom","Personalizado")}
+            <button onClick={onClose} style={{background:"none",border:"none",color:"var(--gft-text-muted)",fontSize:20,cursor:"pointer",marginLeft:4}}>×</button>
+          </div>
+        </div>
+        {rango==="custom" && (
+          <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16,fontSize:12,color:"var(--gft-text-2)"}}>
+            <span>Desde</span><input type="date" value={desde} onChange={e=>setDesde(e.target.value)} style={{background:"var(--gft-surface2)",border:"1px solid var(--gft-border-md)",borderRadius:8,color:"var(--gft-text)",padding:"6px 8px",fontSize:12}}/>
+            <span>Hasta</span><input type="date" value={hasta} onChange={e=>setHasta(e.target.value)} style={{background:"var(--gft-surface2)",border:"1px solid var(--gft-border-md)",borderRadius:8,color:"var(--gft-text)",padding:"6px 8px",fontSize:12}}/>
+          </div>
+        )}
+        {cols.length<2 ? (
+          <div style={{padding:"30px",textAlign:"center",color:"var(--gft-text-muted)",fontSize:13}}>Se necesitan al menos 2 mediciones en el rango para comparar.</div>
+        ) : (<>
+          <div style={{overflow:"auto",border:"1px solid var(--gft-border)",borderRadius:14}}>
+            <div style={{minWidth:520}}>
+              <div style={{display:"grid",gridTemplateColumns:gridCols,background:"var(--gft-surface2)"}}>
+                <div className="d" style={{padding:"11px 14px",fontSize:10,fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",color:"var(--gft-text-muted)"}}>Métrica</div>
+                {cols.map((c,i)=>(<div key={i} className="d" style={{padding:"11px 8px",fontSize:11,fontWeight:700,textAlign:"center",color:i===cols.length-1?"var(--gft-accent-text)":"var(--gft-text-muted)"}}>{fmtCol(c.fecha)}</div>))}
+                <div className="d" style={{padding:"11px 14px",fontSize:10,fontWeight:700,letterSpacing:".05em",textTransform:"uppercase",color:"var(--gft-text-muted)",textAlign:"right"}}>Total</div>
+              </div>
+              {METRICAS.map((m)=>{ const tot=totalDe(m); return (
+                <div key={m.k} style={{display:"grid",gridTemplateColumns:gridCols,borderTop:"1px solid var(--gft-border)",alignItems:"center",background:m.bg}}>
+                  <div style={{padding:"12px 14px",fontSize:12.5,fontWeight:600,color:"var(--gft-text)"}}>{m.label}</div>
+                  {cols.map((c,i)=>{ const v=val(c,m.k); return (<div key={i} className="d" style={{padding:"12px 8px",fontSize:16,fontWeight:700,textAlign:"center",color:i===cols.length-1?m.act:"var(--gft-text-2)"}}>{fmtNum(v)}</div>); })}
+                  <div className="d" style={{padding:"12px 14px",fontSize:15,fontWeight:700,textAlign:"right",color:tot?tot.col:"var(--gft-text-muted)"}}>{tot?tot.txt:"—"}</div>
+                </div>
+              ); })}
+            </div>
+          </div>
+          {/* Mini gráfica de barras (peso por fecha) */}
+          <div style={{marginTop:16,display:"flex",alignItems:"flex-end",gap:14,height:88,padding:"0 6px"}}>
+            {cols.map((c,i)=>{ const ultima=i===cols.length-1; return (
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5,height:"100%",justifyContent:"flex-end"}} title={val(c,"peso")!=null?`${val(c,"peso")} kg`:""}>
+                <div style={{width:"100%",maxWidth:44,height:`${barPct(val(c,"peso"))}%`,borderRadius:"5px 5px 0 0",
+                  background:ultima?"var(--gft-accent)":"color-mix(in srgb, var(--gft-accent) 32%, transparent)",boxShadow:ultima?"0 0 16px rgba(66,135,245,.4)":"none"}}/>
+                <span className="d" style={{fontSize:10,color:ultima?"var(--gft-accent-text)":"var(--gft-text-muted)",fontWeight:ultima?700:400}}>{fmtCol(c.fecha)}</span>
+              </div>
+            ); })}
+          </div>
+        </>)}
       </div>
     </div>
   );
@@ -5428,6 +5586,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [showLabs, setShowLabs] = useState(false);
   const [showLabsReset, setShowLabsReset] = useState(false); // selector 1/2/3 meses para reiniciar conteo de labs
   const [trendMetric, setTrendMetric] = useState("Peso");    // métrica de la gráfica de tendencia: Peso | % Grasa | Músculo
+  const [showComparador, setShowComparador] = useState(false);   // modal comparador por rango (9c)
   const [showSegmentos, setShowSegmentos] = useState(false); // segmentales plegados por defecto
   const [showAgenda, setShowAgenda] = useState(false);
   const [showEditPac, setShowEditPac] = useState(false);
@@ -5950,7 +6109,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                     return (
                       <div style={{background:"var(--gft-surface2)",borderRadius:12,padding:14,border:"1px solid var(--gft-border)",marginBottom:16}}>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-                          <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text-2)"}}>Tendencia</div>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text-2)"}}>Tendencia</div>
+                            <button onClick={()=>setShowComparador(true)} className="gft-btn gft-btn--secondary gft-btn--sm" style={{fontSize:11}}>⇄ Comparar evolución</button>
+                          </div>
                           <div style={{display:"flex",gap:4}}>
                             {opciones.map(o=>(
                               <button key={o.k} onClick={()=>setTrendMetric(o.k)}
@@ -6577,6 +6739,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         onClose={()=>setAgendarCita(null)} onCreada={()=>{setAgendarCita(null); setCitasRefresh(k=>k+1);}}/>}
       {showR && <ModalReceta p={p} firmaB64={firmaB64} onClose={()=>setShowR(false)} onSave={addReceta}/>}
       {showL && <ModalLabs p={p} firmaB64={firmaB64} onClose={()=>setShowL(false)} onSave={addLabs}/>}
+      {showComparador && <ModalComparador p={p} onClose={()=>setShowComparador(false)}/>}
       {/* Entry unificado (Fase C): botón "Agendar" del expediente. ModalAgenda (viejo) ya no se usa. */}
       {showAgenda && (
         <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
@@ -6599,6 +6762,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         <PrintModal
           titulo={{hc:"Historia Clínica",expediente:"Expediente Completo",nota:"Nota de Evolución",receta:"Receta Médica",labs:"Orden de Labs",progreso:"Reporte de Progreso"}[doc.tipo]}
           onClose={()=>{setDoc(null); setConFirmaLabs(false);}}
+          paciente={p} docTipo={doc.tipo}
           onWAConPDF={doc.tipo==="progreso"?waProgresoConPDF:null}
           pdfFilename={doc.tipo==="progreso"?`Reporte_${sanitizeFilename(p.nombre||"Paciente")}_${new Date().toLocaleDateString("es-MX",{year:"numeric",month:"2-digit",day:"2-digit"}).replace(/\//g,"-")}.pdf`:undefined}
           extraHeader={doc.tipo==="labs" && firmaB64 ? (
@@ -6739,7 +6903,7 @@ const OrdenRapida = ({onClose, firmaB64}) => {
       )}
 
       {paso==="pdf" && (
-        <PrintModal onClose={()=>setPaso("form")} titulo="Orden de laboratorios">
+        <PrintModal onClose={()=>setPaso("form")} titulo="Orden de laboratorios" paciente={pacFake} docTipo="labs">
           <DocLabs p={pacFake} labs={{fecha: hoy(), estudios: labsFinal, notas: obs}} firmaB64={conFirma?firmaB64:null}/>
         </PrintModal>
       )}
