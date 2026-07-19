@@ -5351,10 +5351,23 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       </div>
     );
   })() : null;
-  const proxCitas = (p.consultas||[])
-    .map(c=>({fecha:c.proxCita,p:c}))
-    .filter(x=>x.fecha && diasHasta(x.fecha)>=0)
-    .sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
+  // Próxima cita REAL desde la tabla `citas` (agenda v2), NO el campo legacy p.consultas[].proxCita
+  // (mismo patrón que DocProgreso). Solo la próxima cita FUTURA (inicio > ahora) y no cancelada.
+  const [proxCitaV2, setProxCitaV2] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    if (!p?.id) { setProxCitaV2(null); return; }
+    listarCitas({ desde: new Date().toISOString() })
+      .then(cs => { if (!vivo) return;
+        const fut = (cs||[])
+          .filter(c => c.pacienteId===p.id && c.estado!=="cancelada" && new Date(c.inicio).getTime() > Date.now())
+          .sort((a,b) => new Date(a.inicio) - new Date(b.inicio));
+        setProxCitaV2(fut[0] || null);
+      })
+      .catch(() => { if (vivo) setProxCitaV2(null); });
+    return () => { vivo = false; };
+  }, [p?.id]);
+  const proxCitaFecha = proxCitaV2 ? isoAInputsHmo(proxCitaV2.inicio).fecha : null;
 
   const _nLabs = (p.resultadosLabs||[]).length + (p.laboratorios||[]).length;
   const TABS = [
@@ -5612,9 +5625,9 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             <button className="gft-action-btn" onClick={()=>setShowAgenda(true)}>📅 Agendar</button>
             <button className="gft-action-btn" onClick={()=>setShowL(true)}>🧪 Labs</button>
             <button className="gft-action-btn" onClick={()=>setShowLabs(true)}>📄 PDF labs</button>
-            {proxCitas[0]&&(
+            {proxCitaFecha&&(
               <button className="gft-action-btn" style={{color:"var(--gft-accent)",borderColor:"var(--gft-accent-dim)"}}>
-                📅 {fmtF(proxCitas[0].fecha)} · {diasHasta(proxCitas[0].fecha)}d
+                📅 {fmtF(proxCitaFecha)} · {diasHasta(proxCitaFecha)}d
               </button>
             )}
           </div>
@@ -5742,10 +5755,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                   {/* Próxima cita */}
                   <div className="gft-panel" style={{marginBottom:0}}>
                     <div className="gft-panel__header"><div className="gft-panel__title">Próxima cita</div></div>
-                    {proxCitas[0] ? (
+                    {proxCitaFecha ? (
                       <div>
-                        <div style={{fontFamily:"var(--gft-font-data)",fontSize:20,fontWeight:700,color:"var(--gft-accent)"}}>{fmtF(proxCitas[0].fecha)}</div>
-                        <div style={{fontSize:12,color:"var(--gft-text-muted)",marginTop:2}}>En {diasHasta(proxCitas[0].fecha)} día(s)</div>
+                        <div style={{fontFamily:"var(--gft-font-data)",fontSize:20,fontWeight:700,color:"var(--gft-accent)"}}>{fmtF(proxCitaFecha)}</div>
+                        <div style={{fontSize:12,color:"var(--gft-text-muted)",marginTop:2}}>En {diasHasta(proxCitaFecha)} día(s)</div>
                       </div>
                     ) : (
                       <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowAgenda(true)}>📅 Agendar</button>
