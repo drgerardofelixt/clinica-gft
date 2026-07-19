@@ -2408,13 +2408,14 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
       </div>
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
-        <div style={{fontWeight:800,fontSize:14,color:C.azul,letterSpacing:0.3}}>INDICACIONES MÉDICAS</div>
+        <div style={{fontWeight:800,fontSize:16,color:C.azul,letterSpacing:0.3}}>Receta médica</div>
         <div style={{fontSize:11,color:"#64748B"}}>Fecha: <b style={{color:C.texto}}>{fmtFecha(rec.fecha)}</b></div>
       </div>
       <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#1D9E75)",borderRadius:1,marginBottom:14}}/>
 
       {/* Contenido — ocupa el espacio disponible entre header y firma */}
       <div style={{flex:1}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.azul,marginBottom:8}}>Indicaciones médicas</div>
         {isGlp1&&(
           <div style={{marginBottom:8}}>
             <div style={{fontWeight:700,fontSize:13,marginBottom:3}}>1. {rec.med||"—"}</div>
@@ -2452,7 +2453,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
         )}
         {rec.proxCita&&(
           <div style={{marginTop:10,fontSize:11,color:C.suave}}>
-            <b>Próxima cita:</b> {rec.proxCita}
+            <b>Próxima cita:</b> {new Date(rec.proxCita+"T00:00:00").toLocaleDateString("es-MX",{day:"numeric",month:"long",year:"numeric"})}{rec.proxHora?`, ${rec.proxHora} hrs`:""}
           </div>
         )}
       </div>
@@ -2514,13 +2515,16 @@ const DocLabs = ({p, labs={}, firmaB64}) => {
     </div>
     <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#1D9E75)",borderRadius:1,marginBottom:14}}/>
 
-    <div style={{fontSize:12,fontWeight:700,marginBottom:10,color:C.azul}}>Estudios solicitados:</div>
+    <div style={{fontSize:12,fontWeight:700,marginBottom:10,color:C.azul}}>Realizar los siguientes laboratorios:</div>
 
-    {seleccion ? (
+    {seleccion ? (<>
+      <div style={{fontSize:11,fontWeight:700,color:"#0D8A63",marginBottom:8}}>
+        {({iniciales:"Iniciales",seguimiento:"Seguimiento",personalizado:"Personalizados"}[labs.tipo]||"Estudios")} · {estudios.length} estudio{estudios.length!==1?"s":""}
+      </div>
       <div style={{display:"grid",gridTemplateColumns: estudios.length>2?"1fr 1fr":"1fr",gap:8}}>
         {estudios.map((e,i)=><FilaSel key={i} nombre={e}/>)}
       </div>
-    ) : (
+    </>) : (
       <>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:28,rowGap:0}}>
           {catalogo.map((e,i)=><Casilla key={i} nombre={e} marcado={estudios.includes(e)}/>)}
@@ -2536,8 +2540,9 @@ const DocLabs = ({p, labs={}, firmaB64}) => {
     {/* Indicaciones de ayuno (default clínico estándar) + notas del médico */}
     <div style={{marginTop:14,padding:"10px 12px",background:"#F4F6FB",borderRadius:6,
       border:"1px solid #E2E8F0",fontSize:10.5}}>
-      <b style={{color:C.azul}}>Indicaciones de ayuno:</b> Ayuno de 8 a 12 horas (puede tomar agua). Evite ejercicio intenso y alcohol 24 h antes de la toma.
-      {labs.notas && <div style={{marginTop:5}}>{labs.notas}</div>}
+      <b style={{color:C.azul}}>Indicaciones:</b> {labs.notas
+        ? labs.notas
+        : "Ayuno de 8 a 12 horas (puede tomar agua). Evite ejercicio intenso y alcohol 24 h antes de la toma."}
     </div>
 
     <div style={{marginTop:"auto"}}>
@@ -4101,7 +4106,7 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
     const t = PLANTILLAS[id];
     setTplId(id);
     setRec({
-      id:Date.now().toString(), fecha:hoy(), proxCita:"",
+      id:Date.now().toString(), fecha:hoy(), proxCita:"", proxHora:"",
       tipo:t.tipo, med:t.med||"",
       instr:t.instr?[...t.instr]:[],
       items:t.items?t.items.map(x=>({...x})):[{n:"",i:""}],
@@ -4211,10 +4216,16 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
                 </div>
                 <div>
                   <label style={{fontSize:11,fontWeight:600,color:C.suave,display:"block",marginBottom:4}}>Próxima cita</label>
-                  <input type="date" value={rec.proxCita}
-                    onChange={e=>upd("proxCita",e.target.value)}
-                    style={{width:"100%",padding:"9px 12px",borderRadius:8,
-                      border:"1.5px solid "+C.grisMedio,fontSize:14,boxSizing:"border-box"}}/>
+                  <div style={{display:"flex",gap:6}}>
+                    <input type="date" value={rec.proxCita}
+                      onChange={e=>upd("proxCita",e.target.value)}
+                      style={{flex:1,minWidth:0,padding:"9px 12px",borderRadius:8,
+                        border:"1.5px solid "+C.grisMedio,fontSize:14,boxSizing:"border-box"}}/>
+                    <input type="time" value={rec.proxHora||""} title="Hora de la próxima cita"
+                      onChange={e=>upd("proxHora",e.target.value)}
+                      style={{width:110,padding:"9px 8px",borderRadius:8,
+                        border:"1.5px solid "+C.grisMedio,fontSize:14,boxSizing:"border-box"}}/>
+                  </div>
                 </div>
               </div>
               {rec.tipo==="glp1" && (
