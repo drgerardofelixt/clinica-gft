@@ -2322,21 +2322,29 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
   const isList = rec.tipo==="lista";
   const isLibre = rec.tipo==="libre";
   const items = (rec.items||[]).filter(m=>m.ok!==false);
+  const trat = (()=>{ const t=formatearTratamiento(tratamientoEfectivo(p)); return t||""; })();
+  // minHeight (no height fijo + overflow:hidden): una receta con muchos medicamentos ya NO se recorta;
+  // como es .pdf-page, construirPDF la escala a una sola hoja si crece.
   return (
     <div className="doc-receta pdf-page" style={{display:"flex",flexDirection:"column",position:"relative",
-      width:"816px",height:"1056px",overflow:"hidden",padding:"72px 80px",boxSizing:"border-box",
-      fontFamily:"Arial,sans-serif",fontSize:12,color:C.texto,lineHeight:1.4}}>
-      {/* Header — logo acotado en altura */}
-      <div style={{paddingBottom:8,marginBottom:10,borderBottom:"2px solid #1B3F8B20"}}>
-        <img src={IMG_LOGO} alt="Logo" style={{height:92,width:"auto",maxWidth:"100%",display:"block"}}/>
+      width:"816px",minHeight:"1056px",padding:"48px 64px",boxSizing:"border-box",
+      fontFamily:"Arial,sans-serif",fontSize:12,color:C.texto,lineHeight:1.45}}>
+      <LogoDoc conCedula={true}/>
+
+      {/* Banda de paciente — gradiente 135deg navy→teal */}
+      <div style={{background:"linear-gradient(135deg,#1B3F8B 0%,#1D9E75 100%)",color:"#fff",
+        borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+        <div style={{fontSize:19,fontWeight:800,letterSpacing:0.2}}>{p.nombre}</div>
+        <div style={{fontSize:11,opacity:0.92,marginTop:3}}>
+          {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, trat||null].filter(Boolean).join("   ·   ")}
+        </div>
       </div>
-      <G4>
-        <CF l="Paciente" v={p.nombre} span={2}/>
-        <CF l="Edad" v={p.edad?p.edad+" años":"—"}/>
-        <CF l="Fecha" v={fmtFecha(rec.fecha)}/>
-      </G4>
-      <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#5BC4A0)",
-        margin:"8px 0 14px",borderRadius:1}}/>
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:12}}>
+        <div style={{fontWeight:800,fontSize:14,color:C.azul,letterSpacing:0.3}}>INDICACIONES MÉDICAS</div>
+        <div style={{fontSize:11,color:"#64748B"}}>Fecha: <b style={{color:C.texto}}>{fmtFecha(rec.fecha)}</b></div>
+      </div>
+      <div style={{height:2,background:"linear-gradient(to right,#1B3F8B,#1D9E75)",borderRadius:1,marginBottom:14}}/>
 
       {/* Contenido — ocupa el espacio disponible entre header y firma */}
       <div style={{flex:1}}>
@@ -2371,8 +2379,8 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
           </div>
         )}
         {rec.notasExtra&&(
-          <div style={{marginTop:10,padding:"8px 10px",background:C.gris,borderRadius:5,fontSize:11}}>
-            {rec.notasExtra}
+          <div style={{marginTop:12,padding:"10px 12px",background:"#F4F6FB",border:"1px solid #E2E8F0",borderRadius:6,fontSize:11}}>
+            <b style={{color:C.azul}}>Indicaciones generales:</b> {rec.notasExtra}
           </div>
         )}
         {rec.proxCita&&(
@@ -2382,26 +2390,11 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
         )}
       </div>
 
-      {/* Firma — empujada hacia abajo con marginTop:auto (sin position:absolute) */}
-      <div style={{marginTop:"auto",paddingTop:16,display:"flex",justifyContent:"center"}}>
-        <div style={{textAlign:"center",minWidth:220}}>
-          {rec.conFirma&&firmaB64 && <img src={firmaB64} alt="Firma"
-            style={{maxHeight:72,marginBottom:4,display:"block",margin:"0 auto 4px"}}/>}
-          <div style={{borderTop:"1px solid #1A2332",paddingTop:5,fontSize:11,color:"#1A2332"}}>
-            <div style={{fontWeight:700}}>Dr. Gerardo Félix Tapia</div>
-            <div style={{fontSize:9,color:"#64748B"}}>Céd. Prof. 15131213 · Reg. SSA: 10361/16</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer — altura natural al final */}
-      <div style={{marginTop:12}}>
-        <div style={{paddingTop:6,borderTop:"1px solid #E2E8F0",
-          textAlign:"center",fontSize:9,color:"#94A3B8"}}>
-          <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-          <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
-        </div>
-        <div style={{maxHeight:40,overflow:"hidden",marginTop:6}}><OlasDoc/></div>
+      {/* Firma / Footer / Olas — componentes compartidos (antes duplicados inline) */}
+      <div style={{marginTop:"auto"}}>
+        <Firma fecha={rec.fecha} firmaB64={rec.conFirma?firmaB64:null}/>
+        <FooterDoc/>
+        <OlasDoc colores={["#1B3F8B","#1D9E75","#1D9E75"]} opac={[0.35,0.22,0.5]}/>
       </div>
     </div>
   );
