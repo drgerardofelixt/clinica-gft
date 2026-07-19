@@ -7185,12 +7185,13 @@ const getAvatarColor = (nombre="") => {
 };
 
 // ── Vista de Calendario completo (mes / semana / día, drag&drop, app + GCal) ──
-const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCancelar, pacById, gcalNode=null, onNueva, rail=null, railMini=null}) => {
+const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCancelar, pacById, gcalNode=null, onNueva, rail=null}) => {
   const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const [vista, setVista] = useState("semana");        // mes | semana | dia
   const [refStr, setRefStr] = useState(() => fmtD(new Date()));
   const [overKey, setOverKey] = useState(null);        // (legacy, sin drag)
-  const [menu, setMenu] = useState(null);              // menú contextual: {cita, x, y}
+  const [menu, setMenu] = useState(null);              // menú contextual de cita: {cita, x, y}
+  const [dayMenu, setDayMenu] = useState(null);        // popup de día: {fecha, x, y} → lista de citas
 
   const ref = new Date(refStr+"T00:00:00");
   const hoyStr = fmtD(new Date());
@@ -7297,7 +7298,10 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
               onClick={()=>{ setRefStr(fechaDia); setVista("dia"); }}
               style={{minHeight:84,border:"1px solid "+(over?"var(--gft-accent)":"var(--gft-border)"),
                 borderRadius:8,padding:5,background:over?"var(--gft-accent-dim)":esHoy?"var(--gft-surface2)":"transparent",cursor:"pointer"}}>
-              <div style={{fontSize:11,fontWeight:esHoy?800:600,color:esHoy?"var(--gft-accent)":"var(--gft-text)",marginBottom:2}}>{i+1}</div>
+              <div onClick={(ev)=>{ ev.stopPropagation(); setDayMenu({fecha:fechaDia, x:ev.clientX, y:ev.clientY}); }}
+                title="Ver citas del día"
+                style={{display:"inline-block",fontSize:11,fontWeight:esHoy?800:600,color:esHoy?"var(--gft-accent)":"var(--gft-text)",
+                  marginBottom:2,cursor:"pointer",padding:"1px 5px",borderRadius:5}}>{i+1}</div>
               {evs.slice(0,3).map(e=><Bloque key={e.key} e={e} compact/>)}
               {evs.length>3 && <div style={{fontSize:9,color:"var(--gft-text-muted)",fontWeight:700}}>+{evs.length-3} más</div>}
             </div>
@@ -7322,7 +7326,8 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
           {fechas.map(f=>{
             const d=new Date(f+"T00:00:00"); const esHoy=f===hoyStr;
             return (
-              <div key={f} style={{textAlign:"center",padding:"7px 0",borderLeft:"1px solid var(--gft-border)"}}>
+              <div key={f} onClick={(ev)=>setDayMenu({fecha:f, x:ev.clientX, y:ev.clientY})} title="Ver citas del día"
+                style={{textAlign:"center",padding:"7px 0",borderLeft:"1px solid var(--gft-border)",cursor:"pointer"}}>
                 <div className="d" style={{fontSize:10,textTransform:"uppercase",letterSpacing:".05em",
                   fontWeight:esHoy?700:400,color:esHoy?"var(--gft-accent)":"var(--gft-text-muted)"}}>{DIAS_SEM[d.getDay()]}</div>
                 {esHoy
@@ -7400,13 +7405,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
         <div className="gft-agenda-v2__grid">
           {vista==="mes" ? renderMes() : vista==="semana" ? renderSemana() : renderDia()}
         </div>
-        {(railMini || rail) && (
-          <div className="gft-agenda-v2__rail">
-            {/* El mini-mes es redundante en vista Mes (la pantalla ya muestra el mes) → se oculta ahí */}
-            {vista!=="mes" && railMini}
-            {rail}
-          </div>
-        )}
+        {rail && <div className="gft-agenda-v2__rail">{rail}</div>}
       </div>
 
       {/* Menú contextual (referencia 5a): popover con íconos SVG */}
@@ -7450,6 +7449,47 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
                   {it.icon}{it.l}
                 </div>
               ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Popup del día (clic en el número/encabezado del día): lista TODAS las citas de ese día.
+          Clic en una cita de la lista → abre el mismo menú de 4 acciones (Reagendar/Recordatorio/Editar/Cancelar). */}
+      {dayMenu && (()=>{
+        const cerrar = () => setDayMenu(null);
+        const evs = evDe(dayMenu.fecha);
+        const d = new Date(dayMenu.fecha+"T00:00:00");
+        const titulo = isNaN(d) ? dayMenu.fecha : d.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
+        const w = 230;
+        const x = Math.min(dayMenu.x, (typeof window!=="undefined"?window.innerWidth:900)-w-8);
+        const y = Math.min(dayMenu.y, (typeof window!=="undefined"?window.innerHeight:700)-Math.min(360, 92+evs.length*40)-8);
+        return (
+          <div style={{position:"fixed",inset:0,zIndex:9000}} onClick={cerrar}>
+            <div onClick={e=>e.stopPropagation()} style={{position:"fixed",left:x,top:Math.max(8,y),width:w,maxHeight:360,overflowY:"auto",
+              background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:11,
+              boxShadow:"0 18px 44px rgba(0,0,0,.6)",padding:6}}>
+              <div style={{padding:"8px 10px 9px",borderBottom:"1px solid var(--gft-border)",marginBottom:5}}>
+                <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text)",textTransform:"capitalize",
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{titulo}</div>
+                <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{evs.length} cita{evs.length!==1?"s":""}</div>
+              </div>
+              {evs.length===0
+                ? <div style={{padding:"10px",fontSize:12,color:"var(--gft-text-muted)",textAlign:"center"}}>Sin citas este día</div>
+                : evs.map(e=>{
+                    const suf = TIPO_SUF[e.tipo] || "";
+                    return (
+                      <div key={e.key} onClick={(ev)=>{ setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); setDayMenu(null); }}
+                        style={{display:"flex",alignItems:"center",gap:9,padding:"7px 10px",borderRadius:8,cursor:"pointer"}}
+                        onMouseEnter={ev=>ev.currentTarget.style.background="var(--gft-surface2)"}
+                        onMouseLeave={ev=>ev.currentTarget.style.background="transparent"}>
+                        <span className="d" style={{fontSize:13,fontWeight:700,color:e.color,minWidth:42}}>{e.hora}</span>
+                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {e.nombre}{suf && <span style={{color:"var(--gft-text-muted)",fontWeight:500}}> · {suf}</span>}</span>
+                        <span style={{color:"var(--gft-text-muted)",fontSize:14,flexShrink:0}}>›</span>
+                      </div>
+                    );
+                  })}
             </div>
           </div>
         );
@@ -8774,119 +8814,6 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
   const fechaHoy = hoy.toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 
-  const CalendarioGrid = () => {
-    const mesRef = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
-    return (
-    <div className="gft-card" style={{padding:"14px 12px"}}>
-      {/* Título del mes + navegación ◀▶ (re-cableada tras la consolidación de Fase 5) */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-        <button onClick={()=>setMesOffset(o=>o-1)} className="gft-btn gft-btn--secondary gft-btn--sm" style={{padding:"3px 9px"}} title="Mes anterior">◀</button>
-        <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text)",textTransform:"capitalize"}}>
-          {mesRef.toLocaleDateString("es-MX",{month:"long",year:"numeric"})}
-        </div>
-        <button onClick={()=>setMesOffset(o=>o+1)} className="gft-btn gft-btn--secondary gft-btn--sm" style={{padding:"3px 9px"}} title="Mes siguiente">▶</button>
-      </div>
-      <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap"}}>
-        {[{color:COLOR_TIPO_CITA.primera_vez,label:"Primera vez"},{color:COLOR_TIPO_CITA.seguimiento,label:"Seguimiento"}].map(l=>(
-          <div key={l.label} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"var(--gft-text-muted)"}}>
-            <div style={{width:8,height:8,borderRadius:"50%",background:l.color,flexShrink:0}}/>
-            {l.label}
-          </div>
-        ))}
-      </div>
-      <div className="gft-cal-scroll">
-        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
-          {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d,i)=>(
-            <div key={i} style={{textAlign:"center",fontSize:9,fontWeight:700,
-              color:i===0||i===6?"var(--gft-danger)":"var(--gft-text-muted)",padding:"4px 0"}}>{d}</div>
-          ))}
-        </div>
-        {(()=>{
-          const mesR = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
-          const primerD = mesR.getDay();
-          const diasM = new Date(mesR.getFullYear(), mesR.getMonth()+1, 0).getDate();
-          const hoyStr2 = hoy.toISOString().split("T")[0];
-          return (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:8}}>
-              {Array.from({length:primerD}).map((_,i)=><div key={"e"+i}/>)}
-              {Array.from({length:diasM}).map((_,i)=>{
-                const dia = i+1;
-                const mesR2 = new Date(hoy.getFullYear(), hoy.getMonth()+mesOffset, 1);
-                const fechaDia = `${mesR2.getFullYear()}-${String(mesR2.getMonth()+1).padStart(2,"0")}-${String(dia).padStart(2,"0")}`;
-                const esHoy = fechaDia===hoyStr2;
-                const esSel = fechaDia===diaSel;
-                const citas = (citasV2Dia[fechaDia]||[]).slice().sort(ordCita);
-                const nCitas = citas.length;
-                return (
-                  <div key={dia} onClick={()=>nCitas>0?setDiaSel(esSel?null:fechaDia):null}
-                    style={{minHeight:50,borderRadius:6,padding:"3px",cursor:nCitas>0?"pointer":"default",
-                      background:esSel?"var(--gft-accent-dim)":esHoy?"var(--gft-accent)":nCitas>0?"rgba(59,130,246,0.08)":"var(--gft-surface2)",
-                      border:"1px solid "+(esSel?"var(--gft-accent)":esHoy?"var(--gft-accent)":nCitas>0?"rgba(59,130,246,0.3)":"var(--gft-border)"),
-                      transition:"all 0.12s"}}>
-                    <div style={{textAlign:"center",fontSize:11,fontWeight:esHoy?800:500,
-                      color:esHoy?"white":esSel?"var(--gft-accent)":nCitas>0?"var(--gft-accent)":"var(--gft-text-muted)"}}>{dia}</div>
-                    {nCitas>0 && (
-                      <div style={{marginTop:2,display:"flex",flexDirection:"column",gap:1}}>
-                        {citas.slice(0,2).map((c,ci)=>{
-                          const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-success)";
-                          const {hora}=isoAInputsHmo(c.inicio);
-                          return (
-                            <div key={ci} style={{fontSize:7,lineHeight:1.3,padding:"1px 3px",borderRadius:2,
-                              background:c.tipo==="primera_vez"?"var(--gft-accent-dim)":"var(--gft-success-dim)",
-                              color:chipColor,fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                              {hora?hora+" ":""}{c.pacienteNombre}
-                            </div>
-                          );
-                        })}
-                        {nCitas>2&&<div style={{fontSize:7,color:"var(--gft-text-muted)",textAlign:"center"}}>+{nCitas-2}</div>}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
-      </div>
-      {diaSel && (
-        <div style={{background:"var(--gft-surface2)",borderRadius:10,padding:14,border:"1px solid var(--gft-border-md)",marginTop:8}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <div style={{fontWeight:700,color:"var(--gft-text)",fontSize:12}}>
-              {new Date(diaSel+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})}
-              {" "}· {(citasV2Dia[diaSel]||[]).length} cita(s)
-            </div>
-            <button onClick={()=>setDiaSel(null)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--gft-text-muted)",fontSize:18}}>✕</button>
-          </div>
-          {(citasV2Dia[diaSel]||[]).slice().sort(ordCita).map((c)=>{
-            const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-success)";
-            const {hora}=isoAInputsHmo(c.inicio);
-            const medTxt = c.medicamento ? [c.medicamento,c.dosis].filter(Boolean).join(" ") : "";
-            const pac = pacById(c.pacienteId);
-            return (
-              <div key={c.id} style={{background:"var(--gft-surface)",borderRadius:10,padding:"10px 14px",
-                marginBottom:8,border:"1px solid var(--gft-border)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <div style={{minWidth:44,textAlign:"center",fontFamily:"var(--gft-font-data)",fontSize:18,fontWeight:700,color:chipColor}}>{hora||"—"}</div>
-                <div style={{flex:1,minWidth:110}}>
-                  <div style={{fontWeight:700,fontSize:13,color:"var(--gft-text)"}}>{c.pacienteNombre}</div>
-                  <div style={{marginTop:4,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                    <span style={{background:c.tipo==="primera_vez"?"var(--gft-accent-dim)":"var(--gft-success-dim)",
-                      color:chipColor,borderRadius:10,padding:"2px 9px",fontSize:10,fontWeight:700}}>{TIPO_ABREV_CITA[c.tipo]||c.tipo}</span>
-                    {medTxt && <span style={{fontSize:10,color:"var(--gft-text-muted)"}}>{medTxt}</span>}
-                    {c.origen && <span style={{fontSize:10,color:"#92400E",fontWeight:700}}>{c.origen}</span>}
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {pac && <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>{onVer(pac);setDiaSel(null);}}>Ver expediente</button>}
-                  <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>setCitaEditar(c)}>✏️ Editar</button>
-                  <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}} onClick={()=>borrarCitaV2(c)}>🗑️</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  ); };
 
   const topbarTitle = contentView==="dash"?"Buenos días, Dr. Félix":
                       contentView==="calendario"?"Agenda":
@@ -9420,9 +9347,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 {gcalAuthed && <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}} onClick={onGcalDisconnect}>Desconectar</button>}
               </div>
             );
-            // Mini-mes (con preview + detalle): útil en Día/Semana; se oculta en Mes (Calendario decide por su `vista`)
-            const railMini = <CalendarioGrid/>;
-            // Rail derecho: Hoy · Mañana + recordatorios (siempre visibles)
+            // Rail: Hoy · Mañana + recordatorios. El mini-mes se eliminó; ver el detalle de un día
+            // ahora es clic en el número/encabezado del día dentro del calendario principal.
             const rail = (
               <>
                 <div className="gft-panel" style={{marginBottom:0}}>
@@ -9461,7 +9387,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               <Calendario citasV2={citasV2} ocupado={ocupadoV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}
                 onRecordar={(c)=>{ const pac=pacById(c.pacienteId); const {fecha,hora}=isoAInputsHmo(c.inicio); enviarRecordatorio({pac:pac||{nombre:c.pacienteNombre}, fecha, hora}); }}
                 onCancelar={(c)=>cancelarCitaV2(c)}
-                gcalNode={gcalNode} onNueva={()=>onAgendar&&onAgendar(null)} rail={rail} railMini={railMini}/>
+                gcalNode={gcalNode} onNueva={()=>onAgendar&&onAgendar(null)} rail={rail}/>
             );
           })()}
 
