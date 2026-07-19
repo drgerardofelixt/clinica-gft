@@ -5353,7 +5353,9 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   })() : null;
   // Próxima cita REAL desde la tabla `citas` (agenda v2), NO el campo legacy p.consultas[].proxCita
   // (mismo patrón que DocProgreso). Solo la próxima cita FUTURA (inicio > ahora) y no cancelada.
+  // Se recarga al cambiar de paciente (p?.id) y tras agendar desde el expediente (citasRefresh).
   const [proxCitaV2, setProxCitaV2] = useState(null);
+  const [citasRefresh, setCitasRefresh] = useState(0);
   useEffect(() => {
     let vivo = true;
     if (!p?.id) { setProxCitaV2(null); return; }
@@ -5366,7 +5368,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       })
       .catch(() => { if (vivo) setProxCitaV2(null); });
     return () => { vivo = false; };
-  }, [p?.id]);
+  }, [p?.id, citasRefresh]);
   const proxCitaFecha = proxCitaV2 ? isoAInputsHmo(proxCitaV2.inicio).fecha : null;
 
   const _nLabs = (p.resultadosLabs||[]).length + (p.laboratorios||[]).length;
@@ -6328,13 +6330,13 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       {/* Entry unificado (Fase C): "Siguiente →" de la consulta agenda la próxima cita.
           ModalAgendarCita (viejo) queda en el código pero ya no se usa. */}
       {agendarCita && <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
-        onClose={()=>setAgendarCita(null)} onCreada={()=>setAgendarCita(null)}/>}
+        onClose={()=>setAgendarCita(null)} onCreada={()=>{setAgendarCita(null); setCitasRefresh(k=>k+1);}}/>}
       {showR && <ModalReceta p={p} firmaB64={firmaB64} onClose={()=>setShowR(false)} onSave={addReceta}/>}
       {showL && <ModalLabs p={p} firmaB64={firmaB64} onClose={()=>setShowL(false)} onSave={addLabs}/>}
       {/* Entry unificado (Fase C): botón "Agendar" del expediente. ModalAgenda (viejo) ya no se usa. */}
       {showAgenda && (
         <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
-          onClose={()=>setShowAgenda(false)} onCreada={()=>setShowAgenda(false)}/>
+          onClose={()=>setShowAgenda(false)} onCreada={()=>{setShowAgenda(false); setCitasRefresh(k=>k+1);}}/>
       )}
       {showLabs && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
