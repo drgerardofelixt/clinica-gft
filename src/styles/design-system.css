@@ -996,6 +996,14 @@ select.gft-input {
   .gft-pac-hide-sm { display: none; }
 }
 
+/* ── Reportes (5c) — grids responsivos ── */
+.gft-rep-kpis   { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+.gft-rep-charts { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; }
+@media (max-width: 900px) {
+  .gft-rep-kpis   { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .gft-rep-charts { grid-template-columns: 1fr; }
+}
+
 .gft-paciente-actual__metric {
   background: var(--gft-surface2);
   border-radius: 12px;

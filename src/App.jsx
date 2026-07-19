@@ -8573,6 +8573,187 @@ const autogenerarSnapshotFaltante = async () => {
   } catch(e) { console.warn("autogenerar snapshot (no crítico):", e); return false; }
 };
 
+// ── VISTA REPORTES (5c) — resumen ejecutivo de la clínica (KPIs + gráficas + top) ──
+const ReportesView = ({pacientes=[], citasV2=[], onVer}) => {
+  const [periodo, setPeriodo] = useState("trimestre");   // mes | trimestre | año
+  const [exportando, setExportando] = useState(false);
+  const contentRef = useRef(null);
+  const est = calcEstadisticas(pacientes, citasV2);
+  const AMBER="#E8A33F", WINE_TEXT="#C87A7A", TEAL_TEXT="#4FC7A8", BLUE_TEXT="#8DB6FB";
+  const MESES_ABBR=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  const nMeses = periodo==="mes"?1:periodo==="trimestre"?3:12;
+  const periodoLabel = periodo==="mes"?"mes":periodo==="trimestre"?"trimestre":"año";
+  const now = new Date();
+  const startPeriodo = new Date(now.getFullYear(), now.getMonth()-nMeses+1, 1);
+  const startPrev = new Date(now.getFullYear(), now.getMonth()-2*nMeses+1, 1);
+  const tsStart = startPeriodo.getTime(), tsPrevStart = startPrev.getTime(), tsNow = now.getTime();
+  const enRango=(t,a,b)=> t>=a && t<b;
+
+  // Consultas reales (no esSoloCita, con fecha) por timestamp
+  const consultasFechas = [];
+  pacientes.forEach(p=>(p.consultas||[]).forEach(c=>{ if(!c.esSoloCita){ const t=parseFechaClinica(c.fecha); if(t>0) consultasFechas.push(t); }}));
+  const consPeriodo = consultasFechas.filter(t=>enRango(t,tsStart,tsNow+1)).length;
+  const consPrev = consultasFechas.filter(t=>enRango(t,tsPrevStart,tsStart)).length;
+  const consPct = consPrev>0 ? Math.round((consPeriodo-consPrev)/consPrev*100) : null;
+
+  // Pacientes nuevos = primer contacto CLÍNICO en el periodo. Usa la fecha más TEMPRANA
+  // (primera composición / primera consulta / fechaInicio) porque fechaInicio suele ser la fecha
+  // de captura del registro, no el inicio real; el mínimo evita contar como "nuevo" a un histórico.
+  const inicioDe=(p)=>{
+    const comps=[...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
+    const cand=[comps[0]?.fecha, ...[...(p.consultas||[])].filter(c=>!c.esSoloCita).map(c=>c.fecha), p.fechaInicio].filter(Boolean);
+    const ts=cand.map(parseFechaClinica).filter(t=>t>0);
+    return ts.length?Math.min(...ts):0;
+  };
+  const nuevosPeriodo = pacientes.filter(p=>{const t=inicioDe(p); return t>0 && enRango(t,tsStart,tsNow+1);}).length;
+  const nuevosPrev = pacientes.filter(p=>{const t=inicioDe(p); return t>0 && enRango(t,tsPrevStart,tsStart);}).length;
+  const nuevosDif = nuevosPeriodo - nuevosPrev;
+
+  // Peso perdido total acumulado (Σ primer−último de todos los pacientes, solo positivos)
+  let pesoPerdido = 0;
+  pacientes.forEach(p=>{ const comps=[...(p.composicion||[])].filter(c=>c.peso).sort(porFechaClinica);
+    if(comps.length>=2){ const d=parseFloat(comps[0].peso)-parseFloat(comps[comps.length-1].peso); if(!isNaN(d)&&d>0) pesoPerdido+=d; }});
+  pesoPerdido = Math.round(pesoPerdido);
+
+  // Adherencia GLP-1 = pacientes GLP-1 activos (60d) ÷ total GLP-1  [decisión confirmada]
+  const glp1Tot = est.tratTotales.moun + est.tratTotales.weg;
+  const glp1Act = est.tratActivos.moun + est.tratActivos.weg;
+  const adherencia = glp1Tot>0 ? Math.round(glp1Act/glp1Tot*100) : 0;
+
+  // Consultas por mes — últimos 6 meses
+  const barMeses = [];
+  for(let i=5;i>=0;i--){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1); const y=d.getFullYear(), m=d.getMonth();
+    const a=new Date(y,m,1).getTime(), b=new Date(y,m+1,1).getTime();
+    barMeses.push({ label:MESES_ABBR[m], n: consultasFechas.filter(t=>t>=a&&t<b).length }); }
+  const maxBar = Math.max(1, ...barMeses.map(b=>b.n));
+
+  // Distribución por tratamiento (Wegovy→Semaglutida, Mounjaro→Tirzepatida, sin med→dieta)
+  const dist = [
+    {label:"Semaglutida", n:est.tratTotales.weg, color:"#27A98A"},
+    {label:"Tirzepatida", n:est.tratTotales.moun, color:"#4287F5"},
+    {label:"Solo dieta / hábitos", n:est.tratTotales.sinMed, color:"#E08910"},
+  ];
+  const distTotal = dist.reduce((a,d)=>a+d.n,0)||1;
+  const distMax = Math.max(1, ...dist.map(d=>d.n));
+
+  // Top 3 por kg perdido
+  const top = pacientes.map(p=>{
+    const comps=[...(p.composicion||[])].filter(c=>c.peso).sort(porFechaClinica);
+    if(comps.length<2) return null;
+    const kg = parseFloat(comps[0].peso)-parseFloat(comps[comps.length-1].peso);
+    if(isNaN(kg)||kg<=0) return null;
+    const ini = p.fechaInicio||comps[0].fecha;
+    const iniTs = ini?parseFechaClinica(ini):0;
+    const meses = iniTs>0 ? Math.max(1, Math.round((tsNow-iniTs)/(30*86400000))) : null;
+    return { p, kg:parseFloat(kg.toFixed(1)), meses };
+  }).filter(Boolean).sort((a,b)=>b.kg-a.kg).slice(0,3);
+
+  const exportar = async ()=>{
+    if(!contentRef.current || exportando) return; setExportando(true);
+    try{
+      const [{default:jsPDF},{default:html2canvas}]=await Promise.all([import("jspdf"),import("html2canvas")]);
+      const canvas=await html2canvas(contentRef.current,{scale:2,backgroundColor:"#0B111E",logging:false});
+      const pdf=new jsPDF({orientation:canvas.width>=canvas.height?"landscape":"portrait",unit:"px",format:[canvas.width,canvas.height]});
+      pdf.addImage(canvas.toDataURL("image/png"),"PNG",0,0,canvas.width,canvas.height);
+      pdf.save(`reportes-clinica-${periodoLabel}.pdf`);
+    }catch(e){ alert("No se pudo exportar el PDF: "+(e?.message||e)); }
+    finally{ setExportando(false); }
+  };
+
+  const KpiCard = ({label,valor,unidad="",valCol,sub,subCol,barra})=>(
+    <div style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border)",borderRadius:14,padding:"14px 16px",position:"relative",overflow:"hidden"}}>
+      {barra && <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:barra}}/>}
+      <div className="d" style={{fontSize:10,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",color:"var(--gft-text-muted)"}}>{label}</div>
+      <div className="d" style={{fontWeight:700,fontSize:30,lineHeight:1,marginTop:5,color:valCol||"var(--gft-text)"}}>{valor}{unidad&&<span style={{fontSize:14,color:"var(--gft-text-muted)"}}>{unidad}</span>}</div>
+      {sub!=null && <div style={{fontSize:11,fontWeight:600,marginTop:3,color:subCol||"var(--gft-text-muted)"}}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Topbar: toggle periodo + Exportar PDF */}
+      <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16,flexWrap:"wrap"}}>
+        <div className="gft-agenda-toggle">
+          {[["mes","Mes"],["trimestre","Trimestre"],["año","Año"]].map(([v,l])=>(
+            <span key={v} className={periodo===v?"is-active":""} onClick={()=>setPeriodo(v)}>{l}</span>
+          ))}
+        </div>
+        <button onClick={exportar} disabled={exportando} className="gft-btn gft-btn--secondary" style={{marginLeft:"auto",whiteSpace:"nowrap"}}>
+          {exportando ? "Exportando…" : "⬇ Exportar PDF"}
+        </button>
+      </div>
+
+      <div ref={contentRef} style={{background:"var(--gft-bg)"}}>
+        {/* KPIs */}
+        <div className="gft-rep-kpis" style={{marginBottom:16}}>
+          <KpiCard label={`Consultas · ${periodoLabel}`} valor={consPeriodo}
+            sub={consPct!=null?`${consPct>=0?"+":""}${consPct}% vs. anterior`:"— vs. anterior"} subCol={consPct!=null&&consPct>=0?TEAL_TEXT:(consPct!=null?AMBER:"var(--gft-text-muted)")}/>
+          <KpiCard label="Pacientes nuevos" valor={nuevosPeriodo} valCol={BLUE_TEXT}
+            sub={`${nuevosDif>=0?"+":""}${nuevosDif} vs. anterior`} subCol={nuevosDif>=0?TEAL_TEXT:AMBER}/>
+          <KpiCard label="Peso perdido · total" valor={pesoPerdido} unidad=" kg" valCol={WINE_TEXT} barra="#7B3F3F" sub="acumulado pacientes"/>
+          <KpiCard label="Adherencia GLP-1" valor={adherencia} unidad=" %" valCol={TEAL_TEXT} barra="#27A98A" sub="continúan tratamiento" subCol={TEAL_TEXT}/>
+        </div>
+
+        {/* Gráficas: consultas por mes + distribución */}
+        <div className="gft-rep-charts" style={{marginBottom:16}}>
+          <div style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border)",borderRadius:14,padding:"16px 18px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)",marginBottom:14}}>Consultas por mes</div>
+            <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:12,height:150}}>
+              {barMeses.map((b,i)=>{ const ultima=i===barMeses.length-1; const pct=Math.round(b.n/maxBar*100);
+                return (
+                  <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,height:"100%",justifyContent:"flex-end"}} title={`${b.n} consultas`}>
+                    <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)"}}>{b.n}</div>
+                    <div style={{width:"100%",maxWidth:34,height:`${Math.max(b.n>0?6:0,pct)}%`,borderRadius:"6px 6px 0 0",
+                      background:ultima?"linear-gradient(180deg,#5A9BFF,#4287F5)":"linear-gradient(180deg,#4287F5,#2C63C4)",
+                      boxShadow:ultima?"0 0 18px rgba(66,135,245,.4)":"none"}}/>
+                    <span className="d" style={{fontSize:11,fontWeight:ultima?700:400,color:ultima?"var(--gft-accent-text)":"var(--gft-text-muted)"}}>{b.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border)",borderRadius:14,padding:"16px 18px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)",marginBottom:14}}>Distribución por tratamiento</div>
+            <div style={{display:"flex",flexDirection:"column",gap:11}}>
+              {dist.map((d,i)=>(
+                <div key={i}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+                    <span style={{fontWeight:600,color:"var(--gft-text)"}}>{d.label}</span>
+                    <span className="d" style={{color:"var(--gft-text-2)"}}>{d.n} · {Math.round(d.n/distTotal*100)}%</span>
+                  </div>
+                  <div style={{height:8,borderRadius:6,background:"var(--gft-bg)",overflow:"hidden"}}>
+                    <div style={{width:`${Math.round(d.n/distMax*100)}%`,height:"100%",background:d.color,borderRadius:6}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Mejores resultados */}
+        <div style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border)",borderRadius:14,padding:"16px 18px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)",marginBottom:12}}>Mejores resultados del {periodoLabel}</div>
+          {top.length===0
+            ? <div style={{fontSize:12,color:"var(--gft-text-muted)",padding:"6px 0"}}>Aún no hay pacientes con pérdida de peso registrada.</div>
+            : <div style={{display:"grid",gridTemplateColumns:`repeat(${top.length},1fr)`,gap:12}}>
+                {top.map(({p,kg,meses})=>(
+                  <div key={p.id} onClick={()=>onVer&&onVer(p)} style={{display:"flex",alignItems:"center",gap:11,background:"var(--gft-bg)",
+                    border:"1px solid var(--gft-border)",borderRadius:11,padding:"11px 13px",cursor:onVer?"pointer":"default"}}>
+                    <div className={`gft-avatar gft-avatar--sm gft-avatar--${getAvatarColor(p.nombre||"")}`} style={{flexShrink:0,width:34,height:34,fontSize:12}}>{getIniciales(p.nombre)}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
+                      <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)"}}>{meses!=null?`${meses} mes${meses!==1?"es":""}`:"—"}</div>
+                    </div>
+                    <div className="d" style={{fontSize:16,fontWeight:700,color:TEAL_TEXT,flexShrink:0}}>−{kg}</div>
+                  </div>
+                ))}
+              </div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── VISTA PACIENTES (5b) — tabla filtrable/ordenable sobre los pacientes reales ──
 const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
   const [pacBusca, setPacBusca] = useState("");
@@ -8969,7 +9150,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       contentView==="pacientes"?"Pacientes":
                       contentView==="citas"?"Modificar cita":
                       contentView==="admincitas"?"Administrar citas":
-                      contentView==="stats"?"Estadísticas":"Dashboard";
+                      contentView==="stats"?"Reportes":"Dashboard";
 
   return (
     <div className="gft-layout">
@@ -9016,7 +9197,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           <div className="gft-sidebar__section">SISTEMA</div>
           <button className={"gft-sidebar__item"+(contentView==="stats"?" gft-sidebar__item--active":"")}
             onClick={()=>setContentView("stats")}>
-            <span className="gft-sidebar__icon">📊</span>Estadísticas
+            <span className="gft-sidebar__icon">📊</span>Reportes
           </button>
           <button className="gft-sidebar__item" onClick={onAjustes}>
             <span className="gft-sidebar__icon">⚙️</span>Ajustes
@@ -9668,7 +9849,13 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               </div>
             );
             return (
-              <div style={{display:"flex",flexDirection:"column",gap:20}}>
+              <>
+                {/* Vista Reportes (5c) — resumen ejecutivo */}
+                <ReportesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>
+                {/* Detalle técnico + snapshots (conservado, colapsable) */}
+                <details style={{marginTop:22}}>
+                  <summary style={{cursor:"pointer",fontWeight:800,fontSize:14,color:"var(--gft-text-2)",padding:"8px 0"}}>📊 Detalle técnico y snapshots</summary>
+              <div style={{display:"flex",flexDirection:"column",gap:20,marginTop:12}}>
                 {/* 👥 Grupo 1 — Pacientes */}
                 <div>
                   <div style={{fontWeight:800,fontSize:14,color:"var(--gft-text)",marginBottom:10}}>👥 Pacientes</div>
@@ -9866,6 +10053,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                   })()}
                 </div>
               </div>
+                </details>
+              </>
             );
           })()}
 
