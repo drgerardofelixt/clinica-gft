@@ -7185,7 +7185,7 @@ const getAvatarColor = (nombre="") => {
 };
 
 // ── Vista de Calendario completo (mes / semana / día, drag&drop, app + GCal) ──
-const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCancelar, pacById, gcalNode=null, onNueva, rail=null}) => {
+const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCancelar, pacById, gcalNode=null, onNueva, rail=null, railMini=null}) => {
   const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const [vista, setVista] = useState("semana");        // mes | semana | dia
   const [refStr, setRefStr] = useState(() => fmtD(new Date()));
@@ -7284,7 +7284,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
     const primer = new Date(ref.getFullYear(), ref.getMonth(), 1).getDay();
     const dias = new Date(ref.getFullYear(), ref.getMonth()+1, 0).getDate();
     return (
-      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:4}}>
         {DIAS_SEM.map(d=>(<div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",padding:"4px 0"}}>{d}</div>))}
         {Array.from({length:primer}).map((_,i)=><div key={"e"+i}/>)}
         {Array.from({length:dias}).map((_,i)=>{
@@ -7400,7 +7400,13 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
         <div className="gft-agenda-v2__grid">
           {vista==="mes" ? renderMes() : vista==="semana" ? renderSemana() : renderDia()}
         </div>
-        {rail && <div className="gft-agenda-v2__rail">{rail}</div>}
+        {(railMini || rail) && (
+          <div className="gft-agenda-v2__rail">
+            {/* El mini-mes es redundante en vista Mes (la pantalla ya muestra el mes) → se oculta ahí */}
+            {vista!=="mes" && railMini}
+            {rail}
+          </div>
+        )}
       </div>
 
       {/* Menú contextual (referencia 5a): popover con íconos SVG */}
@@ -9414,10 +9420,11 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 {gcalAuthed && <button className="gft-btn gft-btn--ghost gft-btn--sm" style={{color:"var(--gft-danger)"}} onClick={onGcalDisconnect}>Desconectar</button>}
               </div>
             );
-            // Rail derecho: mini-mes (con preview + detalle) · Hoy · Mañana + recordatorios
+            // Mini-mes (con preview + detalle): útil en Día/Semana; se oculta en Mes (Calendario decide por su `vista`)
+            const railMini = <CalendarioGrid/>;
+            // Rail derecho: Hoy · Mañana + recordatorios (siempre visibles)
             const rail = (
               <>
-                <CalendarioGrid/>
                 <div className="gft-panel" style={{marginBottom:0}}>
                   <div className="gft-panel__header"><div className="gft-panel__title">Hoy · {citasV2Hoy.length} cita{citasV2Hoy.length!==1?"s":""}</div></div>
                   {citasV2Hoy.length===0 ? <div className="gft-panel__empty">Sin citas hoy</div>
@@ -9454,7 +9461,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               <Calendario citasV2={citasV2} ocupado={ocupadoV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}
                 onRecordar={(c)=>{ const pac=pacById(c.pacienteId); const {fecha,hora}=isoAInputsHmo(c.inicio); enviarRecordatorio({pac:pac||{nombre:c.pacienteNombre}, fecha, hora}); }}
                 onCancelar={(c)=>cancelarCitaV2(c)}
-                gcalNode={gcalNode} onNueva={()=>onAgendar&&onAgendar(null)} rail={rail}/>
+                gcalNode={gcalNode} onNueva={()=>onAgendar&&onAgendar(null)} rail={rail} railMini={railMini}/>
             );
           })()}
 
