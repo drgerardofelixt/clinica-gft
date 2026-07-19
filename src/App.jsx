@@ -7082,11 +7082,12 @@ const getAvatarColor = (nombre="") => {
 };
 
 // ── Vista de Calendario completo (mes / semana / día, drag&drop, app + GCal) ──
-const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, pacById}) => {
+const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCancelar, pacById}) => {
   const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const [vista, setVista] = useState("semana");        // mes | semana | dia
   const [refStr, setRefStr] = useState(() => fmtD(new Date()));
   const [overKey, setOverKey] = useState(null);        // (legacy, sin drag)
+  const [menu, setMenu] = useState(null);              // menú contextual: {cita, x, y}
 
   const ref = new Date(refStr+"T00:00:00");
   const hoyStr = fmtD(new Date());
@@ -7129,7 +7130,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, pacById}) => {
 
   // Clic en un bloque → abre el editor de la cita (editar/borrar) vía callback del padre.
   const Bloque = ({e, compact}) => (
-    <div onClick={()=>onEditar && onEditar(e.cita)} title={`${e.hora} · ${e.nombre}`}
+    <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}`}
       style={{background:e.color+"22", borderLeft:`3px solid ${e.color}`, borderRadius:6,
         padding:compact?"1px 5px":"3px 7px", margin:"2px 0", cursor:"pointer", fontSize:compact?9:11,
         color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
@@ -7208,13 +7209,14 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, pacById}) => {
 
   const renderSemana = () => {
     const ini = new Date(ref); ini.setDate(ref.getDate() - ((ref.getDay()+6)%7)); // Lunes
-    return renderGrid(Array.from({length:7}).map((_,i)=>{ const d=new Date(ini); d.setDate(ini.getDate()+i); return fmtD(d); }));
+    // 6 días (Lun-Sáb): el consultorio no atiende domingo.
+    return renderGrid(Array.from({length:6}).map((_,i)=>{ const d=new Date(ini); d.setDate(ini.getDate()+i); return fmtD(d); }));
   };
   const renderDia = () => renderGrid([refStr]);
 
   const tituloRango = vista==="mes" ? `${MESES[ref.getMonth()]} ${ref.getFullYear()}`
     : vista==="dia" ? new Date(refStr+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"})
-    : (()=>{ const ini=new Date(ref); ini.setDate(ref.getDate()-((ref.getDay()+6)%7)); const fin=new Date(ini); fin.setDate(ini.getDate()+6);
+    : (()=>{ const ini=new Date(ref); ini.setDate(ref.getDate()-((ref.getDay()+6)%7)); const fin=new Date(ini); fin.setDate(ini.getDate()+5);
         return `${ini.getDate()} ${MESES[ini.getMonth()].slice(0,3)} – ${fin.getDate()} ${MESES[fin.getMonth()].slice(0,3)}`; })();
 
   return (
@@ -7243,6 +7245,42 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, pacById}) => {
       <div style={{maxHeight:"calc(100vh - 220px)",overflowY:"auto"}}>
         {vista==="mes" ? renderMes() : vista==="semana" ? renderSemana() : renderDia()}
       </div>
+
+      {/* Menú contextual al hacer clic en una cita: Reagendar · Recordatorio · Editar · Cancelar */}
+      {menu && (()=>{
+        const c = menu.cita;
+        const cerrar = () => setMenu(null);
+        const items = [
+          {l:"🔄 Reagendar",       fn:()=>{ onEditar&&onEditar(c); }},
+          {l:"📱 Enviar recordatorio", fn:()=>{ onRecordar&&onRecordar(c); }},
+          {l:"✏️ Editar cita",     fn:()=>{ onEditar&&onEditar(c); }},
+          {l:"❌ Cancelar cita",   fn:()=>{ onCancelar&&onCancelar(c); }, danger:true},
+        ];
+        const x = Math.min(menu.x, (typeof window!=="undefined"?window.innerWidth:900)-210);
+        const y = Math.min(menu.y, (typeof window!=="undefined"?window.innerHeight:700)-190);
+        return (
+          <div style={{position:"fixed",inset:0,zIndex:9000}} onClick={cerrar}>
+            <div onClick={e=>e.stopPropagation()} style={{position:"fixed",left:x,top:y,width:200,
+              background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:12,
+              boxShadow:"0 20px 60px rgba(0,0,0,.6)",overflow:"hidden",padding:4}}>
+              <div style={{padding:"8px 10px",fontSize:11,fontWeight:700,color:"var(--gft-text-muted)",
+                overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderBottom:"1px solid var(--gft-border)"}}>
+                {c.pacienteNombre||"Cita"}
+              </div>
+              {items.map(it=>(
+                <button key={it.l} onClick={()=>{ it.fn(); cerrar(); }}
+                  style={{display:"block",width:"100%",textAlign:"left",padding:"9px 10px",borderRadius:8,
+                    background:"transparent",border:"none",cursor:"pointer",fontSize:13,fontWeight:600,
+                    color:it.danger?"var(--gft-danger)":"var(--gft-text)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--gft-surface2)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  {it.l}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -9165,7 +9203,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
           {/* ── VISTA AGENDA ─────────────────────────────────── */}
           {contentView==="calendario" && (
-            <Calendario citasV2={citasV2} ocupado={ocupadoV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}/>
+            <Calendario citasV2={citasV2} ocupado={ocupadoV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}
+              onRecordar={(c)=>{ const pac=pacById(c.pacienteId); const {fecha,hora}=isoAInputsHmo(c.inicio); enviarRecordatorio({pac:pac||{nombre:c.pacienteNombre}, fecha, hora}); }}
+              onCancelar={(c)=>cancelarCitaV2(c)}/>
           )}
 
           {contentView==="agenda" && (
