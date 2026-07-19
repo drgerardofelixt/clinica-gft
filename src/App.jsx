@@ -7275,7 +7275,8 @@ const fmtCitaHmo = (iso) => {
     weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
 };
 const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG" };
-const COLOR_TIPO_CITA = { primera_vez:"var(--gft-accent)", seguimiento:"var(--gft-success)" };
+// Colores por tipo (fuente única, usada en agenda + dashboard): seguimiento AZUL, primera vez TEAL.
+const COLOR_TIPO_CITA = { primera_vez:"var(--gft-success)", seguimiento:"var(--gft-accent)" };
 const DOSIS_INICIALES = { MOUN:["2.5mg"], WEG:["0.25mg","0.5mg"] };
 
 // C2 — Sugerencia de dosis (solo ayuda editable) para una cita de seguimiento.
@@ -9253,7 +9254,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                   {citasV2Manana.map((c)=>{
                     const {fecha,hora} = isoAInputsHmo(c.inicio);
                     const pac = pacById(c.pacienteId);
-                    const chipColor=c.tipo==="primera_vez"?"var(--gft-accent)":"var(--gft-success)";
+                    const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
                     const medTxt = c.medicamento ? [c.medicamento,c.dosis].filter(Boolean).join(" ") : "";
                     return (
                       <div key={c.id} className={"gft-appointment"+(c.tipo==="primera_vez"?" gft-appointment--new":" gft-appointment--followup")}
