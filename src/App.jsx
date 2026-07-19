@@ -578,13 +578,16 @@ const gradoIMC = (v) => {
   if (n<40)   return "Obesidad II";
   return "Obesidad III";
 };
+// parseFechaClinica maneja ISO y DD/MM/YYYY (las fechas de labs/consultas vienen en ambos formatos).
 const diasDesde = (f) => {
   if (!f) return null;
-  return Math.floor((Date.now()-new Date(f+"T00:00:00").getTime())/86400000);
+  const t = parseFechaClinica(f); if (!t) return null;
+  return Math.floor((Date.now()-t)/86400000);
 };
 const diasHasta = (f) => {
   if (!f) return null;
-  return Math.ceil((new Date(f+"T00:00:00").getTime()-Date.now())/86400000);
+  const t = parseFechaClinica(f); if (!t) return null;
+  return Math.ceil((t-Date.now())/86400000);
 };
 // Estado de labs a partir de UNA fecha y un plazo de vencimiento (días).
 // limiteDias por defecto 90 (≈3 meses); el umbral ámbar "por vencer" es limiteDias-10.
@@ -601,13 +604,14 @@ const estadoLabs = (fecha, limiteDias=90) => {
 // si p.labsOverride existe y su fecha es más reciente que el último lab real (o no hay lab real),
 // se cuenta desde el override con plazo meses*30. Un lab real posterior lo domina automáticamente.
 const estadoLabsPaciente = (p) => {
+  // Ordenar por timestamp (parseFechaClinica), no lexicalmente: mezclar ISO y DD/MM/YYYY rompe el sort de strings.
   const realLast = [
     ...((p.resultadosLabs||[]).map(r=>r.fecha)),
     ...((p.laboratorios||[]).map(l=>l.fecha)),
     p.labsI?.fecha,
-  ].filter(Boolean).sort().slice(-1)[0] || null;
+  ].filter(Boolean).sort((a,b)=>parseFechaClinica(a)-parseFechaClinica(b)).slice(-1)[0] || null;
   const ov = p.labsOverride;
-  if (ov?.fecha && (!realLast || ov.fecha > realLast))
+  if (ov?.fecha && (!realLast || parseFechaClinica(ov.fecha) > parseFechaClinica(realLast)))
     return estadoLabs(ov.fecha, (ov.meses||3)*30);
   return estadoLabs(realLast, 90);
 };
@@ -3997,8 +4001,8 @@ const LabsUp = ({nombre, onApply}) => {
     // Combinar notas
     const notas = resultados.map(r=>r.notasAdicionales).filter(Boolean);
     if (notas.length) combinado.notasAdicionales = notas.join(" | ");
-    // Si hay múltiples fechas, usar la más reciente
-    const fechas = resultados.map(r=>r.fecha).filter(Boolean).sort();
+    // Si hay múltiples fechas, usar la más reciente (por timestamp, no lexical — soportan ISO y DD/MM/YYYY)
+    const fechas = resultados.map(r=>r.fecha).filter(Boolean).sort((a,b)=>parseFechaClinica(a)-parseFechaClinica(b));
     if (fechas.length) combinado.fecha = fechas[fechas.length-1];
     // Combinar laboratorios
     const labs = [...new Set(resultados.map(r=>r.laboratorio).filter(Boolean))];
