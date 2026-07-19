@@ -60,15 +60,11 @@ html {
   text-rendering: optimizeLegibility;
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  font-family: 'Gotham', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  color: #0F172A;
-  background: #F8FAFC;
-}
+/* NOTA: la regla `body` (color/fondo/fuente/tamaño) vive ahora SOLO en
+   design-system.css, que se importa después y es la única fuente de verdad
+   del tema oscuro. Aquí se conserva únicamente el reset de box-sizing, el
+   suavizado de fuentes, las @font-face de marca y la herencia de fuente en
+   inputs — para no dejar la antigua base clara como código muerto en conflicto. */
 
 input, textarea, select, button {
   font-family: inherit;

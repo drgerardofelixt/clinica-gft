@@ -1,26 +1,38 @@
 /* ── GFT Design System — Dark / Apple Health style ────────── */
 
 :root {
-  --gft-bg:          #0A0E17;
-  --gft-surface:     #131A27;
-  --gft-surface2:    #1A2336;
+  /* Tokens de marca azul-noche (Fase 1 — fundamentos) */
+  --gft-bg:          #0B111E;
+  --gft-surface:     #141C2B;
+  --gft-surface2:    #243247;
   --gft-border:      rgba(255,255,255,0.07);
   --gft-border-md:   rgba(255,255,255,0.12);
-  --gft-accent:      #3B82F6;
-  --gft-accent-dim:  rgba(59,130,246,0.14);
-  --gft-success:     #10B981;
-  --gft-success-dim: rgba(16,185,129,0.13);
+  --gft-accent:      #4287F5;
+  --gft-accent-dim:  rgba(66,135,245,0.14);
+  --gft-success:     #27A98A;
+  --gft-success-dim: rgba(39,169,138,0.13);
   --gft-warning:     #F59E0B;
   --gft-warning-dim: rgba(245,158,11,0.13);
-  --gft-danger:      #EF4444;
-  --gft-danger-dim:  rgba(239,68,68,0.13);
+  --gft-danger:      #EC5B5B;
+  --gft-danger-dim:  rgba(236,91,91,0.13);
   --gft-purple:      #8B5CF6;
   --gft-purple-dim:  rgba(139,92,246,0.13);
   --gft-text:        #E8EDF5;
   --gft-text-2:      #9DAEC8;
-  --gft-text-muted:  #4B5A72;
+  --gft-text-muted:  #5C6B84;
+
+  /* Tokens nuevos declarados en Fase 1 (algunos aún sin cablear — se aplican en fases de layout) */
+  --gft-titlebar:      #0F1622;   /* barra de título / sidebar */
+  --gft-frame-border:  #1E2A42;   /* borde de frame (declarado, sin cablear aún) */
+  --gft-accent-text:   #8DB6FB;   /* azul texto/acento claro (nav activo) */
+  --gft-success-text:  #4FC7A8;   /* teal éxito — variante texto */
+  --gft-text-tenue:    #3D4A60;   /* texto 4º nivel (declarado, sin cablear aún) */
+  --gft-gold:          #C9A24B;   /* dorado badge (declarado) */
+  --gft-wine:          #7B3F3F;   /* vino músculo (declarado, NO reemplaza usos actuales) */
+  --gft-amber:         #D97706;   /* ámbar grasa (declarado, NO reemplaza --gft-warning) */
+
   --gft-font-display: 'Gotham', -apple-system, system-ui, sans-serif;
-  --gft-font-body:    -apple-system, 'SF Pro Display', system-ui, sans-serif;
+  --gft-font-body:    'Gotham', -apple-system, system-ui, sans-serif;
   --gft-font-data:    'D-DIN Condensed', ui-monospace, monospace;
 }
 
@@ -31,6 +43,8 @@ html, body, #root {
   background: var(--gft-bg);
   color: var(--gft-text);
   font-family: var(--gft-font-body);
+  font-size: 14px;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
@@ -693,7 +707,7 @@ select.gft-input {
 .gft-sidebar {
   width: 260px;
   flex-shrink: 0;
-  background: var(--gft-surface);
+  background: var(--gft-titlebar);
   border-right: 1px solid var(--gft-border);
   display: flex;
   flex-direction: column;
@@ -764,7 +778,7 @@ select.gft-input {
 
 .gft-sidebar__item--active {
   background: var(--gft-accent-dim);
-  color: var(--gft-accent);
+  color: var(--gft-accent-text);
   font-weight: 600;
 }
 
