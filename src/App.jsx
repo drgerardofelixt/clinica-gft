@@ -606,6 +606,30 @@ const estadoLabsPaciente = (p) => {
   return estadoLabs(realLast, 90);
 };
 
+// ── Composición corporal: helpers puros compartidos (expediente + DocProgreso) ──
+// Grasa en kg de una medición: campo directo masaGrasa (Tanita); si falta, peso×grasa/100.
+const grasaKgDe = (c) => {
+  if(!c) return null;
+  const dir=parseFloat(c.masaGrasa);
+  if(!isNaN(dir)&&dir>0) return parseFloat(dir.toFixed(1));
+  const g=parseFloat(c.grasa), pe=parseFloat(c.peso);
+  return (!isNaN(g)&&!isNaN(pe)) ? parseFloat((g/100*pe).toFixed(1)) : null;
+};
+// Masa libre de grasa (kg): campo masaLibreGrasa (Tanita); si falta, peso×(1-grasa/100).
+const ffmDe = (c) => {
+  if(!c) return null;
+  const real=parseFloat(c.masaLibreGrasa);
+  if(!isNaN(real)) return real;
+  const pe=parseFloat(c.peso), g=parseFloat(c.grasa);
+  return (!isNaN(pe)&&!isNaN(g)) ? pe*(1-g/100) : null;
+};
+// FFMI = FFM / talla(m)². tallaCm en cm.
+const ffmiDe = (c, tallaCm) => {
+  const ffm=ffmDe(c);
+  const tM=(Number(tallaCm)||0)/100;
+  return (tM>0 && ffm!=null) ? parseFloat((ffm/(tM*tM)).toFixed(1)) : null;
+};
+
 // ── CATÁLOGOS ────────────────────────────────────────────────
 const GLPS = [
   "Wegovy (Semaglutida) 0.25mg","Wegovy (Semaglutida) 0.5mg",
@@ -2605,14 +2629,7 @@ const DocProgreso = ({p}) => {
   const bmrAct     = ultima?.bmr!=null  ? parseFloat(ultima.bmr)  : null;
   // Penúltima medición = "mes anterior" (solo con ≥2 mediciones)
   const penultima = comps.length>=2 ? comps[comps.length-2] : null;
-  // Grasa en kg: campo directo masaGrasa (Tanita); si falta, peso×grasa/100
-  const grasaKgDe = (c) => {
-    if(!c) return null;
-    const dir=parseFloat(c.masaGrasa);
-    if(!isNaN(dir)&&dir>0) return parseFloat(dir.toFixed(1));
-    const g=parseFloat(c.grasa), pe=parseFloat(c.peso);
-    return (!isNaN(g)&&!isNaN(pe)) ? parseFloat((g/100*pe).toFixed(1)) : null;
-  };
+  // grasaKgDe: helper puro compartido (top-level, junto a estadoLabs)
   const grasaKgAct  = grasaKgDe(ultima);
   const grasaKgPrev = grasaKgDe(penultima);
   const musculoPrev = (penultima?.musculo!=null && penultima?.musculo!=="") ? parseFloat(penultima.musculo) : null;
@@ -2907,11 +2924,9 @@ const DocProgreso = ({p}) => {
   };
   const ZONAS_AGUA = { H:{min:50,max:65,optimo:60}, M:{min:45,max:60,optimo:55} };
   const tallaM = (Number(p.talla || p.estatura || p.altura) || 0) / 100;
-  const _ffmReal = parseFloat(ultima?.masaLibreGrasa);
-  const _pesoU = parseFloat(ultima?.peso), _grasaU = parseFloat(ultima?.grasa);
-  const ffm = !isNaN(_ffmReal) ? _ffmReal
-    : (!isNaN(_pesoU) && !isNaN(_grasaU) ? _pesoU*(1 - _grasaU/100) : null);
-  const ffmi = (tallaM>0 && ffm!=null) ? parseFloat((ffm/(tallaM*tallaM)).toFixed(1)) : null;
+  // ffm/ffmi: helpers puros compartidos (top-level). Misma fuente de talla que tallaM.
+  const ffm = ffmDe(ultima);
+  const ffmi = ffmiDe(ultima, (p.talla || p.estatura || p.altura));
   const zonasFFMI = ZONAS_FFMI[sexoKey];
   const aguaAct = (ultima?.agua!=null && ultima?.agua!=="" && !isNaN(parseFloat(ultima.agua))) ? parseFloat(ultima.agua) : null;
   const aguaZona = ZONAS_AGUA[sexoKey];
@@ -5168,6 +5183,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [showL, setShowL] = useState(false);
   const [showLabs, setShowLabs] = useState(false);
   const [showLabsReset, setShowLabsReset] = useState(false); // selector 1/2/3 meses para reiniciar conteo de labs
+  const [trendMetric, setTrendMetric] = useState("Peso");    // métrica de la gráfica de tendencia: Peso | % Grasa | Músculo
+  const [showSegmentos, setShowSegmentos] = useState(false); // segmentales plegados por defecto
   const [showAgenda, setShowAgenda] = useState(false);
   const [showEditPac, setShowEditPac] = useState(false);
   const [doc, setDoc] = useState(null);
@@ -5303,15 +5320,47 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const alerta = _hasRealConsultas
     ? estadoLabsPaciente(p)
     : {nivel:"none", dias:null, msg:""};
+  // Banner de labs vencidos — se renderiza dentro de la pestaña Progreso (Fase 3).
+  // Solo aparece en ámbar (sin labs / por vencer) o rojo (≥90 días).
+  const bannerLabs = (alerta.nivel==="amarillo"||alerta.nivel==="rojo") ? (()=>{
+    const rojo = alerta.nivel==="rojo";
+    const col  = rojo ? "var(--gft-danger)" : "var(--gft-warning)";
+    const dim  = rojo ? "var(--gft-danger-dim)" : "var(--gft-warning-dim)";
+    const reiniciar = (meses) => { onUpdate({...p, labsOverride:{fecha:hoy(), meses}}); setShowLabsReset(false); };
+    return (
+      <div style={{width:"100%",marginBottom:16,padding:"14px 18px",borderRadius:12,
+        background:dim,border:`1px solid ${col}`,borderLeft:`6px solid ${col}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:24,lineHeight:1}}>{rojo?"🚨":"⚠️"}</span>
+          <span style={{flex:1,fontSize:15,fontWeight:700,color:col}}>{alerta.msg}</span>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button className="gft-btn gft-btn--secondary gft-btn--sm" style={{whiteSpace:"nowrap"}}
+              onClick={()=>setShowLabsReset(v=>!v)}>🔄 Ya tiene labs recientes</button>
+            <button className="gft-btn gft-btn--sm" style={{background:col,color:"#fff",border:"none",whiteSpace:"nowrap"}}
+              onClick={()=>setShowL(true)}>{rojo?"Solicitar urgente":"Solicitar"}</button>
+          </div>
+        </div>
+        {showLabsReset&&(
+          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${col}`,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:13,fontWeight:600,color:"var(--gft-text)"}}>Reiniciar conteo desde hoy — volver a avisar en:</span>
+            {[1,2,3].map(m=>(
+              <button key={m} className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>reiniciar(m)}>{m} {m===1?"mes":"meses"}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  })() : null;
   const proxCitas = (p.consultas||[])
     .map(c=>({fecha:c.proxCita,p:c}))
     .filter(x=>x.fecha && diasHasta(x.fecha)>=0)
     .sort((a,b)=>new Date(a.fecha)-new Date(b.fecha));
 
+  const _nLabs = (p.resultadosLabs||[]).length + (p.laboratorios||[]).length;
   const TABS = [
     {id:"progreso",l:"📊 Progreso"},
     {id:"consultas",l:"📋 Evolución"},
-    {id:"labs",l:"🧪 Labs"},
+    {id:"labs",l:"🧪 Labs"+(_nLabs>0?` (${_nLabs})`:"")},
     {id:"recetas",l:"💊 Recetas"},
     {id:"hc",l:"📁 Expediente"},
   ];
@@ -5519,11 +5568,15 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         <div className="gft-patient-header gft-fade-in" style={{marginTop:12}}>
           <div className="gft-patient-header__top">
             <div className={`gft-avatar gft-avatar--lg gft-avatar--${avatarColor}`}>{getIniciales(p.nombre)}</div>
-            <div style={{flex:1}}>
+            <div style={{flex:1,minWidth:0}}>
               <div className="gft-patient-info__name">{p.nombre}</div>
               <div className="gft-patient-info__sub">
                 {p.edad} años · {p.sexo} · {p.talla} cm
-                {(()=>{ const t=formatearTratamiento(tratamientoEfectivo(p)); return t?` · ${t}`:""; })()}
+              </div>
+              {/* Chips: GLP-1 + tipo de paciente */}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>
+                {(()=>{ const m=formatearTratamiento(tratamientoEfectivo(p)); return m?<span className="gft-pill gft-pill--purple">💊 {m}</span>:null; })()}
+                <span className={"gft-badge "+(_hasRealConsultas?"gft-badge--seguimiento":"gft-badge--primera")}>{_hasRealConsultas?"Seguimiento":"Primera vez"}</span>
               </div>
               <div style={{marginTop:6,fontSize:11,color:"var(--gft-text-muted)"}}>Exp: {(p.id||"").slice(-6).toUpperCase()}</div>
             </div>
@@ -5551,11 +5604,12 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             </div>
           </div>
 
-          {/* Acciones */}
+          {/* Acciones — 3 primarias (Nueva consulta / Receta / Reporte) + secundarias */}
           <div className="gft-action-bar" style={{marginBottom:0}}>
-            <button className="gft-action-btn" onClick={()=>setShowC(true)}>+ Consulta</button>
+            <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setShowC(true)}>+ Nueva consulta</button>
+            <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setShowR(true)}>💊 Receta</button>
+            <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setDoc({tipo:"progreso"})}>📊 Reporte</button>
             <button className="gft-action-btn" onClick={()=>setShowAgenda(true)}>📅 Agendar</button>
-            <button className="gft-action-btn" onClick={()=>setShowR(true)}>💊 Receta</button>
             <button className="gft-action-btn" onClick={()=>setShowL(true)}>🧪 Labs</button>
             <button className="gft-action-btn" onClick={()=>setShowLabs(true)}>📄 PDF labs</button>
             {proxCitas[0]&&(
@@ -5566,46 +5620,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           </div>
         </div>
 
-        {/* Banner labs vencidos — franja prominente de ancho completo, justo debajo del encabezado.
-            Solo aparece en ámbar (sin labs / por vencer) o rojo (≥90 días). Verde/none no renderiza. */}
-        {(alerta.nivel==="amarillo"||alerta.nivel==="rojo")&&(()=>{
-          const rojo = alerta.nivel==="rojo";
-          const col  = rojo ? "var(--gft-danger)" : "var(--gft-warning)";
-          const dim  = rojo ? "var(--gft-danger-dim)" : "var(--gft-warning-dim)";
-          const reiniciar = (meses) => {
-            onUpdate({...p, labsOverride:{fecha:hoy(), meses}});
-            setShowLabsReset(false);
-          };
-          return (
-            <div style={{width:"100%",marginTop:12,marginBottom:12,padding:"14px 18px",borderRadius:12,
-              background:dim,border:`1px solid ${col}`,borderLeft:`6px solid ${col}`}}>
-              <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <span style={{fontSize:24,lineHeight:1}}>{rojo?"🚨":"⚠️"}</span>
-                <span style={{flex:1,fontSize:15,fontWeight:700,color:col}}>{alerta.msg}</span>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  <button className="gft-btn gft-btn--secondary gft-btn--sm"
-                    style={{whiteSpace:"nowrap"}}
-                    onClick={()=>setShowLabsReset(v=>!v)}>🔄 Ya tiene labs recientes</button>
-                  <button className="gft-btn gft-btn--sm"
-                    style={{background:col,color:"#fff",border:"none",whiteSpace:"nowrap"}}
-                    onClick={()=>setShowL(true)}>{rojo?"Solicitar urgente":"Solicitar"}</button>
-                </div>
-              </div>
-              {showLabsReset&&(
-                <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${col}`,
-                  display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <span style={{fontSize:13,fontWeight:600,color:"var(--gft-text)"}}>
-                    Reiniciar conteo desde hoy — volver a avisar en:
-                  </span>
-                  {[1,2,3].map(m=>(
-                    <button key={m} className="gft-btn gft-btn--secondary gft-btn--sm"
-                      onClick={()=>reiniciar(m)}>{m} {m===1?"mes":"meses"}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {/* (El banner de labs se movió al inicio de la pestaña Progreso — ver const bannerLabs) */}
 
         {/* Tabs */}
         <div className="gft-action-bar" style={{marginBottom:8}}>
@@ -5620,7 +5635,9 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
 
       <div style={{padding:"0 16px 80px"}}>
         {tab==="progreso" && (
-          grafData.length<2 ? (
+          <>
+          {bannerLabs}
+          {grafData.length<2 ? (
             <div style={{textAlign:"center",padding:60,color:C.suave}}>
               <div style={{fontSize:48,marginBottom:12}}>📊</div>
               <div style={{fontWeight:700,fontSize:14,marginBottom:16}}>
@@ -5633,55 +5650,144 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             </div>
           ) : (
             <div>
-              {/* ── MÉTRICAS DE PROGRESO ── */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:10,marginBottom:18}}>
-                {[
-                  {l:"Peso perdido",v:perdT&&parseFloat(perdT)>0?"↓ "+perdT+" kg":"0 kg",c:C.verde},
-                  {l:"% Grasa",v:ultima&&ultima.grasa?ultima.grasa+"%":"—",c:C.naranja},
-                  {l:"Músculo",v:ultima&&ultima.musculo?ultima.musculo+" kg":"—",c:C.azul},
-                  {l:"Agua",v:ultima&&ultima.agua?ultima.agua+"%":"—",c:"#63B3ED"},
-                  {l:"Visceral",v:ultima&&ultima.visceral?ultima.visceral:"—",c:C.rojo},
-                  {l:"BMR",v:ultima&&ultima.bmr?ultima.bmr+" kcal":"—",c:"var(--gft-text-2)"},
-                ].map(m=>(
-                  <div key={m.l} style={{background:"var(--gft-surface2)",borderRadius:10,padding:"10px 12px",
-                    border:"1px solid var(--gft-border)",textAlign:"center"}}>
-                    <div style={{fontSize:9,color:"var(--gft-text-muted)",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{m.l}</div>
-                    <div style={{fontSize:18,fontWeight:900,color:m.c}}>{m.v}</div>
+              {/* ── LAYOUT 2 COLUMNAS: principal (grilla + gráfica) + rail derecho ── */}
+              <div className="gft-expediente-grid">
+                <div>
+                  {/* ── GRILLA DE COMPOSICIÓN (8 campos) ── */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10,marginBottom:16}}>
+                    {(()=>{
+                      const consUlt = (p.consultas||[]).filter(c=>!c.esSoloCita).slice(-1)[0];
+                      const imc = ultima?.peso ? calcIMC(ultima.peso,p.talla) : null;
+                      const gKg = grasaKgDe(ultima);
+                      const ffmi = ffmiDe(ultima, p.talla);
+                      const cintura = (consUlt&&consUlt.ca) || (p.ef&&p.ef.ca) || null;
+                      return [
+                        {l:"Peso",       v:ultima?.peso?ultima.peso+" kg":"—",           c:"var(--gft-accent)"},
+                        {l:"IMC",        v:imc||"—",                                     c:"var(--gft-accent-text)"},
+                        {l:"Grasa",      v:gKg!=null?gKg+" kg":"—",                      c:"var(--gft-warning)"},
+                        {l:"Músculo",    v:ultima?.musculo?ultima.musculo+" kg":"—",     c:"var(--gft-success-text)"},
+                        {l:"FFMI",       v:ffmi!=null?ffmi:"—",                          c:"var(--gft-accent-text)"},
+                        {l:"Cintura",    v:cintura?cintura+" cm":"—",                    c:"var(--gft-warning)"},
+                        {l:"Agua",       v:ultima?.agua?ultima.agua+"%":"—",             c:"#63B3ED"},
+                        {l:"Edad metab.",v:ultima?.edadMet?ultima.edadMet+" a":"—",      c:"var(--gft-text-2)"},
+                      ].map(m=>(
+                        <div key={m.l} style={{background:"var(--gft-surface2)",borderRadius:10,padding:"10px 12px",
+                          border:"1px solid var(--gft-border)",textAlign:"center"}}>
+                          <div style={{fontSize:9,color:"var(--gft-text-muted)",fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{m.l}</div>
+                          <div style={{fontFamily:"var(--gft-font-data)",fontSize:20,fontWeight:700,color:m.c}}>{m.v}</div>
+                        </div>
+                      ));
+                    })()}
                   </div>
-                ))}
+
+                  {/* ── GRÁFICA DE TENDENCIA CON SELECTOR (peso/grasa/músculo) ── */}
+                  {(()=>{
+                    const opciones = [
+                      {k:"Peso",   color:"#4287F5"},
+                      {k:"% Grasa",color:"#F59E0B"},
+                      {k:"Músculo",color:"#8B5CF6"},
+                    ];
+                    const sel = opciones.find(o=>o.k===trendMetric) || opciones[0];
+                    return (
+                      <div style={{background:"var(--gft-surface2)",borderRadius:12,padding:14,border:"1px solid var(--gft-border)",marginBottom:16}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+                          <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text-2)"}}>Tendencia</div>
+                          <div style={{display:"flex",gap:4}}>
+                            {opciones.map(o=>(
+                              <button key={o.k} onClick={()=>setTrendMetric(o.k)}
+                                className={"gft-action-btn"+(trendMetric===o.k?" gft-action-btn--active":"")}
+                                style={{fontSize:11,padding:"4px 10px"}}>{o.k}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height={220}>
+                          <AreaChart data={grafData}>
+                            <defs>
+                              <linearGradient id="gTrend" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={sel.color} stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor={sel.color} stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
+                            <XAxis dataKey="fecha" tick={{fontSize:9,fill:"var(--gft-text-muted)"}}/>
+                            <YAxis tick={{fontSize:9,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
+                            <Tooltip contentStyle={{fontSize:11,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
+                            <Area type="monotone" dataKey={sel.k} stroke={sel.color}
+                              strokeWidth={2.5} fill="url(#gTrend)" connectNulls dot={{r:3,fill:sel.color}}/>
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* ── RAIL DERECHO ── */}
+                <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                  {/* Tratamiento actual + sugerencia de dosis */}
+                  {(()=>{
+                    const trat = formatearTratamiento(tratamientoEfectivo(p),{conOrigen:true});
+                    const sug = sugerirDosisSeguimiento(p);
+                    return (
+                      <div className="gft-panel" style={{marginBottom:0}}>
+                        <div className="gft-panel__header"><div className="gft-panel__title">Tratamiento actual</div></div>
+                        <div style={{fontSize:15,fontWeight:700,color:"var(--gft-text)"}}>{trat||"Sin tratamiento"}</div>
+                        {sug&&sug.texto&&(
+                          <div style={{marginTop:8,fontSize:12,color:"var(--gft-accent-text)",background:"var(--gft-accent-dim)",
+                            borderRadius:8,padding:"8px 10px"}}>💡 {sug.texto}</div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Próxima cita */}
+                  <div className="gft-panel" style={{marginBottom:0}}>
+                    <div className="gft-panel__header"><div className="gft-panel__title">Próxima cita</div></div>
+                    {proxCitas[0] ? (
+                      <div>
+                        <div style={{fontFamily:"var(--gft-font-data)",fontSize:20,fontWeight:700,color:"var(--gft-accent)"}}>{fmtF(proxCitas[0].fecha)}</div>
+                        <div style={{fontSize:12,color:"var(--gft-text-muted)",marginTop:2}}>En {diasHasta(proxCitas[0].fecha)} día(s)</div>
+                      </div>
+                    ) : (
+                      <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowAgenda(true)}>📅 Agendar</button>
+                    )}
+                  </div>
+
+                  {/* Meta de peso — progreso hacia el objetivo (inicial → objetivo) */}
+                  {(()=>{
+                    const obj = parseFloat(p.pesoObjetivo);
+                    const ini = parseFloat(primera?.peso);
+                    const act = parseFloat(ultima?.peso);
+                    if(isNaN(obj)||isNaN(act)) return null;
+                    const total = !isNaN(ini) ? (ini-obj) : null;
+                    const hecho = !isNaN(ini) ? (ini-act) : null;
+                    const pct = (total && total>0) ? Math.max(0,Math.min(100,Math.round(hecho/total*100))) : (act<=obj?100:0);
+                    return (
+                      <div className="gft-panel" style={{marginBottom:0}}>
+                        <div className="gft-panel__header"><div className="gft-panel__title">Meta de peso</div></div>
+                        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"var(--gft-text-2)",marginBottom:6}}>
+                          <span>{!isNaN(ini)?ini+" kg":"—"} <span style={{color:"var(--gft-text-muted)"}}>inicial</span></span>
+                          <span style={{fontWeight:700,color:"var(--gft-accent-text)"}}>{obj} kg meta</span>
+                        </div>
+                        <div style={{height:8,borderRadius:8,background:"var(--gft-surface)",overflow:"hidden"}}>
+                          <div style={{height:"100%",width:pct+"%",background:"var(--gft-success)",borderRadius:8,transition:"width .3s"}}/>
+                        </div>
+                        <div style={{marginTop:6,fontSize:12,color:"var(--gft-text)"}}>
+                          Actual <b>{act} kg</b> · <span style={{color:"var(--gft-success-text)",fontWeight:700}}>{pct}% de avance</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
 
-              {/* ── GRÁFICAS PRINCIPALES ── */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
-                {[
-                  {t:"Peso (kg)",k:"Peso",color:"#3B82F6"},
-                  {t:"% Grasa Corporal",k:"% Grasa",color:"#F59E0B"},
-                  {t:"Masa Muscular (kg)",k:"Músculo",color:"#8B5CF6"},
-                  {t:"Agua Corporal (%)",k:"Agua",color:"#22D3EE"},
-                ].map(g=>(
-                  <div key={g.t} style={{background:"var(--gft-surface2)",borderRadius:12,padding:14,border:"1px solid var(--gft-border)"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"var(--gft-text-2)",marginBottom:8}}>{g.t}</div>
-                    <ResponsiveContainer width="100%" height={140}>
-                      <AreaChart data={grafData}>
-                        <defs>
-                          <linearGradient id={"g"+g.k} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={g.color} stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor={g.color} stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="var(--gft-border)"/>
-                        <XAxis dataKey="fecha" tick={{fontSize:8,fill:"var(--gft-text-muted)"}}/>
-                        <YAxis tick={{fontSize:8,fill:"var(--gft-text-muted)"}} domain={["auto","auto"]}/>
-                        <Tooltip contentStyle={{fontSize:10,borderRadius:8,background:"var(--gft-surface)",border:"1px solid var(--gft-border)",color:"var(--gft-text)"}}/>
-                        <Area type="monotone" dataKey={g.k} stroke={g.color}
-                          strokeWidth={2.5} fill={"url(#g"+g.k+")"} connectNulls
-                          dot={{r:3,fill:g.color}}/>
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                ))}
-              </div>
-
+              {/* ── SEGMENTALES (plegados por defecto; solo si hay datos por segmento) ── */}
+              {comps.some(c=>c.musculoTronco||c.musculoBD||c.grasaTronco||c.grasaBD) && (
+                <button className="gft-btn gft-btn--secondary gft-btn--sm" style={{marginBottom:12}}
+                  onClick={()=>setShowSegmentos(v=>!v)}>
+                  {showSegmentos?"▾":"▸"} Detalle por segmento (músculo y grasa)
+                </button>
+              )}
+              {showSegmentos && (<>
               {/* ── SEGMENTOS MUSCULARES ── */}
               {comps.some(c=>c.musculoTronco||c.musculoBD) && (
                 <div style={{background:"var(--gft-surface2)",borderRadius:12,padding:14,border:"1px solid var(--gft-border)",marginBottom:16}}>
@@ -5869,6 +5975,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                   )}
                 </div>
               )}
+              </>)}
 
               {/* ── TABLA HISTORIAL COMPLETO ── */}
               <Card>
@@ -5931,7 +6038,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                 </div>
               </Card>
             </div>
-          )
+          )}
+          </>
         )}
 
         {tab==="consultas" && (
