@@ -10,6 +10,7 @@
 //   #3 Persistencia token Google Calendar entre sesiones
 //   #4 Si los horarios no aparecen, revisar día de la semana seleccionado
 import { useState, useEffect, useRef, useMemo, createContext, useContext, useCallback } from "react";
+import { createPortal } from "react-dom";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles } from "./googleCalendar.js";
@@ -8001,23 +8002,54 @@ const MiniCalendario = ({ fecha, onPick, min }) => {
 
 // Campo de fecha de cita: input de texto DD/MM (tecleo rápido) + ícono 📅 que abre el MiniCalendario como
 // popup. Ícono como disparador (no el foco del input) para no abrir el teclado numérico en móvil.
+// El popover del calendario se renderiza en un PORTAL a document.body con position:fixed y z-index alto,
+// para que NUNCA quede atrapado por el stacking-context/clipping de ningún modal contenedor (antes se
+// tapaba con el header del modal al voltearse hacia arriba). Posición calculada desde el rect del campo.
 const CampoFechaCita = ({ label, fecha, onChange }) => {
   const [abierto, setAbierto] = useState(false);
-  const [arriba, setArriba] = useState(false);   // voltea el popup hacia arriba si no hay espacio abajo
-  const ref = useRef(null);
+  const [pos, setPos] = useState(null);          // {left, top, width, maxH}
+  const ref = useRef(null);                       // contenedor del campo
+  const popRef = useRef(null);                    // popover en el portal
+  const CAL_W = 268, CAL_H = 340;                 // ancho fijo del calendario; alto estimado para decidir volteo
+
+  const calcPos = () => {
+    const r = ref.current && ref.current.getBoundingClientRect();
+    if (!r) return null;
+    const vw = window.innerWidth, vh = window.innerHeight, m = 8;
+    const w = Math.min(CAL_W, vw - m*2);
+    const left = Math.max(m, Math.min(r.left, vw - w - m));
+    const abajo = vh - r.bottom - m, arriba = r.top - m;
+    let top, maxH;
+    if (abajo >= CAL_H)      { top = r.bottom + 4; maxH = CAL_H; }        // cabe abajo
+    else if (arriba >= CAL_H){ top = r.top - CAL_H - 4; maxH = CAL_H; }   // cabe arriba (flip)
+    else if (abajo >= arriba){ top = r.bottom + 4; maxH = abajo; }        // no cabe: el lado con más espacio, con scroll
+    else                     { top = m; maxH = arriba; }                  // arriba, anclado al tope del viewport
+    return { left, top, width: w, maxH: Math.max(210, maxH) };
+  };
+
   useEffect(()=>{
     if (!abierto) return;
-    const fuera = (e) => { if (ref.current && !ref.current.contains(e.target)) setAbierto(false); };
+    setPos(calcPos());
+    const fuera = (e) => {
+      if (ref.current && ref.current.contains(e.target)) return;
+      if (popRef.current && popRef.current.contains(e.target)) return;   // clics dentro del calendario NO cierran
+      setAbierto(false);
+    };
+    const reflow = () => setPos(calcPos());
     document.addEventListener("mousedown", fuera);
     document.addEventListener("touchstart", fuera);
-    return () => { document.removeEventListener("mousedown", fuera); document.removeEventListener("touchstart", fuera); };
+    window.addEventListener("resize", reflow);
+    window.addEventListener("scroll", reflow, true);   // capture: sigue al campo aunque el modal tenga scroll
+    return () => {
+      document.removeEventListener("mousedown", fuera);
+      document.removeEventListener("touchstart", fuera);
+      window.removeEventListener("resize", reflow);
+      window.removeEventListener("scroll", reflow, true);
+    };
   }, [abierto]);
-  const stop = (e) => e.stopPropagation();       // evita que el mismo touch/clic que abre lo cierre
-  const toggle = (e) => {
-    e.stopPropagation();
-    if (!abierto) { const r = ref.current && ref.current.getBoundingClientRect(); setArriba(!!r && (window.innerHeight - r.bottom < 330)); }
-    setAbierto(a => !a);
-  };
+
+  const stop = (e) => e.stopPropagation();
+  const toggle = (e) => { e.stopPropagation(); if (!abierto) setPos(calcPos()); setAbierto(a => !a); };
   const pick = (iso) => { onChange(iso); setAbierto(false); };
   return (
     <div ref={ref} style={{position:"relative", flex:1, minWidth:0}}>
@@ -8027,12 +8059,13 @@ const CampoFechaCita = ({ label, fecha, onChange }) => {
           style={{marginBottom:12, height:40, minWidth:40, borderRadius:8, border:"1.5px solid "+C.grisMedio,
             background: abierto?C.azulPale:"white", cursor:"pointer", fontSize:16, flexShrink:0, lineHeight:1}}>📅</button>
       </div>
-      {abierto && (
-        <div style={{position:"absolute", zIndex:60, left:0, right:0,
-          ...(arriba ? {bottom:"calc(100% - 12px)"} : {top:"100%"}),
-          boxShadow:"0 12px 32px rgba(15,23,42,0.22)", borderRadius:10}}>
+      {abierto && pos && createPortal(
+        <div ref={popRef} onMouseDown={stop} onTouchStart={stop}
+          style={{position:"fixed", zIndex:12000, left:pos.left, top:pos.top, width:pos.width,
+            maxHeight:pos.maxH, overflowY:"auto", boxShadow:"0 12px 36px rgba(15,23,42,0.4)", borderRadius:10}}>
           <MiniCalendario fecha={fecha} onPick={pick}/>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
