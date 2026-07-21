@@ -884,6 +884,65 @@ const sincronizarPendientes = async () => {
   return { ok:true, sincronizadas:n, total:pendientes.length };
 };
 
+// Reparación total: deja el calendario dedicado IDÉNTICO a la app en una sola pasada.
+// 1) Para cada cita NO cancelada garantiza exactamente UN evento en la hora correcta (enlaza/mueve/crea).
+// 2) Borra del calendario todo evento que no pertenezca a una cita activa (fantasmas + citas canceladas).
+// NUNCA lanza (captura por-cita). Devuelve un resumen para mostrar al doctor.
+const repararSincronizacionGCal = async () => {
+  if (!isGoogleAuthorized()) return { ok:false, motivo:"desconectado" };
+  const calendarId = await obtenerOCrearCalendarioConsultorio();
+  if (!calendarId) return { ok:false, motivo:"sin_calendario" };
+
+  let todas = [];
+  try { todas = await listarCitas({}); }
+  catch(e){ console.error("reparar/listar:", e); return { ok:false, motivo:"listar_fallo" }; }
+  const activas = todas.filter(c => c.estado !== "cancelada"); // programadas + completadas conservan evento
+
+  // Rango de lectura que cubra TODAS las citas activas (evita crear duplicados por eventos fuera de ventana).
+  const ahora = Date.now();
+  const tiempos = activas.map(c => Date.parse(c.inicio)).filter(t => !isNaN(t));
+  const minT = Math.min(ahora - 60*24*3600*1000, ...(tiempos.length ? tiempos : [ahora]));
+  const maxT = Math.max(ahora + 60*24*3600*1000, ...(tiempos.length ? tiempos : [ahora]));
+  let eventos = [];
+  try {
+    eventos = await leerEventosDeCalendario(calendarId, {
+      timeMin: new Date(minT - 24*3600*1000).toISOString(),
+      timeMax: new Date(maxT + 24*3600*1000).toISOString(),
+    });
+  } catch(e){ console.error("reparar/leer:", e); return { ok:false, motivo:"leer_fallo" }; }
+  const eventosById = new Map(eventos.map(e => [e.id, e]));
+
+  const conocidos = new Set(); // ids de eventos que SÍ pertenecen a una cita activa
+  let verificadas = 0, reconectadas = 0, borrados = 0, errores = 0;
+
+  for (const c of activas) {
+    const slot = citaAEvento(c);
+    try {
+      if (c.googleEventId && eventosById.has(c.googleEventId)) {
+        // Enlazada y el evento existe → asegurar hora correcta (patch idempotente).
+        await actualizarEventoEnCalendario(calendarId, c.googleEventId, slot);
+        conocidos.add(c.googleEventId); verificadas++;
+      } else {
+        // Sin vínculo, o vínculo apuntando a un evento inexistente → crear uno nuevo y enlazar.
+        const ev = await crearEventoEnCalendario(calendarId, slot);
+        if (ev && ev.id) {
+          await actualizarCita(c.id, { googleEventId: ev.id, calendarId, pendienteSincronizar:false });
+          conocidos.add(ev.id); reconectadas++;
+        } else { errores++; }
+      }
+    } catch(e){ console.warn("reparar/cita:", c.id, e); errores++; }
+  }
+
+  // Barrido de huérfanos: todo evento del calendario que no pertenezca a una cita activa → fantasma → borrar.
+  for (const ev of eventos) {
+    if (conocidos.has(ev.id)) continue;
+    try { const ok = await borrarEventoEnCalendario(calendarId, ev.id); if (ok) borrados++; }
+    catch(e){ console.warn("reparar/borrar huérfano:", ev.id, e); }
+  }
+
+  return { ok:true, activas:activas.length, verificadas, reconectadas, borrados, errores };
+};
+
 // ── FASE D2-B — Lectura Google → app ─────────────────────────────────────────
 // Config: calendarios personales que cuentan como "ocupado" (array de calendarIds en configuracion).
 const getCalendariosOcupado = async () => {
@@ -8415,11 +8474,21 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
         const pacTrat = (pacientes||[]).find(pp=>pp.id===cita.pacienteId) || null;
         actualizarTratamientoPaciente(pacTrat, { medicamento: med, dosis, origen });
       }
-      // D2-A — Reflejar en Google si la cita ya está enlazada (no crítico).
-      if (cita.googleEventId) {
-        const ok = await pushActualizarEventoGCal({ ...cita, ...cambios });
-        // Si no se pudo reflejar (sin conexión/falla), marca para reintento posterior.
-        if (!ok) { try { await actualizarCita(cita.id, { pendienteSincronizar:true }); } catch(e){} }
+      // D2-A — Reflejar en Google (no crítico).
+      if (isGoogleAuthorized()) {
+        if (cita.googleEventId) {
+          // Cita enlazada → mover el evento en su lugar (patch).
+          const ok = await pushActualizarEventoGCal({ ...cita, ...cambios });
+          if (!ok) { try { await actualizarCita(cita.id, { pendienteSincronizar:true }); } catch(e){} }
+        } else {
+          // Cita SIN vínculo (creada por la vía vieja): crear el evento en el slot nuevo y enlazarlo,
+          // para que la reagenda SÍ se refleje. El evento viejo huérfano lo limpia "Reparar sincronización".
+          try {
+            const gc = await pushCrearEventoGCal({ ...cita, ...cambios });
+            if (gc && gc.googleEventId) await actualizarCita(cita.id, { googleEventId: gc.googleEventId, calendarId: gc.calendarId, pendienteSincronizar:false });
+            else await actualizarCita(cita.id, { pendienteSincronizar:true });
+          } catch(e){ try { await actualizarCita(cita.id, { pendienteSincronizar:true }); } catch(_){} }
+        }
       }
       onSaved && onSaved();
     } catch(e) { console.error("actualizarCita:",e); alert("⚠️ No se pudo guardar la cita."); }
@@ -8902,6 +8971,17 @@ const AjustesView = ({pacientes=[], firmaB64, onSaveFirma, gcalAuthed, gcalEvent
     verificarScopeToken().then(r=>{ if(vivo) setScopeInfo(r); });
     return ()=>{vivo=false;};
   }, [gcalAuthed]);
+  // Reparar sincronización: deja Google idéntico a la app (reconecta citas + borra fantasmas).
+  const [reparando, setReparando] = useState(false);
+  const [repRes, setRepRes] = useState(null);
+  const repararGCal = async () => {
+    if (reparando) return;
+    if (!window.confirm("Reparar sincronización con Google Calendar.\n\nRevisa todas tus citas activas, crea/mueve sus eventos a la hora correcta y BORRA los eventos fantasma del calendario \"Consultorio Dr. Félix Tapia\".\n\n¿Continuar?")) return;
+    setReparando(true); setRepRes(null);
+    try { setRepRes(await repararSincronizacionGCal()); }
+    catch(e){ setRepRes({ ok:false, motivo:String(e?.message||e) }); }
+    finally { setReparando(false); }
+  };
   const cargarFirma = (file) => { if(!file) return; const rd=new FileReader(); rd.onload=()=>onSaveFirma&&onSaveFirma(rd.result); rd.readAsDataURL(file); };
   const exportarRespaldo = () => {
     try{
@@ -9021,6 +9101,26 @@ const AjustesView = ({pacientes=[], firmaB64, onSaveFirma, gcalAuthed, gcalEvent
                     <b> “Consultorio Dr. Félix Tapia”</b> (no tu calendario principal). En la app de Google Calendar del teléfono
                     debes <b>activarlo manualmente</b>: menú ☰ → Ajustes → selecciona <b>“Consultorio Dr. Félix Tapia”</b> → activa
                     <b> Sincronización</b> y su casilla de visibilidad. Si no lo activas, las citas existen pero no las verás.
+                  </div>
+                )}
+              </div>
+            )}
+            {gcalAuthed && (
+              <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid var(--gft-border)"}}>
+                <div style={{fontSize:12,fontWeight:600,color:"var(--gft-text)",marginBottom:4}}>Reparar sincronización</div>
+                <div style={{fontSize:10.5,color:"var(--gft-text-muted)",marginBottom:8,lineHeight:1.5}}>
+                  Deja Google idéntico a la app: crea/mueve los eventos de tus citas a la hora correcta y elimina los <b>fantasmas</b> (eventos que ya no corresponden a ninguna cita). Úsalo si notas citas que no cuadran en Google.
+                </div>
+                <button onClick={repararGCal} disabled={reparando} className="gft-btn gft-btn--secondary" style={{width:"100%",justifyContent:"center",opacity:reparando?0.6:1}}>
+                  {reparando ? "Reparando…" : "🔧 Reparar sincronización"}
+                </button>
+                {repRes && (
+                  <div style={{marginTop:8,fontSize:11,padding:"9px 11px",borderRadius:8,lineHeight:1.5,
+                    background: repRes.ok ? "color-mix(in srgb, var(--gft-success) 9%, transparent)" : "color-mix(in srgb, var(--gft-danger) 8%, transparent)",
+                    color: repRes.ok ? "var(--gft-success-text)" : "var(--gft-danger)"}}>
+                    {repRes.ok
+                      ? <>✓ Listo — {repRes.activas} cita(s) activa(s): {repRes.verificadas} verificada(s), {repRes.reconectadas} reconectada(s), {repRes.borrados} fantasma(s) borrado(s){repRes.errores ? `, ${repRes.errores} con error` : ""}. Recarga para ver los cambios.</>
+                      : <>⚠️ No se pudo reparar ({repRes.motivo || "error"}).</>}
                   </div>
                 )}
               </div>
