@@ -13,7 +13,7 @@ import { useState, useEffect, useRef, useMemo, createContext, useContext, useCal
 import { createPortal } from "react-dom";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
-import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles } from "./googleCalendar.js";
+import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles, getUltimoErrorGCal, limpiarUltimoErrorGCal, verificarScopeToken, tieneScopeEscritura, reconectarGoogleCalendar, getScopeGuardado } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
@@ -812,36 +812,55 @@ const citaAEvento = (cita) => ({
   location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
 });
 
+// Muestra una alerta VISIBLE cuando la sincronización con Google falla. No bloquea el flujo
+// (la cita ya quedó guardada en Supabase); solo evita que el fallo pase inadvertido días.
+// Solo se llama cuando Google SÍ está conectado y la escritura realmente falló.
+const avisarFalloGCal = (accion, e) => {
+  const err = getUltimoErrorGCal();
+  const motivo = (err && (err.pista || err.mensaje)) || (e && e.message) || "no se pudo contactar Google Calendar.";
+  const verbo = accion === "crear" ? "guardó" : accion === "borrar" ? "canceló" : "actualizó";
+  const acc   = accion === "crear" ? "crear" : accion === "borrar" ? "borrar" : "actualizar";
+  limpiarUltimoErrorGCal();
+  alert(`⚠️ La cita se ${verbo} en la app, pero NO se pudo ${acc} en Google Calendar.\n\nMotivo: ${motivo}\n\nRevisa la conexión en Ajustes → Google Calendar (puede que necesites Reconectar).`);
+};
+
 // Crea el evento en GCal para una cita ya persistida. Devuelve {googleEventId, calendarId} o null. NUNCA lanza.
 const pushCrearEventoGCal = async (cita) => {
+  if (!isGoogleAuthorized()) return null;  // sin conexión → no molestar (el doctor ya lo sabe)
   try {
-    if (!isGoogleAuthorized()) return null;
+    limpiarUltimoErrorGCal();
     const calendarId = await obtenerOCrearCalendarioConsultorio();
-    if (!calendarId) return null;
+    if (!calendarId) { avisarFalloGCal("crear"); return null; }
     const ev = await crearEventoEnCalendario(calendarId, citaAEvento(cita));
-    return (ev && ev.id) ? { googleEventId: ev.id, calendarId } : null;
-  } catch(e) { console.warn("GCal crear evento (no crítico):", e); return null; }
+    if (!(ev && ev.id)) { avisarFalloGCal("crear"); return null; }
+    return { googleEventId: ev.id, calendarId };
+  } catch(e) { console.warn("GCal crear evento:", e); avisarFalloGCal("crear", e); return null; }
 };
 
 // Actualiza el evento en GCal de una cita enlazada. Devuelve true si se reflejó. NUNCA lanza.
 const pushActualizarEventoGCal = async (cita) => {
+  if (!cita.googleEventId || !isGoogleAuthorized()) return false;  // nunca se sincronizó o sin conexión
   try {
-    if (!cita.googleEventId || !isGoogleAuthorized()) return false;
+    limpiarUltimoErrorGCal();
     const calendarId = cita.calendarId || getCalendarioConsultorioId() || await obtenerOCrearCalendarioConsultorio();
-    if (!calendarId) return false;
+    if (!calendarId) { avisarFalloGCal("actualizar"); return false; }
     const ev = await actualizarEventoEnCalendario(calendarId, cita.googleEventId, citaAEvento(cita));
-    return !!ev;
-  } catch(e) { console.warn("GCal actualizar evento (no crítico):", e); return false; }
+    if (!ev) { avisarFalloGCal("actualizar"); return false; }
+    return true;
+  } catch(e) { console.warn("GCal actualizar evento:", e); avisarFalloGCal("actualizar", e); return false; }
 };
 
 // Borra el evento en GCal de una cita enlazada. Devuelve true si se borró (o no aplicaba). NUNCA lanza.
 const pushBorrarEventoGCal = async (cita) => {
+  if (!cita || !cita.googleEventId || !isGoogleAuthorized()) return false;  // nunca se sincronizó o sin conexión
   try {
-    if (!cita || !cita.googleEventId || !isGoogleAuthorized()) return false;
+    limpiarUltimoErrorGCal();
     const calendarId = cita.calendarId || getCalendarioConsultorioId() || await obtenerOCrearCalendarioConsultorio();
-    if (!calendarId) return false;
-    return await borrarEventoEnCalendario(calendarId, cita.googleEventId);
-  } catch(e) { console.warn("GCal borrar evento (no crítico):", e); return false; }
+    if (!calendarId) { avisarFalloGCal("borrar"); return false; }
+    const ok = await borrarEventoEnCalendario(calendarId, cita.googleEventId);
+    if (!ok) { avisarFalloGCal("borrar"); return false; }
+    return true;
+  } catch(e) { console.warn("GCal borrar evento:", e); avisarFalloGCal("borrar", e); return false; }
 };
 
 // A4 — Sincroniza las citas con pendienteSincronizar=true que aún no tienen googleEventId.
@@ -8876,6 +8895,13 @@ const AjustesView = ({pacientes=[], firmaB64, onSaveFirma, gcalAuthed, gcalEvent
     return ()=>{vivo=false;};
   }, [gcalAuthed]);
   const toggleCal = (id)=>{ const next=calsSel.includes(id)?calsSel.filter(x=>x!==id):[...calsSel,id]; setCalsSel(next); setCalendariosOcupado(next); };
+  // Verificación del scope REAL del token (detecta permisos de solo lectura → hay que reconectar).
+  const [scopeInfo, setScopeInfo] = useState(null); // {autorizado, escritura, scope, error?}
+  useEffect(()=>{ let vivo=true;
+    if(!gcalAuthed){ setScopeInfo(null); return; }
+    verificarScopeToken().then(r=>{ if(vivo) setScopeInfo(r); });
+    return ()=>{vivo=false;};
+  }, [gcalAuthed]);
   const cargarFirma = (file) => { if(!file) return; const rd=new FileReader(); rd.onload=()=>onSaveFirma&&onSaveFirma(rd.result); rd.readAsDataURL(file); };
   const exportarRespaldo = () => {
     try{
@@ -8974,8 +9000,31 @@ const AjustesView = ({pacientes=[], firmaB64, onSaveFirma, gcalAuthed, gcalEvent
               </div>
             </div>
             {gcalAuthed
-              ? <button onClick={onGcalDisconnect} style={{width:"100%",border:"1px solid color-mix(in srgb, var(--gft-danger) 30%, transparent)",borderRadius:9,background:"color-mix(in srgb, var(--gft-danger) 8%, transparent)",color:"var(--gft-danger)",fontWeight:600,fontSize:12,padding:9,cursor:"pointer"}}>Desconectar</button>
+              ? <div style={{display:"flex",gap:8}}>
+                  <button onClick={reconectarGoogleCalendar} className="gft-btn gft-btn--primary" style={{flex:1,justifyContent:"center"}}>🔄 Reconectar</button>
+                  <button onClick={onGcalDisconnect} style={{border:"1px solid color-mix(in srgb, var(--gft-danger) 30%, transparent)",borderRadius:9,background:"color-mix(in srgb, var(--gft-danger) 8%, transparent)",color:"var(--gft-danger)",fontWeight:600,fontSize:12,padding:"9px 14px",cursor:"pointer",whiteSpace:"nowrap"}}>Desconectar</button>
+                </div>
               : <button onClick={onGcalConnect} className="gft-btn gft-btn--primary" style={{width:"100%",justifyContent:"center"}}>🔗 Conectar Google Calendar</button>}
+            {gcalAuthed && (
+              <div style={{marginTop:12,padding:"11px 13px",borderRadius:10,lineHeight:1.55,
+                background: scopeInfo && scopeInfo.escritura===false ? "color-mix(in srgb, var(--gft-danger) 8%, transparent)" : "color-mix(in srgb, var(--gft-warning, #E08910) 9%, transparent)",
+                border: scopeInfo && scopeInfo.escritura===false ? "1px solid color-mix(in srgb, var(--gft-danger) 30%, transparent)" : "1px solid color-mix(in srgb, var(--gft-warning, #E08910) 28%, transparent)"}}>
+                {scopeInfo && scopeInfo.escritura===false ? (
+                  <div style={{fontSize:11.5,color:"var(--gft-danger)"}}>
+                    <b>⚠️ Permiso de solo lectura.</b> Tu autorización actual NO permite escribir citas en Google Calendar
+                    (por eso no aparecen en tu celular). Pulsa <b>🔄 Reconectar</b> arriba y acepta el permiso de escritura.
+                  </div>
+                ) : (
+                  <div style={{fontSize:11.5,color:"var(--gft-text-2)"}}>
+                    {scopeInfo && scopeInfo.escritura===true && <span style={{color:"var(--gft-success-text)",fontWeight:600}}>✓ Permiso de escritura activo. </span>}
+                    <b>📱 En tu celular:</b> las citas se sincronizan a un calendario <b>secundario</b> llamado
+                    <b> “Consultorio Dr. Félix Tapia”</b> (no tu calendario principal). En la app de Google Calendar del teléfono
+                    debes <b>activarlo manualmente</b>: menú ☰ → Ajustes → selecciona <b>“Consultorio Dr. Félix Tapia”</b> → activa
+                    <b> Sincronización</b> y su casilla de visibilidad. Si no lo activas, las citas existen pero no las verás.
+                  </div>
+                )}
+              </div>
+            )}
             {gcalAuthed && (
               <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid var(--gft-border)"}}>
                 <div style={{fontSize:12,fontWeight:600,color:"var(--gft-text)",marginBottom:4}}>Calendarios a considerar como “ocupado”</div>

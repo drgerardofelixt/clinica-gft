@@ -6,6 +6,7 @@ const SCOPES = "https://www.googleapis.com/auth/calendar https://www.googleapis.
 const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
 const TOKEN_KEY = "gcal_access_token";
 const TOKEN_EXP_KEY = "gcal_token_exp";
+const TOKEN_SCOPE_KEY = "gcal_token_scope";   // permisos realmente concedidos por el doctor
 // Calendario dedicado nuevo (Agenda v2). El "primary" viejo queda como archivo histórico.
 const CALENDARIO_CONSULTORIO_NOMBRE = "Consultorio Dr. Félix Tapia";
 const CALENDAR_ID_KEY = "gcal_calendar_id";
@@ -16,11 +17,13 @@ let gisInited = false;
 let accessToken = null;
 let refreshTimer = null;   // temporizador único del refresco proactivo (siempre uno a la vez)
 
-const saveToken = (token) => {
+const saveToken = (token, scope) => {
   accessToken = token;
   localStorage.setItem(TOKEN_KEY, token);
   // Token dura 1 hora, guardamos expiración
   localStorage.setItem(TOKEN_EXP_KEY, Date.now() + 55*60*1000);
+  // Guardamos los permisos concedidos (la respuesta OAuth los devuelve en resp.scope).
+  if (scope != null) localStorage.setItem(TOKEN_SCOPE_KEY, scope);
   programarRefresco();   // reprograma el refresco proactivo para este token nuevo
 };
 
@@ -94,7 +97,7 @@ export const initGoogleCalendar = () => new Promise((resolve, reject) => {
       scope: SCOPES,
       callback: (resp) => {
         if (resp.error) { console.error("OAuth error:", resp); return; }
-        saveToken(resp.access_token);
+        saveToken(resp.access_token, resp.scope);
         window.gapi.client.setToken({ access_token: resp.access_token });
         window.dispatchEvent(new Event("gcal_authed"));
       },
@@ -252,6 +255,56 @@ const _manejar401 = (e) => {
   }
 };
 
+// ── Registro del último error de escritura (para surface visible en la app) ──
+// Antes los errores se tragaban con console.error. Ahora se guarda el último para que
+// la capa de la app lo muestre en una alerta. Se limpia al empezar cada intento.
+let _ultimoError = null;
+export const getUltimoErrorGCal = () => _ultimoError;
+export const limpiarUltimoErrorGCal = () => { _ultimoError = null; };
+const _registrarError = (e, contexto) => {
+  const status = e?.status || e?.result?.error?.code || null;
+  const mensaje = e?.result?.error?.message || e?.message || "error desconocido";
+  let pista = "";
+  if (status === 401) pista = "La sesión de Google expiró. Reconecta Google Calendar en Ajustes.";
+  else if (status === 403) pista = "Permiso insuficiente (posible acceso de solo lectura). Reconecta Google Calendar en Ajustes para conceder permiso de escritura.";
+  _ultimoError = { status, mensaje, pista, contexto };
+  console.error(`GCal[${contexto}] ${status||""}: ${mensaje}`, e);
+};
+
+// ── Verificación de permisos (scope) del token ───────────────────────────────
+// ¿El scope concedido incluye permiso de ESCRITURA de eventos?
+const _scopeEsEscritura = (s) => !!s && (
+  s.includes("https://www.googleapis.com/auth/calendar.events")
+  || /(^|\s)https:\/\/www\.googleapis\.com\/auth\/calendar(\s|$)/.test(s)
+);
+export const getScopeGuardado = () => localStorage.getItem(TOKEN_SCOPE_KEY) || "";
+export const tieneScopeEscritura = () => _scopeEsEscritura(getScopeGuardado());
+
+// Consulta a Google el scope REAL del access_token actual (sirve incluso para tokens
+// viejos guardados antes de este cambio, cuyo scope no quedó registrado localmente).
+// Cachea el scope real en TOKEN_SCOPE_KEY. Devuelve {autorizado, escritura, scope, error?}.
+export const verificarScopeToken = async () => {
+  const token = loadSavedToken();
+  if (!token) return { autorizado:false, escritura:false, scope:"" };
+  try {
+    const r = await fetch("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + encodeURIComponent(token));
+    if (!r.ok) return { autorizado:true, escritura:false, scope:"", error:"tokeninfo HTTP "+r.status };
+    const info = await r.json();
+    const scope = info.scope || "";
+    localStorage.setItem(TOKEN_SCOPE_KEY, scope);   // cachea el scope real
+    return { autorizado:true, escritura:_scopeEsEscritura(scope), scope };
+  } catch(e) {
+    return { autorizado:true, escritura:false, scope:"", error:String(e?.message||e) };
+  }
+};
+
+// Fuerza re-consentimiento con el SCOPES amplio actual (incluye escritura). Muestra la
+// pantalla de consentimiento para que el doctor re-conceda aunque ya tenga un token viejo.
+export const reconectarGoogleCalendar = () => {
+  if (!tokenClient) { alert("Google Calendar no iniciado. Recarga la página."); return; }
+  tokenClient.requestAccessToken({ prompt: "consent" });
+};
+
 // Devuelve el calendarId dedicado cacheado (sin tocar la red). null si aún no se ha resuelto.
 export const getCalendarioConsultorioId = () => localStorage.getItem(CALENDAR_ID_KEY) || null;
 
@@ -287,8 +340,8 @@ export const obtenerOCrearCalendarioConsultorio = async () => {
     localStorage.setItem(CALENDAR_ID_KEY, nuevoId);
     return nuevoId;
   } catch(e) {
-    console.error("Error obteniendo/creando calendario consultorio:", e);
     _manejar401(e);
+    _registrarError(e, "obtener/crear calendario");
     return null;
   }
 };
@@ -317,8 +370,8 @@ export const crearEventoEnCalendario = async (calendarId, { summary, descripcion
     });
     return resp.result;
   } catch(e) {
-    console.error("Error creando evento en calendario dedicado:", e);
     _manejar401(e);
+    _registrarError(e, "crear evento");
     return null;
   }
 };
@@ -341,8 +394,8 @@ export const actualizarEventoEnCalendario = async (calendarId, eventId, { summar
     });
     return resp.result;
   } catch(e) {
-    console.error("Error actualizando evento en calendario dedicado:", e);
     _manejar401(e);
+    _registrarError(e, "actualizar evento");
     return null;
   }
 };
@@ -396,8 +449,8 @@ export const borrarEventoEnCalendario = async (calendarId, eventId) => {
     return true;
   } catch(e) {
     if (e.status === 404 || e.status === 410) return true; // ya no existe → objetivo cumplido
-    console.error("Error borrando evento en calendario dedicado:", e);
     _manejar401(e);
+    _registrarError(e, "borrar evento");
     return false;
   }
 };
