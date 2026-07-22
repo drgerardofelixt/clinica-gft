@@ -5688,7 +5688,70 @@ const ModalConfig = ({firmaB64, onSave, onClose, onMigrarCitas}) => {
 // ── Vista Paciente ────────────────────────────────────────────
 // ── Timeline del expediente (8b) — historia unificada: consultas + recetas + labs + mediciones ──
 // Reemplaza la pestaña "Evolución". Conserva TODAS las acciones de consulta (Ver nota / Editar / Eliminar).
-const TimelineExpediente = ({p, onVerNota, onEditarConsulta, onEliminarConsulta, onNuevaConsulta, onVerReceta, repararInicial, onRepararInicial}) => {
+// Campos numéricos de una medición de composición (para el editor manual).
+const CAMPOS_COMP_PRINCIPALES = [
+  ["peso","Peso","kg"], ["grasa","% Grasa","%"], ["musculo","Músculo","kg"], ["imc","IMC",""],
+  ["agua","% Agua","%"], ["visceral","Grasa visceral",""], ["osea","Masa ósea","kg"], ["bmr","BMR","kcal"],
+  ["edadMet","Edad metabólica","años"], ["masaGrasa","Masa grasa","kg"], ["masaLibreGrasa","Masa libre grasa","kg"],
+  ["aguaKg","Agua","kg"], ["proteina","Proteína","kg"],
+];
+const CAMPOS_COMP_SEGMENTALES = [
+  ["musculoTronco","Músculo tronco","kg"], ["musculoBD","Músculo brazo der.","kg"], ["musculoBI","Músculo brazo izq.","kg"],
+  ["musculoPD","Músculo pierna der.","kg"], ["musculoPI","Músculo pierna izq.","kg"],
+  ["grasaTronco","Grasa tronco","%"], ["grasaBD","Grasa brazo der.","%"], ["grasaBI","Grasa brazo izq.","%"],
+  ["grasaPD","Grasa pierna der.","%"], ["grasaPI","Grasa pierna izq.","%"],
+];
+
+// Modal para corregir manualmente los valores de una medición (errores de lectura IA del PDF/imagen).
+// Recibe la composición actual; al guardar devuelve {fecha, ...todos los campos} como strings.
+const ModalEditarComposicion = ({comp, onClose, onGuardar}) => {
+  const [f, setF] = useState(() => {
+    const init = { fecha: toISODate(comp.fecha) || "" };
+    [...CAMPOS_COMP_PRINCIPALES, ...CAMPOS_COMP_SEGMENTALES].forEach(([k]) => { init[k] = comp[k]!=null ? String(comp[k]) : ""; });
+    return init;
+  });
+  const [showSeg, setShowSeg] = useState(false);
+  const set = (k,v) => setF(x => ({...x, [k]:v}));
+  const guardar = () => { if (!f.fecha) { alert("La fecha no puede quedar vacía."); return; } onGuardar(f); };
+  // Función (no componente anidado) para no remontar los inputs y perder el foco al teclear.
+  const campo = (k, label, unit) => (
+    <div key={k}>
+      <div className="d" style={{fontSize:9.5,fontWeight:700,color:C.suave,marginBottom:3,textTransform:"uppercase",letterSpacing:.3}}>{label}{unit?` (${unit})`:""}</div>
+      <input type="number" inputMode="decimal" value={f[k]} onChange={e=>set(k,e.target.value)}
+        style={{width:"100%",border:"1px solid "+C.grisMedio,borderRadius:8,padding:"8px 10px",fontSize:14,boxSizing:"border-box"}}/>
+    </div>
+  );
+  return (
+    <Modal title="✏️ Editar medición" onClose={onClose} color={C.azul}>
+      <div style={{padding:"18px 22px"}}>
+        <div style={{marginBottom:16}}>
+          <div className="d" style={{fontSize:9.5,fontWeight:700,color:C.suave,marginBottom:3,textTransform:"uppercase",letterSpacing:.3}}>Fecha de la medición</div>
+          <input type="date" value={f.fecha} onChange={e=>set("fecha",e.target.value)}
+            style={{border:"1px solid "+C.grisMedio,borderRadius:8,padding:"8px 10px",fontSize:14}}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+          {CAMPOS_COMP_PRINCIPALES.map(([k,label,unit]) => campo(k,label,unit))}
+        </div>
+        <div style={{marginTop:16,borderTop:"1px solid "+C.gris,paddingTop:12}}>
+          <button onClick={()=>setShowSeg(s=>!s)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,fontWeight:700,color:C.azul,padding:0}}>
+            {showSeg?"▲":"▾"} Avanzado (segmentales)
+          </button>
+          {showSeg && (
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:12}}>
+              {CAMPOS_COMP_SEGMENTALES.map(([k,label,unit]) => campo(k,label,unit))}
+            </div>
+          )}
+        </div>
+        <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:22}}>
+          <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
+          <Btn onClick={guardar} color={C.verde} icon="✓">Guardar</Btn>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+const TimelineExpediente = ({p, onVerNota, onEditarConsulta, onEliminarConsulta, onEditarMedicion, onEliminarMedicion, onNuevaConsulta, onVerReceta, repararInicial, onRepararInicial}) => {
   const [filtro, setFiltro] = useState("todo");
   const [expand, setExpand] = useState(null);   // id/clave de consulta expandida
   const COLS = { consulta:"#4287F5", receta:"#27A98A", labs:"#E08910", medicion:"#7B3F3F" };
@@ -5718,9 +5781,11 @@ const TimelineExpediente = ({p, onVerNota, onEditarConsulta, onEliminarConsulta,
     const parts=Object.keys(map).filter(k=>p.labsI[k]).map(k=>`${map[k]} ${p.labsI[k]}`);
     eventos.push({ tipo:"labs", key:"li", ts:parseFechaClinica(p.labsI.fecha), fecha:p.labsI.fecha, titulo:"Laboratorios iniciales", detalle: parts.join(" · ")||"registro inicial" });
   }
-  [...(p.composicion||[])].filter(c=>c.peso||c.grasa).forEach((c,i)=>{
+  // Índice REAL en p.composicion (no el filtrado) para poder editar/eliminar la entrada correcta.
+  (p.composicion||[]).forEach((c, rawIdx)=>{
+    if (!(c.peso||c.grasa)) return;
     const detalle=[c.peso?`Peso ${c.peso} kg`:null, c.grasa?`grasa ${c.grasa}%`:null, c.musculo?`músculo ${c.musculo} kg`:null].filter(Boolean).join(" · ");
-    eventos.push({ tipo:"medicion", key:"m"+(c.id||i), ts:parseFechaClinica(c.fecha), fecha:c.fecha, titulo:"Medición Tanita", detalle: detalle||"medición registrada" });
+    eventos.push({ tipo:"medicion", key:"m"+(c.id||rawIdx), ts:parseFechaClinica(c.fecha), fecha:c.fecha, titulo:"Medición", detalle: detalle||"medición registrada", comp:c, idx:rawIdx });
   });
   eventos.sort((a,b)=> (b.ts||0) - (a.ts||0));
 
@@ -5761,14 +5826,14 @@ const TimelineExpediente = ({p, onVerNota, onEditarConsulta, onEliminarConsulta,
           {visibles.map((e)=>{
             const col=COLS[e.tipo], colTxt=COLS_TXT[e.tipo];
             const esHoy = e.ts && e.ts===hoyTs;
-            const abierto = e.tipo==="consulta" && expand===e.key;
+            const abierto = (e.tipo==="consulta"||e.tipo==="medicion") && expand===e.key;
             return (
               <div key={e.key} style={{position:"relative",marginBottom:16}}>
                 <div style={{position:"absolute",left:-26,top:2,width:14,height:14,borderRadius:"50%",background:col,
                   border:"3px solid var(--gft-bg)",boxShadow:`0 0 0 1px ${col}`}}/>
-                <div onClick={e.tipo==="consulta"?()=>setExpand(abierto?null:e.key):undefined}
+                <div onClick={(e.tipo==="consulta"||e.tipo==="medicion")?()=>setExpand(abierto?null:e.key):undefined}
                   style={{background:"var(--gft-surface)",border:"1px solid var(--gft-border)",borderLeft:`3px solid ${col}`,borderRadius:12,
-                    padding:"13px 16px",cursor:e.tipo==="consulta"?"pointer":"default"}}>
+                    padding:"13px 16px",cursor:(e.tipo==="consulta"||e.tipo==="medicion")?"pointer":"default"}}>
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <div style={{minWidth:60,flexShrink:0}}>
                       <div className="d" style={{fontSize:13,fontWeight:700,color:colTxt}}>{fmtFecha(e.fecha)}</div>
@@ -5781,10 +5846,10 @@ const TimelineExpediente = ({p, onVerNota, onEditarConsulta, onEliminarConsulta,
                     {e.tipo==="receta"
                       ? <span onClick={(ev)=>{ev.stopPropagation(); onVerReceta&&onVerReceta(e.r);}} style={{fontSize:11,color:"var(--gft-accent-text)",cursor:"pointer",flexShrink:0,fontWeight:600}}>Ver PDF</span>
                       : <span className="d" style={{fontSize:10,fontWeight:700,textTransform:"uppercase",padding:"3px 8px",borderRadius:5,flexShrink:0,
-                          background:`color-mix(in srgb, ${col} 18%, transparent)`,color:colTxt}}>{BADGE[e.tipo]}{e.tipo==="consulta"?` ${abierto?"▲":"▾"}`:""}</span>}
+                          background:`color-mix(in srgb, ${col} 18%, transparent)`,color:colTxt}}>{BADGE[e.tipo]}{(e.tipo==="consulta"||e.tipo==="medicion")?` ${abierto?"▲":"▾"}`:""}</span>}
                   </div>
                   {/* Consulta expandida → detalle + TODAS las acciones existentes */}
-                  {abierto && (
+                  {abierto && e.tipo==="consulta" && (
                     <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--gft-border)"}} onClick={ev=>ev.stopPropagation()}>
                       {e.c.subjetivo && <div style={{fontSize:11.5,color:"var(--gft-text-2)",marginBottom:4}}>{e.c.subjetivo}</div>}
                       {e.c.plan && <div style={{fontSize:11.5,color:"var(--gft-accent-text)",fontWeight:600,marginBottom:4}}>Plan: {e.c.plan}</div>}
@@ -5793,6 +5858,25 @@ const TimelineExpediente = ({p, onVerNota, onEditarConsulta, onEliminarConsulta,
                         <Btn onClick={()=>onVerNota&&onVerNota(e.c)} outline color={C.azul} size="sm" icon="🖨️">Ver nota</Btn>
                         <Btn onClick={()=>onEditarConsulta&&onEditarConsulta(e.c)} outline color={C.verde} size="sm" icon="✏️">Editar</Btn>
                         <Btn onClick={()=>onEliminarConsulta&&onEliminarConsulta(e.c.id)} outline color={C.rojo} size="sm" icon="🗑️">Eliminar</Btn>
+                      </div>
+                    </div>
+                  )}
+                  {/* Medición expandida → resumen de valores + Editar/Eliminar (corrección manual) */}
+                  {abierto && e.tipo==="medicion" && (
+                    <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--gft-border)"}} onClick={ev=>ev.stopPropagation()}>
+                      <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:10}}>
+                        {[["Peso",e.comp.peso,"kg"],["% Grasa",e.comp.grasa,"%"],["Músculo",e.comp.musculo,"kg"],["IMC",e.comp.imc,""],
+                          ["% Agua",e.comp.agua,"%"],["Visceral",e.comp.visceral,""],["BMR",e.comp.bmr,"kcal"],["Edad met.",e.comp.edadMet,""]]
+                          .filter(([,v])=>v!=null&&v!=="").map(([l,v,u])=>(
+                          <div key={l} style={{minWidth:52}}>
+                            <div className="d" style={{fontSize:9.5,fontWeight:700,color:"var(--gft-text-muted)",textTransform:"uppercase",letterSpacing:.3}}>{l}</div>
+                            <div style={{fontSize:13,fontWeight:700,color:"var(--gft-text)"}}>{v}<span style={{fontSize:9,color:"var(--gft-text-muted)"}}>{u?" "+u:""}</span></div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        <Btn onClick={()=>onEditarMedicion&&onEditarMedicion(e.comp, e.idx)} outline color={C.verde} size="sm" icon="✏️">Editar</Btn>
+                        <Btn onClick={()=>onEliminarMedicion&&onEliminarMedicion(e.comp, e.idx)} outline color={C.rojo} size="sm" icon="🗑️">Eliminar</Btn>
                       </div>
                     </div>
                   )}
@@ -5824,6 +5908,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [agendarCita, setAgendarCita] = useState(null); // consulta recién guardada para abrir ModalAgendarCita
   const [editCompIdx, setEditCompIdx] = useState(null);  // índice (en p.composicion) de la medición cuya fecha se edita
   const [editCompFecha, setEditCompFecha] = useState(""); // valor ISO del input type=date en edición
+  const [editComp, setEditComp] = useState(null);         // {comp, idx} — medición en edición completa (Timeline)
 
   const addConsulta = (d) => {
     // Asegurar que comp.peso usa el peso principal si comp.peso está vacío
@@ -5920,6 +6005,32 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     onUpdate({...p, composicion, consultas});
     setEditCompIdx(null);
     setEditCompFecha("");
+  };
+  // Edición COMPLETA de una medición (todos los campos numéricos), desde el Timeline. cambios = {fecha, ...campos}.
+  const guardarComposicionEditada = (cambios) => {
+    if (editComp == null) return;
+    const idx = editComp.idx;
+    const arr = p.composicion || [];
+    const target = arr[idx];
+    if (!target) { setEditComp(null); return; }
+    const nuevaFecha = cambios.fecha || target.fecha;
+    const fechaNorm = normDate(nuevaFecha);
+    const dup = arr.some((c,i) => i!==idx && (c.peso||c.grasa) && normDate(c.fecha) === fechaNorm);
+    if (dup) { alert(`Ya existe una medición registrada para el ${fechaNorm}.\nElige otra fecha.`); return; }
+    const nuevoComp = { ...target, ...cambios };   // conserva hora/id; sobreescribe fecha + valores editados
+    const composicion = arr.map((c,i) => i===idx ? nuevoComp : c).sort(porFechaClinica);
+    // Si estaba vinculada a una consulta por id y cambió la fecha, sincroniza la fecha de la consulta.
+    const consultas = (target.id!=null && cambios.fecha && toISODate(target.fecha)!==cambios.fecha)
+      ? (p.consultas||[]).map(c => c.id===target.id ? {...c, fecha:cambios.fecha} : c)
+      : (p.consultas||[]);
+    onUpdate({...p, composicion, consultas});
+    setEditComp(null);
+  };
+  // Elimina SOLO la entrada de composición (no toca la consulta vinculada si la hubiera).
+  const eliminarComposicion = (idx) => {
+    if (!confirm('¿Eliminar esta medición? Esta acción no se puede deshacer.\n(La consulta vinculada, si existe, se conserva.)')) return;
+    onUpdate({...p, composicion:(p.composicion||[]).filter((_,i) => i!==idx)});
+    setEditComp(null);
   };
   const addReceta = (r) => { onUpdate({...p,recetas:[...(p.recetas||[]),r]}); setShowR(false); };
   const addLabs = (l) => { onUpdate({...p,laboratorios:[...(p.laboratorios||[]),l]}); setShowL(false); };
@@ -6696,6 +6807,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             onVerNota={(c)=>setDoc({tipo:"nota",consulta:c})}
             onEditarConsulta={(c)=>setConsultaAEditar(c)}
             onEliminarConsulta={(id)=>eliminarConsulta(id)}
+            onEditarMedicion={(comp,idx)=>setEditComp({comp,idx})}
+            onEliminarMedicion={(comp,idx)=>eliminarComposicion(idx)}
             onNuevaConsulta={()=>setShowC(true)}
             onVerReceta={(r)=>setDoc({tipo:"receta",receta:r})}
             repararInicial={repararInicial} onRepararInicial={repararConsultaInicial}/>
@@ -6903,6 +7016,8 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
         onClose={()=>setShowC(false)} onSave={addConsulta}/>}
       {consultaAEditar && <ModalConsulta p={p} consultaExistente={consultaAEditar} modoEdicion
         onClose={()=>setConsultaAEditar(null)} onSave={editConsulta}/>}
+      {editComp && <ModalEditarComposicion comp={editComp.comp}
+        onClose={()=>setEditComp(null)} onGuardar={guardarComposicionEditada}/>}
       {/* Entry unificado (Fase C): "Siguiente →" de la consulta agenda la próxima cita.
           ModalAgendarCita (viejo) queda en el código pero ya no se usa. */}
       {agendarCita && <ModalAgendarCitaV2 pacientes={pacientes||[p]} pacientePre={p} tipoSugerido="seguimiento"
