@@ -7530,7 +7530,8 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   const slotDe = (hora) => minAHhmm(Math.floor(hhmmAMin(hora)/30)*30);
 
   // ── Eventos desde la tabla `citas` (v2). Una cita = un bloque. Hora/duración en Hermosillo. ──
-  const eventos = (citasV2||[]).map(c => {
+  // Las canceladas NO se dibujan en la rejilla (se conservan en Supabase y en "Administrar citas").
+  const eventos = (citasV2||[]).filter(c => c.estado!=="cancelada").map(c => {
     const {fecha,hora} = isoAInputsHmo(c.inicio);
     const dur = (c.inicio && c.fin) ? Math.max(15, Math.round((new Date(c.fin)-new Date(c.inicio))/60000))
       : (c.tipo==="primera_vez"?60:30);
@@ -9684,8 +9685,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   },[contentView]);
   useEffect(()=>{ if(!avisoSync) return; const t=setTimeout(()=>setAvisoSync(""), 6000); return ()=>clearTimeout(t); },[avisoSync]);
   const ordCita = (a,b) => new Date(a.inicio) - new Date(b.inicio);
+  // Vistas del día (rail HOY/MAÑANA, Cola del día, contadores del dashboard): SOLO citas activas.
+  // Las canceladas se excluyen aquí (se conservan en Supabase y en "Administrar citas" como bitácora).
   const citasV2Dia = {};
-  citasV2.forEach(c=>{ const {fecha}=isoAInputsHmo(c.inicio); if(!fecha) return; (citasV2Dia[fecha]=citasV2Dia[fecha]||[]).push(c); });
+  citasV2.filter(c=>c.estado!=="cancelada").forEach(c=>{ const {fecha}=isoAInputsHmo(c.inicio); if(!fecha) return; (citasV2Dia[fecha]=citasV2Dia[fecha]||[]).push(c); });
   const citasV2Hoy = (citasV2Dia[hoyStr]||[]).slice().sort(ordCita);
   const citasV2Manana = (citasV2Dia[mananaStr]||[]).slice().sort(ordCita);
   const pacById = (id) => pacientes.find(pp=>pp.id===id) || null;
