@@ -954,9 +954,15 @@ const setCalendariosOcupado = async (ids) => {
   catch(e){ console.warn("setCalendariosOcupado:", e); }
 };
 
+// Contador de ausencias consecutivas por evento (salvaguarda anti-falsos-positivos del auto-cancelado).
+// googleEventId → nº de ciclos consecutivos del import en que su evento NO apareció en Google.
+// Módulo-level: persiste entre ciclos (75s) y se reinicia al recargar la página.
+const _ausenciasGCal = new Map();
+
 // B1+B2 — Importa cambios del calendario del consultorio a la tabla `citas` (Google → app).
 // Resolución de conflictos: gana el timestamp más reciente (ev.updated vs cita.ultimaModificacion).
-// Detecta borrados (evento ya no está en Google) → marca la cita como 'cancelada' (conserva el registro).
+// Detecta borrados (evento ya no está en Google) → marca la cita como 'cancelada' (conserva el registro),
+// PERO solo tras confirmarlo en 2 lecturas consecutivas y nunca sobre una lectura vacía (ver más abajo).
 // NUNCA rompe la app: si Google falla o está desconectado, devuelve {ok:false} y no toca nada.
 const importarCambiosConsultorio = async () => {
   if (!isGoogleAuthorized()) return { ok:false, motivo:"desconectado" };
@@ -1003,19 +1009,38 @@ const importarCambiosConsultorio = async () => {
       } catch(e){ console.warn("importar/crear:", e); }
     }
   }
-  // Detección de borrados: cita con googleEventId que ya no existe en Google → cancelar.
-  try {
-    const enTabla = await listarCitas({ desde:desde.toISOString(), hasta:hasta.toISOString() });
-    for (const c of enTabla) {
-      if (c.googleEventId && !seen.has(c.googleEventId) && c.estado!=="cancelada") {
-        try {
-          await actualizarCita(c.id, { estado:"cancelada", origenUltimoCambio:"gcal" });
-          canceladas++;
-          avisos.push(`La cita de ${c.pacienteNombre} fue cancelada desde Google Calendar`);
-        } catch(e){ console.warn("importar/cancelar:", e); }
+  // Detección de borrados CON salvaguardas contra falsos positivos (bug Rosa María):
+  //  • SALVAGUARDA 1 — nunca cancelar sobre una lectura VACÍA: [] = fallo/desconexión probable, no
+  //    "el calendario quedó vacío". Cancelar aquí borraría media agenda por un hipo de red.
+  //  • SALVAGUARDA 2 — requerir AUSENCIA en 2 ciclos consecutivos (~150s) antes de cancelar. Una sola
+  //    lectura parcial/transitoria ya no basta; el evento debe faltar 2 veces seguidas.
+  //  • Aviso VISIBLE y distinguible cuando el sistema auto-cancela (se antepone al resto de avisos).
+  if (eventos.length === 0) {
+    _ausenciasGCal.clear();                 // lectura no confiable → no cancelar nada y reiniciar conteo
+  } else {
+    try {
+      const enTabla = await listarCitas({ desde:desde.toISOString(), hasta:hasta.toISOString() });
+      const ausentesEsteCiclo = new Set();
+      for (const c of enTabla) {
+        if (!c.googleEventId || c.estado==="cancelada") continue;
+        if (seen.has(c.googleEventId)) { _ausenciasGCal.delete(c.googleEventId); continue; } // presente → resetea
+        // Evento ausente en ESTA lectura → cuenta ciclos consecutivos.
+        ausentesEsteCiclo.add(c.googleEventId);
+        const n = (_ausenciasGCal.get(c.googleEventId) || 0) + 1;
+        _ausenciasGCal.set(c.googleEventId, n);
+        if (n >= 2) {                         // ausente 2 ciclos seguidos → borrado real → cancelar
+          try {
+            await actualizarCita(c.id, { estado:"cancelada", origenUltimoCambio:"gcal" });
+            _ausenciasGCal.delete(c.googleEventId);
+            canceladas++;
+            avisos.unshift(`⚠️ El sistema canceló la cita de ${c.pacienteNombre}: su evento fue borrado en Google Calendar. Si fue un error, reactívala en "Administrar citas".`);
+          } catch(e){ console.warn("importar/cancelar:", e); }
+        }
       }
-    }
-  } catch(e){ console.warn("importar/borrados:", e); }
+      // Limpia contadores de eventos que ya no están ausentes (no arrastrar conteos viejos).
+      for (const gid of [..._ausenciasGCal.keys()]) if (!ausentesEsteCiclo.has(gid)) _ausenciasGCal.delete(gid);
+    } catch(e){ console.warn("importar/borrados:", e); }
+  }
   return { ok:true, nuevas, actualizadas, canceladas, avisos };
 };
 

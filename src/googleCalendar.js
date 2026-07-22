@@ -401,21 +401,30 @@ export const actualizarEventoEnCalendario = async (calendarId, eventId, { summar
 };
 
 // Lee eventos del calendario indicado en un rango (por defecto: ahora → +90 días). Devuelve array.
+// Pagina TODAS las páginas (nextPageToken): nunca trunca. Ante cualquier error devuelve [] (lectura
+// no confiable) — quien la use no debe interpretar [] como "el calendario está vacío de verdad".
 export const leerEventosDeCalendario = async (calendarId, { timeMin, timeMax } = {}) => {
   if (!isGoogleAuthorized()) return [];
   if (!calendarId) return [];
   window.gapi.client.setToken({ access_token: loadSavedToken() });
   try {
-    const resp = await window.gapi.client.calendar.events.list({
-      calendarId,
-      timeMin: timeMin || new Date().toISOString(),
-      timeMax: timeMax || new Date(Date.now() + 90*24*60*60*1000).toISOString(),
-      showDeleted: false,
-      singleEvents: true,
-      maxResults: 500,
-      orderBy: "startTime",
-    });
-    return resp.result.items || [];
+    const items = [];
+    let pageToken;
+    do {
+      const resp = await window.gapi.client.calendar.events.list({
+        calendarId,
+        timeMin: timeMin || new Date().toISOString(),
+        timeMax: timeMax || new Date(Date.now() + 90*24*60*60*1000).toISOString(),
+        showDeleted: false,
+        singleEvents: true,
+        maxResults: 2500,
+        orderBy: "startTime",
+        ...(pageToken ? { pageToken } : {}),
+      });
+      (resp.result.items || []).forEach(e => items.push(e));
+      pageToken = resp.result.nextPageToken;
+    } while (pageToken);
+    return items;
   } catch(e) {
     console.error("Error leyendo eventos del calendario dedicado:", e);
     _manejar401(e);
