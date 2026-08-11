@@ -640,6 +640,12 @@ const ffmiDe = (c, tallaCm) => {
   const tM=(Number(tallaCm)||0)/100;
   return (tM>0 && ffm!=null) ? parseFloat((ffm/(tM*tM)).toFixed(1)) : null;
 };
+// IMG (Índice de Masa Grasa) = grasa(kg) / talla(m)². Reusa grasaKgDe (no duplica el cálculo de grasa kg).
+const imgDe = (c, tallaCm) => {
+  const gk=grasaKgDe(c);
+  const tM=(Number(tallaCm)||0)/100;
+  return (tM>0 && gk!=null) ? parseFloat((gk/(tM*tM)).toFixed(1)) : null;
+};
 
 // ── CATÁLOGOS ────────────────────────────────────────────────
 const GLPS = [
@@ -3302,18 +3308,54 @@ const DocProgreso = ({p}) => {
   };
 
   // ── Masa muscular (FFMI), agua, zonas de peso ──
+  // FFMI — valores de referencia DXA/NHANES (Kelly et al. 2009). Etiquetas cortas en el gauge; el
+  // significado completo va en "Qué significa". 6 categorías por sexo.
   const ZONAS_FFMI = {
     H: [
-      {label:'Bajo',     rango:'<17.4',     min:14,   max:17.4, color:'#D85A30'},
-      {label:'Adecuado', rango:'17.4–19.7', min:17.4, max:19.8, color:'#1D9E75'},
-      {label:'Bueno',    rango:'19.8–21.9', min:19.8, max:22,   color:'#0E8E80'},
-      {label:'Atlético', rango:'≥22.0',     min:22,   max:27,   color:'#1B3F8B'},
+      {label:'Sarcopenia', rango:'<15.6',    min:13,   max:15.6, color:'#D85A30'},
+      {label:'Baja',       rango:'15.6–19',  min:15.6, max:19,   color:'#E0A45F'},
+      {label:'Normal',     rango:'19–21.1',  min:19,   max:21.1, color:'#1D9E75'},
+      {label:'Delgado',    rango:'21.1–23',  min:21.1, max:23,   color:'#0E8E80'},
+      {label:'Fitness',    rango:'23–25',    min:23,   max:25,   color:'#2E6FB0'},
+      {label:'Atlético',   rango:'>25',      min:25,   max:30,   color:'#1B3F8B'},
     ],
     M: [
-      {label:'Bajo',     rango:'<15.0',     min:11,   max:15,   color:'#D85A30'},
-      {label:'Adecuado', rango:'15.0–16.6', min:15,   max:16.7, color:'#1D9E75'},
-      {label:'Buena',    rango:'16.7–17.9', min:16.7, max:18,   color:'#0E8E80'},
-      {label:'Atlética', rango:'≥18.0',     min:18,   max:24,   color:'#1B3F8B'},
+      {label:'Sarcopenia', rango:'<13.6',     min:11,   max:13.6, color:'#D85A30'},
+      {label:'Baja',       rango:'13.6–15.8', min:13.6, max:15.8, color:'#E0A45F'},
+      {label:'Normal',     rango:'15.8–17.1', min:15.8, max:17.1, color:'#1D9E75'},
+      {label:'Delgado',    rango:'17.1–18.1', min:17.1, max:18.1, color:'#0E8E80'},
+      {label:'Fitness',    rango:'18.2–19.3', min:18.1, max:19.3, color:'#2E6FB0'},
+      {label:'Atlético',   rango:'>19.3',     min:19.3, max:24,   color:'#1B3F8B'},
+    ],
+  };
+  // IMG (Índice de Masa Grasa) — Kelly et al. 2009. Gauge: 4 bandas amplias. Detalle de 8 subcategorías
+  // (con sus límites exactos) va en "Qué significa" vía ZONAS_IMG_DETALLE.
+  const ZONAS_IMG = {
+    H: [
+      {label:'Déficit',  rango:'<3',  min:0, max:3,  color:'#9DB4D6'},
+      {label:'Normal',   rango:'3–6', min:3, max:6,  color:'#1D9E75'},
+      {label:'Exceso',   rango:'6–9', min:6, max:9,  color:'#E0A45F'},
+      {label:'Obesidad', rango:'>9',  min:9, max:18, color:'#D85A30'},
+    ],
+    M: [
+      {label:'Déficit',  rango:'<5',   min:0,  max:5,  color:'#9DB4D6'},
+      {label:'Normal',   rango:'5–9',  min:5,  max:9,  color:'#1D9E75'},
+      {label:'Exceso',   rango:'9–13', min:9,  max:13, color:'#E0A45F'},
+      {label:'Obesidad', rango:'>13',  min:13, max:24, color:'#D85A30'},
+    ],
+  };
+  const ZONAS_IMG_DETALLE = {
+    H: [
+      {label:'Déficit severo',   min:0,   max:2},   {label:'Déficit moderado', min:2,   max:2.3},
+      {label:'Déficit leve',     min:2.3, max:3},   {label:'Normal',           min:3,   max:6},
+      {label:'Exceso',           min:6,   max:9},   {label:'Obesidad grado I', min:9,   max:12},
+      {label:'Obesidad grado II',min:12,  max:15},  {label:'Obesidad grado III',min:15, max:100},
+    ],
+    M: [
+      {label:'Déficit severo',   min:0,   max:3.5}, {label:'Déficit moderado', min:3.5, max:4},
+      {label:'Déficit leve',     min:4,   max:5},   {label:'Normal',           min:5,   max:9},
+      {label:'Exceso',           min:9,   max:13},  {label:'Obesidad grado I', min:13,  max:17},
+      {label:'Obesidad grado II',min:17,  max:21},  {label:'Obesidad grado III',min:21, max:100},
     ],
   };
   const ZONAS_AGUA = { H:{min:50,max:65,optimo:60}, M:{min:45,max:60,optimo:55} };
@@ -3322,6 +3364,24 @@ const DocProgreso = ({p}) => {
   const ffm = ffmDe(ultima);
   const ffmi = ffmiDe(ultima, (p.talla || p.estatura || p.altura));
   const zonasFFMI = ZONAS_FFMI[sexoKey];
+  // IMG (Índice de Masa Grasa) — reusa imgDe (que a su vez reusa grasaKgDe). Nota con subcategoría exacta.
+  const imgAct  = imgDe(ultima,    (p.talla || p.estatura || p.altura));
+  const imgPrev = imgDe(penultima, (p.talla || p.estatura || p.altura));
+  const IMG_SIGNIFICA = {
+    'Déficit severo':"muy por debajo de lo saludable. Conviene recuperar grasa esencial cuidando tu nutrición.",
+    'Déficit moderado':"por debajo de lo saludable. Conviene subir un poco, con buena nutrición.",
+    'Déficit leve':"ligeramente bajo, cerca del rango normal.",
+    'Normal':"en un rango saludable de grasa ajustado a tu estatura. Mantenlo así.",
+    'Exceso':"algo elevado. Reducirlo mejora tu energía y tu salud; cada mes cuenta.",
+    'Obesidad grado I':"elevado (obesidad grado I). Bajarlo reduce riesgos; vamos paso a paso.",
+    'Obesidad grado II':"alto (obesidad grado II). Reducirlo es prioridad para tu salud.",
+    'Obesidad grado III':"muy alto (obesidad grado III). Trabajémoslo juntos de forma sostenida.",
+  };
+  const imgNota = (v) => {
+    const cat = zonaDe(v, ZONAS_IMG_DETALLE[sexoKey]);
+    if (!cat) return "";
+    return `Tu índice de masa grasa (grasa ajustada a tu estatura) está ${IMG_SIGNIFICA[cat.label] || "en tu rango actual."}${cat.label.startsWith('Obesidad')||cat.label.startsWith('Déficit')?` Categoría: ${cat.label}.`:""}`;
+  };
   const aguaAct = (ultima?.agua!=null && ultima?.agua!=="" && !isNaN(parseFloat(ultima.agua))) ? parseFloat(ultima.agua) : null;
   const aguaZona = ZONAS_AGUA[sexoKey];
   // Zonas de peso saludable por IMC (según estatura)
@@ -3585,13 +3645,12 @@ const DocProgreso = ({p}) => {
     cintura: { "Saludable":"Tu cintura está en un rango saludable, con bajo riesgo para el corazón.",
       "Precaución":"Tu cintura está en precaución. Reducirla unos centímetros baja el riesgo cardiovascular.",
       "Elevado":"Tu cintura indica mayor riesgo cardiovascular. Reducirla unos centímetros es una de las mejoras más importantes para tu salud." },
-    ffmi: { "Bajo":"Tu masa muscular está por debajo de lo ideal. Cuidarla con proteína y ejercicio de fuerza protege tu metabolismo.",
-      "Adecuado":"Tu masa muscular está en buen nivel. Mantenerla conserva tu metabolismo activo.",
-      "Adecuada":"Tu masa muscular está en buen nivel. Mantenerla conserva tu metabolismo activo.",
-      "Bueno":"Tienes buena masa muscular — excelente para tu metabolismo y tu fuerza.",
-      "Buena":"Tienes buena masa muscular — excelente para tu metabolismo y tu fuerza.",
-      "Atlético":"Tu masa muscular está en nivel atlético. Muy buen trabajo.",
-      "Atlética":"Tu masa muscular está en nivel atlético. Muy buen trabajo." },
+    ffmi: { "Sarcopenia":"Tu masa muscular está muy baja (sarcopenia). Priorizar proteína y ejercicio de fuerza es clave para tu salud y tu metabolismo.",
+      "Baja":"Tu masa muscular (baja masa muscular) está por debajo de lo normal. Cuidarla con proteína y fuerza protege tu metabolismo.",
+      "Normal":"Tu masa muscular está en un nivel normal y saludable. Mantenerla conserva tu metabolismo activo.",
+      "Delgado":"Tienes buena masa muscular, en nivel delgado-tonificado. Excelente para tu metabolismo.",
+      "Fitness":"Tu masa muscular está en nivel fitness — muy buen desarrollo. Sigue así.",
+      "Atlético":"Tu masa muscular está en nivel atlético. Excelente trabajo." },
   };
   const qs = (metric, zonaLabel) => (QS[metric]||{})[zonaLabel] || "";
 
@@ -3644,11 +3703,13 @@ const DocProgreso = ({p}) => {
             if(d) return {t: pct?`${d.t} · ${pct}`:d.t, c:d.c};
             return pct ? {t:pct, c:C.suave} : null;
           })();
+          const imgZona = zonaDe(imgAct, ZONAS_IMG[sexoKey]);
           return [
             {l:"Peso", v:ultima?.peso, u:" kg", vc:C.azul,
-              linea:esPrimeraToma?null:dmStr(ultima?.peso, penultima?.peso, " kg"), prev:esPrimeraToma?null:prevTxt(penultima?.peso," kg")},
-            {l:"Índice de masa corporal", v:imcAct, u:"", vc:C.azul,
-              linea:zIMC?{t:zIMC.label,c:zIMC.color}:null, prev:esPrimeraToma?null:prevTxt(imcPrev,"")},
+              linea:esPrimeraToma?null:dmStr(ultima?.peso, penultima?.peso, " kg"), prev:esPrimeraToma?null:prevTxt(penultima?.peso," kg"),
+              extra:(imcAct!=null&&imcAct!=="")?{t:`IMC ${imcAct}${zIMC?` · ${zIMC.label}`:""}`, c:zIMC?zIMC.color:C.suave}:null},
+            {l:"Índice de masa grasa (IMG)", v:imgAct, u:"", vc:"#B45309", accent:"#B45309",
+              linea:imgZona?{t:imgZona.label,c:imgZona.color}:null, prev:esPrimeraToma?null:prevTxt(imgPrev,"")},
             {l:"Grasa corporal", v:grasaKgAct, u:" kg", vc:"#D97706", accent:"#D97706",
               linea:grasaLinea, prev:esPrimeraToma?null:prevTxt(grasaKgPrev," kg")},
             {l:"Masa muscular", v:ultima?.musculo, u:" kg", vc:"#7B3F3F", accent:"#7B3F3F",
@@ -3665,6 +3726,7 @@ const DocProgreso = ({p}) => {
                 {m.v!=null&&m.v!==""?m.v:"—"}{m.u&&<span style={{fontSize:13,color:"#94A3B8"}}>{m.u}</span>}</div>
               {m.linea && <div style={{fontSize:11,fontWeight:600,color:m.linea.c,marginTop:3}}>{m.linea.t}</div>}
               {m.prev && <div className="d" style={{fontSize:10,color:"#94A3B8",marginTop:1}}>{m.prev}</div>}
+              {m.extra && <div style={{fontSize:10.5,fontWeight:700,color:m.extra.c,marginTop:4,paddingTop:4,borderTop:"1px solid #E2E8F0"}}>{m.extra.t}</div>}
             </div>
           ));
         })()}
@@ -3672,18 +3734,19 @@ const DocProgreso = ({p}) => {
 
       <div style={{fontSize:15,fontWeight:700,color:C.azul,marginBottom:3}}>¿En qué rango estás?</div>
       <div style={{fontSize:12,color:"#64748B",marginBottom:14}}>El punto blanco marca dónde estás hoy. Los rangos están ajustados a tu edad y sexo.</div>
-      {/* 4 medidores compactos en 2×2 para que la hoja quepa cómoda en una página */}
+      {/* 4 medidores compactos en 2×2 (Grasa, Cintura, FFMI, IMG). El IMC ya se muestra junto al Peso. */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:20,marginBottom:4}}>
-        {(()=>{ const imcV = ultima?.imc || calcIMC(ultima?.peso, p.talla); return (
-          <RangoGrad titulo="Índice de masa corporal" zonas={ZONAS_IMC} valor={imcV} domMin={15} domMax={35} mb={12}
-            nota={qs("imc", zonaDe(imcV, ZONAS_IMC)?.label)}/> ); })()}
         <RangoGrad titulo="Grasa corporal" zonas={ZONAS_GRASA[sexoKey]} valor={ultima?.grasa} domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%" mb={12}
           nota={qs("grasa", zonaDe(ultima?.grasa, ZONAS_GRASA[sexoKey])?.label)}/>
         <RangoGrad titulo="Cintura (riesgo cardiovascular)" zonas={ZONAS_CA[sexoKey]} valor={caAct} domMin={0} domMax={130} unidad="cm" mb={12}
           nota={qs("cintura", zonaCA(caAct)?.label)}/>
         {ffmi!=null && (
-          <RangoGrad titulo="Índice de masa muscular (FFMI)" zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?14:11} domMax={sexoKey==='H'?27:24} unidad="kg/m²" mb={12}
+          <RangoGrad titulo="Índice de masa muscular (FFMI)" zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?13:11} domMax={sexoKey==='H'?28:22} unidad="kg/m²" mb={12}
             nota={qs("ffmi", zonaDe(ffmi, ZONAS_FFMI[sexoKey])?.label)}/>
+        )}
+        {imgAct!=null && (
+          <RangoGrad titulo="Índice de masa grasa (IMG)" zonas={ZONAS_IMG[sexoKey]} valor={imgAct} domMin={0} domMax={sexoKey==='H'?18:24} unidad="kg/m²" mb={12}
+            nota={imgNota(imgAct)}/>
         )}
       </div>
 
@@ -3719,6 +3782,12 @@ const DocProgreso = ({p}) => {
           <MetaBarra zonas={ZONAS_GRASA[sexoKey]} valorHoy={ultima?.grasa} valorMeta={metaGrasaPct}
             domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
             etiquetaRango={`Meta de grasa saludable para tu sexo: ${metaGrasaPct}%`}/>
+        </>)}
+        {/* Grasa visceral — sin meta personalizada: mini-indicador de zona (menor es mejor). */}
+        {(ultima?.visceral!=null && ultima?.visceral!=="" && !isNaN(parseFloat(ultima.visceral))) && (<>
+          <div style={{fontSize:14,fontWeight:500,color:'#26324A',margin:'12px 0 6px'}}>Grasa visceral</div>
+          <RangoProp label="Nivel actual" value={ultima?.visceral} dmin={1} dmax={20} zonas={ZONAS_VISCERAL}/>
+          <div style={{fontSize:9,color:C.suave,marginTop:-6,marginBottom:2}}>Rango saludable de referencia: 1–9 (sin meta personalizada; mantenerlo bajo protege tu corazón y tu metabolismo).</div>
         </>)}
         {/* Fila 1 — Composición corporal */}
         <div style={{fontSize:9,fontWeight:700,color:C.suave,letterSpacing:.4,margin:"14px 0 6px"}}>COMPOSICIÓN CORPORAL</div>
@@ -3919,6 +3988,11 @@ const DocProgreso = ({p}) => {
             <div style={{fontSize:11,opacity:0.9,marginTop:2}}>{hora} hrs</div>
           </div>
         );})()}
+      </div>
+
+      {/* Referencias bibliográficas (todo el reporte). Fuentes reales y verificables. */}
+      <div style={{fontSize:8.5,color:C.suave,lineHeight:1.45,marginBottom:2}}>
+        Referencias: Kelly TL et al. (2009) PLoS ONE 4(9):e7038 · Mifflin MD &amp; St Jeor ST (1990) Am J Clin Nutr 51(2) · Gallagher D et al. (2000) Am J Clin Nutr 72(3)
       </div>
 
       <Pie n={3}/>
