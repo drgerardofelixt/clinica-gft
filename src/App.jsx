@@ -16,6 +16,7 @@ import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles, getUltimoErrorGCal, limpiarUltimoErrorGCal, verificarScopeToken, tieneScopeEscritura, reconectarGoogleCalendar, getScopeGuardado } from "./googleCalendar.js";
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
+import AdminProductos from "./modules/aesthetic";
 import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -9745,6 +9746,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [diaSel, setDiaSel] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false); // menú lateral en móvil
   const [showImport, setShowImport] = useState(false);
+  const [showEstetica, setShowEstetica] = useState(false); // overlay fullscreen del módulo de estética
   const [contentView, setContentView] = useState("dash");
   const [busq, setBusq] = useState("");
   const [labsFilter, setLabsFilter] = useState(false);
@@ -10042,6 +10044,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           <button className={"gft-sidebar__item"+(contentView==="ajustes"?" gft-sidebar__item--active":"")}
             onClick={()=>setContentView("ajustes")}>
             <span className="gft-sidebar__icon">⚙️</span>Ajustes
+          </button>
+          <button className="gft-sidebar__item" onClick={()=>setShowEstetica(true)}>
+            <span className="gft-sidebar__icon">💊</span>Medicina Estética
           </button>
 
           <div style={{marginTop:"auto",padding:"16px 10px 8px",borderTop:"1px solid var(--gft-border)"}}>
@@ -10914,6 +10919,20 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           onClose={()=>setShowImport(false)}
           onImportar={onImportarGCal}
         />
+      )}
+
+      {/* Módulo de Medicina Estética — overlay fullscreen (panel claro, autocontenido) */}
+      {showEstetica && (
+        <div style={{position:"fixed",inset:0,zIndex:5000,background:"#fff",overflow:"auto"}}>
+          <div style={{position:"sticky",top:0,zIndex:1,display:"flex",alignItems:"center",justifyContent:"space-between",
+            padding:"12px 20px",background:"#0F2C57",color:"#fff",boxShadow:"0 2px 8px rgba(0,0,0,.15)"}}>
+            <div style={{fontWeight:800,fontSize:15}}>💊 Medicina Estética</div>
+            <button onClick={()=>setShowEstetica(false)}
+              style={{background:"rgba(255,255,255,.18)",border:"none",color:"#fff",fontWeight:700,
+                borderRadius:8,padding:"8px 16px",cursor:"pointer",fontSize:13}}>✕ Cerrar</button>
+          </div>
+          <AdminProductos/>
+        </div>
       )}
 
       {/* Editor único de cita (Fase D1): abierto desde Agenda y Calendario. Edita/borra en la tabla `citas`. */}

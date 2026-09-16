@@ -49,7 +49,8 @@ export const AdminProductos = () => {
       const { data: prods } = await supabase
         .from('productos_esteticos')
         .select('*')
-        .order('marca, nombre');
+        .order('marca', { ascending: true })
+        .order('nombre', { ascending: true });
       setProductos(prods || []);
     } catch (e) {
       setError('Error cargando datos: ' + String(e));
