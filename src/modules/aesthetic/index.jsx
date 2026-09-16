@@ -137,9 +137,9 @@ export const AdminProductos = () => {
   if (loading) return <div style={{ padding: 20, textAlign: 'center' }}>Cargando...</div>;
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: 20 }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: 20, color: '#1a1a1a' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h1>💊 Catálogo de Productos</h1>
+        <h1 style={{ margin: 0, color: '#000' }}>💊 Catálogo de Productos</h1>
         <button
           onClick={() => abrirFormulario(null)}
           style={{
@@ -189,13 +189,13 @@ export const AdminProductos = () => {
         }}>
           <thead>
             <tr style={{ background: '#f5f5f5', borderBottom: '2px solid #ddd' }}>
-              <th style={{ padding: 12, textAlign: 'left' }}>Marca / Producto</th>
-              <th style={{ padding: 12, textAlign: 'left' }}>Presentación</th>
-              <th style={{ padding: 12, textAlign: 'right' }}>Costo</th>
-              <th style={{ padding: 12, textAlign: 'right' }}>Precio</th>
-              <th style={{ padding: 12, textAlign: 'right' }}>Utilidad</th>
-              <th style={{ padding: 12, textAlign: 'center' }}>Stock</th>
-              <th style={{ padding: 12, textAlign: 'center' }}>Acciones</th>
+              <th style={{ padding: 12, textAlign: 'left', color: '#000' }}>Marca / Producto</th>
+              <th style={{ padding: 12, textAlign: 'left', color: '#000' }}>Presentación</th>
+              <th style={{ padding: 12, textAlign: 'right', color: '#000' }}>Costo</th>
+              <th style={{ padding: 12, textAlign: 'right', color: '#000' }}>Precio</th>
+              <th style={{ padding: 12, textAlign: 'right', color: '#000' }}>Utilidad</th>
+              <th style={{ padding: 12, textAlign: 'center', color: '#000' }}>Stock</th>
+              <th style={{ padding: 12, textAlign: 'center', color: '#000' }}>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -203,7 +203,7 @@ export const AdminProductos = () => {
               <tr key={p.id} style={{ borderBottom: '1px solid #eee' }}>
                 <td style={{ padding: 12 }}>
                   <div style={{ fontWeight: 'bold' }}>{p.marca}</div>
-                  <div style={{ fontSize: 11, color: '#666' }}>{p.nombre}</div>
+                  <div style={{ fontSize: 11, color: '#333' }}>{p.nombre}</div>
                 </td>
                 <td style={{ padding: 12 }}>{p.presentacion}</td>
                 <td style={{ padding: 12, textAlign: 'right', fontFamily: 'monospace' }}>
@@ -216,7 +216,7 @@ export const AdminProductos = () => {
                   <div style={{ fontWeight: 'bold', color: '#060' }}>
                     ${(p.precio_venta_mxn - p.costo_compra_mxn).toLocaleString('es-MX')}
                   </div>
-                  <div style={{ fontSize: 11, color: '#666' }}>
+                  <div style={{ fontSize: 11, color: '#333' }}>
                     {p.costo_compra_mxn > 0 
                       ? (((p.precio_venta_mxn - p.costo_compra_mxn) / p.costo_compra_mxn) * 100).toFixed(1) 
                       : 0}%
@@ -295,12 +295,12 @@ export const AdminProductos = () => {
             overflowY: 'auto',
             boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
           }}>
-            <h2 style={{ marginTop: 0 }}>
+            <h2 style={{ marginTop: 0, color: '#000' }}>
               {editingId ? '✏️ Editar Producto' : '➕ Agregar Nuevo Producto'}
             </h2>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                 Nombre *
               </label>
               <input
@@ -320,7 +320,7 @@ export const AdminProductos = () => {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                 Marca *
               </label>
               <input
@@ -340,7 +340,7 @@ export const AdminProductos = () => {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                 Tipo Procedimiento *
               </label>
               <select
@@ -366,7 +366,7 @@ export const AdminProductos = () => {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                 Presentación *
               </label>
               <input
@@ -396,7 +396,7 @@ export const AdminProductos = () => {
               <h3 style={{ margin: '0 0 12px 0', fontSize: 13, color: '#1565c0' }}>💰 PRECIOS</h3>
 
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+                <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                   Costo Compra (MXN) *
                 </label>
                 <input
@@ -417,7 +417,7 @@ export const AdminProductos = () => {
               </div>
 
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+                <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                   Precio Venta (MXN) *
                 </label>
                 <input
@@ -457,7 +457,7 @@ export const AdminProductos = () => {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                 Laboratorio
               </label>
               <input
@@ -476,7 +476,7 @@ export const AdminProductos = () => {
             </div>
 
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12 }}>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 'bold', fontSize: 12, color: '#000' }}>
                 Stock Actual
               </label>
               <input
