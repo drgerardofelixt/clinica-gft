@@ -8,21 +8,32 @@ const AnalizadorIAVision = ({ pacienteId, fotosUrls = {}, onAnalisisGuardado = (
   const [resultado, setResultado] = useState(null);
   const [expandido, setExpandido] = useState(null);
 
+  // Descarga la foto y la redimensiona/comprime en el navegador antes de
+  // enviarla. Las fotos del celular pesan ~2MB; 5 juntas superan el límite de
+  // payload de las funciones de Vercel (~4.5MB) y el request se rechaza (413).
+  // Bajando a 1024px de lado mayor + JPEG 0.8, cada foto queda en ~150-250KB.
   const descargaryConvertirABase64 = async (url) => {
     try {
       const response = await fetch(url);
       const blob = await response.blob();
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = reader.result.split(',')[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      const bitmap = await createImageBitmap(blob);
+
+      const MAX_LADO = 1024;
+      const escala = Math.min(1, MAX_LADO / Math.max(bitmap.width, bitmap.height));
+      const w = Math.round(bitmap.width * escala);
+      const h = Math.round(bitmap.height * escala);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      bitmap.close?.();
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      return dataUrl.split(',')[1];
     } catch (err) {
-      console.error('Error descargando foto:', err);
+      console.error('Error procesando foto:', err);
       return null;
     }
   };
