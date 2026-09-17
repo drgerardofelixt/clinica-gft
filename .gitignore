@@ -9,3 +9,6 @@ dist
 # Datos sensibles de pacientes (no versionar)
 sexo-revision.csv
 src/assets/docs-referencia/
+
+# Metadata local de Claude Code (no versionar)
+.claude/

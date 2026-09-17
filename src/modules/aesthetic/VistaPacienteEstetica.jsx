@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import HistorialProcedimientos from './HistorialProcedimientos';
-import FormularioProcedimiento from './FormularioProcedimiento';
+import FormularioProcedimiento from './componentes/FormularioProcedimiento';
 import PlanesTratamiento from './PlanesTratamiento';
 
 const C = {
@@ -135,7 +135,7 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
           )}
           {tab === 'nuevo-procedimiento' && (
             <FormularioProcedimiento
-              paciente={paciente}
+              pacienteId={paciente.id}
               onGuardado={onProcedimientoAgregado}
             />
           )}

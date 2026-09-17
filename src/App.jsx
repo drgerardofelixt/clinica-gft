@@ -17,7 +17,7 @@ import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revoke
 import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import AdminProductos from "./modules/aesthetic";
-import VistaPacienteEstetica from "./modules/aesthetic/VistaPacienteEstetica";
+import EstheticModule from "./modules/aesthetic/EstheticModule";
 import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -6196,7 +6196,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     {id:"labs",l:"🧪 Labs"+(_nLabs>0?` (${_nLabs})`:"")},
     {id:"recetas",l:"💊 Recetas"},
     {id:"hc",l:"📁 Expediente"},
-    {id:"estetica",l:"🎨 Estética"},
+    {id:"estetica",l:"💉 Estética"},
   ];
 
   // Genera el texto detallado de WhatsApp con todo el resumen de progreso
@@ -7052,7 +7052,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           )
         )}
         {tab==="estetica" && (
-          <VistaPacienteEstetica paciente={p} onUpdate={onUpdate}/>
+          <EstheticModule paciente={p}/>
         )}
 
         {tab==="hc" && (
