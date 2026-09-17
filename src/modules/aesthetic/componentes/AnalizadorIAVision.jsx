@@ -189,7 +189,7 @@ Analiza TODAS las fotos proporcionadas y devuelve SOLO el JSON completo, válido
       }));
 
       const messageBody = {
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         max_tokens: 4000,
         messages: [
           {
@@ -222,7 +222,16 @@ Analiza TODAS las fotos proporcionadas y devuelve SOLO el JSON completo, válido
       }
 
       const data = await response.json();
-      const textContent = data.content.find((c) => c.type === 'text');
+
+      // El proxy /api/claude devuelve los errores del API con status 200,
+      // así que hay que detectarlos aquí (si no, revienta al leer data.content).
+      if (data?.type === 'error' || data?.error) {
+        throw new Error(`Claude API: ${data.error?.message || 'error desconocido'}`);
+      }
+
+      const textContent = Array.isArray(data?.content)
+        ? data.content.find((c) => c.type === 'text')
+        : null;
 
       if (!textContent) {
         throw new Error('No hay respuesta de texto de Claude');
