@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import NuevaConsultaEstetica from './vistas/NuevaConsultaEstetica';
 import VistaPacienteEstetica from './VistaPacienteEstetica';
+import GaleriaAntesDesp from './vistas/GaleriaAntesDesp';
 
 const EstheticModule = ({ paciente }) => {
   const [subpestana, setSubpestana] = useState('expediente');
@@ -61,6 +62,22 @@ const EstheticModule = ({ paciente }) => {
         >
           ➕ Nueva Consulta
         </button>
+
+        <button
+          onClick={() => setSubpestana('galeria')}
+          style={{
+            padding: '8px 16px',
+            background: subpestana === 'galeria' ? '#0066cc' : 'transparent',
+            color: subpestana === 'galeria' ? '#fff' : '#666',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            fontWeight: subpestana === 'galeria' ? 'bold' : 'normal',
+            fontSize: 13
+          }}
+        >
+          📸 Evolución Fotográfica
+        </button>
       </div>
 
       {/* CONTENIDO */}
@@ -74,6 +91,10 @@ const EstheticModule = ({ paciente }) => {
           pacienteNombre={paciente.nombre || 'Paciente'}
           paciente={paciente}
         />
+      )}
+
+      {subpestana === 'galeria' && (
+        <GaleriaAntesDesp pacienteId={paciente.id} />
       )}
     </div>
   );

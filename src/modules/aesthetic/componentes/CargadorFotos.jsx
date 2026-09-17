@@ -135,6 +135,35 @@ const CargadorFotos = ({ pacienteId, fotosExistentes = {}, onFotosGuardadas = ()
     }
   };
 
+  // Refetch de la consulta del paciente (útil para flujo multiplataforma:
+  // subes fotos desde el celular y las traes aquí sin recargar la página).
+  const recargarFotos = async () => {
+    try {
+      setError(null);
+      setCargando(true);
+      const { data, error: err } = await supabase
+        .from('consultas_iniciales_estetica')
+        .select('foto_frontal_url, foto_perfil_d_url, foto_perfil_i_url, foto_3cuartos_d_url, foto_3cuartos_i_url')
+        .eq('paciente_id', pacienteId)
+        .maybeSingle();
+      if (err) throw err;
+      if (data) {
+        setFotos({
+          frontal: data.foto_frontal_url || '',
+          perfil_d: data.foto_perfil_d_url || '',
+          perfil_i: data.foto_perfil_i_url || '',
+          tres_cuartos_d: data.foto_3cuartos_d_url || '',
+          tres_cuartos_i: data.foto_3cuartos_i_url || '',
+        });
+      }
+    } catch (err) {
+      console.error('Error recargando fotos:', err);
+      setError(err.message || 'Error al recargar fotos');
+    } finally {
+      setCargando(false);
+    }
+  };
+
   return (
     <div style={{
       maxWidth: 1000,
@@ -171,6 +200,25 @@ const CargadorFotos = ({ pacienteId, fotosExistentes = {}, onFotosGuardadas = ()
           ❌ Error: {error}
         </div>
       )}
+
+      {/* RECARGAR (flujo multiplataforma: subir en celular, ver en compu) */}
+      <button
+        onClick={recargarFotos}
+        disabled={cargando}
+        style={{
+          padding: '8px 16px',
+          background: cargando ? '#ccc' : '#0066cc',
+          color: '#fff',
+          borderRadius: 6,
+          border: 'none',
+          cursor: cargando ? 'not-allowed' : 'pointer',
+          marginBottom: 16,
+          fontSize: 13,
+          fontWeight: 'bold'
+        }}
+      >
+        {cargando ? '⏳ Cargando...' : '🔄 Recargar fotos'}
+      </button>
 
       {/* GRID DE FOTOS */}
       <div style={{
