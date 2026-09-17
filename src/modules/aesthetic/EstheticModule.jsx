@@ -72,6 +72,7 @@ const EstheticModule = ({ paciente }) => {
         <NuevaConsultaEstetica
           pacienteId={paciente.id}
           pacienteNombre={paciente.nombre || 'Paciente'}
+          paciente={paciente}
         />
       )}
     </div>

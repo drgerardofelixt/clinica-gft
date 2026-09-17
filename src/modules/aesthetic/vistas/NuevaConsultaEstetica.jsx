@@ -4,7 +4,7 @@ import CargadorFotos from '../componentes/CargadorFotos';
 import AnalizadorIAVision from '../componentes/AnalizadorIAVision';
 import SelectorPlanes from '../componentes/SelectorPlanes';
 
-const NuevaConsultaEstetica = ({ pacienteId, pacienteNombre = 'Paciente' }) => {
+const NuevaConsultaEstetica = ({ pacienteId, pacienteNombre = 'Paciente', paciente = null }) => {
   const [etapa, setEtapa] = useState('historia'); // 'historia' | 'fotos' | 'analisis' | 'planes'
   const [historiaGuardada, setHistoriaGuardada] = useState(false);
   const [fotosGuardadas, setFotosGuardadas] = useState({});
@@ -143,6 +143,7 @@ const NuevaConsultaEstetica = ({ pacienteId, pacienteNombre = 'Paciente' }) => {
             <div>
               <HistoriaClinicaForm
                 pacienteId={pacienteId}
+                paciente={paciente}
                 onGuardado={() => {
                   setHistoriaGuardada(true);
                 }}

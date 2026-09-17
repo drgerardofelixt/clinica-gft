@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../../supabase';
 
-const HistoriaClinicaForm = ({ pacienteId, historiaExistente = null, onGuardado = () => {} }) => {
+const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = null, onGuardado = () => {} }) => {
   const [seccionEditando, setSeccionEditando] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
@@ -45,6 +45,26 @@ const HistoriaClinicaForm = ({ pacienteId, historiaExistente = null, onGuardado 
     // Banderas rojas
     banderas_rojas: []
   });
+
+  // Pre-llenar desde el expediente del paciente — SOLO campos que existen en
+  // la tabla historias_clinicas_estetica y que estén vacíos (no pisa lo escrito
+  // ni una historia ya cargada).
+  useEffect(() => {
+    if (!paciente || historiaExistente) return;
+    const overlay = {};
+    for (const campo of ['nombre', 'edad', 'telefono', 'email', 'ocupacion', 'alergias', 'medicamentos_actuales']) {
+      if (paciente[campo] != null && paciente[campo] !== '') overlay[campo] = paciente[campo];
+    }
+    if (Object.keys(overlay).length) {
+      setFormData(prev => {
+        const merged = { ...prev };
+        for (const [k, v] of Object.entries(overlay)) {
+          if (prev[k] === '' || prev[k] == null) merged[k] = v;
+        }
+        return merged;
+      });
+    }
+  }, [paciente, historiaExistente]);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -117,7 +137,8 @@ const HistoriaClinicaForm = ({ pacienteId, historiaExistente = null, onGuardado 
       maxWidth: 900,
       margin: '0 auto',
       padding: 16,
-      fontFamily: 'system-ui, -apple-system, sans-serif'
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      color: '#1a1a1a'
     }}>
       <h2 style={{ marginBottom: 16, color: '#1a1a1a' }}>
         📋 Historia Clínica Estética (NOM-004)
