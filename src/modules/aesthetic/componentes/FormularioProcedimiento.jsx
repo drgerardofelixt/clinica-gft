@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../supabase';
 import MapaFacialAnatomicoToxina from './MapaFacialAnatomicoToxina';
 import SignaturePad from './SignaturePad';
-import { construirConsentimiento, plantillaPorTipo, aplicarNombre } from './consentTemplates';
+import { construirConsentimiento, plantillaPorTipo, aplicarNombre, TIPOS_CONSENT } from './consentTemplates';
 
 // Gestos principales para valoración de arrugas dinámicas (toxina botulínica).
 // Todas las fotos son OPCIONALES: se suben solo las que se necesiten según la
@@ -1003,7 +1003,7 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
 
           <div style={{ marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginRight: 8 }}>Plantilla:</span>
-            {[{ k: 'toxina', l: 'Toxina' }, { k: 'relleno', l: 'Rellenos' }, { k: 'general', l: 'General' }].map(({ k, l }) => {
+            {TIPOS_CONSENT.map(({ k, l }) => {
               const sugerida = plantillaPorTipo(formData.tipo_procedimiento) === k;
               return (
                 <button key={k} type="button" onClick={() => cargarPlantilla(k)}

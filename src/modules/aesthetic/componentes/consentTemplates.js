@@ -11,6 +11,12 @@ const RIESGOS = {
     'dolor o ardor en el sitio de inyección, enrojecimiento, edema (inflamación), hematoma (moretón), cefalea (dolor de cabeza), asimetría de los resultados, ptosis palpebral (caída del párpado), descenso o caída de la ceja, sensación de pesadez, efecto de carácter TEMPORAL que requiere aplicaciones periódicas para mantenerse, y con menor frecuencia reacciones alérgicas o diseminación del efecto a músculos vecinos',
   relleno:
     'dolor, edema, enrojecimiento, hematoma, coloración anormal de la piel, infección, reacción alérgica, reactivación de herpes labial, formación de nódulos, grumos o irregularidades, migración o palpación del producto, y —de forma poco frecuente pero GRAVE— oclusión vascular que puede provocar necrosis (muerte) de la piel y, de manera excepcional, alteraciones visuales o pérdida de la visión. Entiendo que ante datos de oclusión vascular puede requerirse tratamiento urgente (por ejemplo, aplicación de hialuronidasa)',
+  bioestimulador:
+    'dolor, eritema, edema y hematoma en el sitio de aplicación, formación de nódulos o pápulas palpables (que pueden requerir masaje o tratamiento adicional), granulomas, infección, reacción alérgica, irregularidades o asimetría, resultados de aparición PROGRESIVA que habitualmente requieren varias sesiones y no son inmediatos, y —de forma poco frecuente pero GRAVE— oclusión vascular con necrosis de la piel',
+  peeling:
+    'enrojecimiento, ardor, sensación de tirantez, descamación y formación de costras propias del procedimiento, sensibilidad cutánea, hiperpigmentación o hipopigmentación (con MAYOR riesgo en pieles morenas u oscuras, fototipos IV a VI), reactivación de herpes labial, infección, y —si la profundidad excede lo indicado para el tipo de piel— cicatrices. Me comprometo a evitar la exposición solar y a usar protector solar de forma estricta durante la recuperación',
+  mesoterapia:
+    'dolor o molestias por los múltiples pinchazos, enrojecimiento, edema (hinchazón), hematomas, comezón, pigmentación en los sitios de punción, infección local, reacción alérgica a los productos infiltrados y, en mesoterapia capilar, sensación temporal de acorchamiento del cuero cabelludo. Los resultados son variables y suelen requerir varias sesiones',
   general:
     'dolor, enrojecimiento, inflamación, hematomas, infección, reacciones alérgicas, hiperpigmentación o cambios de coloración, cicatrización anormal, resultados temporales o insuficientes y la posible necesidad de sesiones o retoques adicionales',
 };
@@ -18,6 +24,9 @@ const RIESGOS = {
 const TITULOS = {
   toxina: 'Consentimiento informado para aplicación de toxina botulínica',
   relleno: 'Consentimiento informado para aplicación de rellenos dérmicos (ácido hialurónico u otros)',
+  bioestimulador: 'Consentimiento informado para aplicación de bioestimuladores de colágeno',
+  peeling: 'Consentimiento informado para peeling químico',
+  mesoterapia: 'Consentimiento informado para mesoterapia',
   general: 'Consentimiento informado para procedimiento de medicina estética',
 };
 
@@ -80,9 +89,22 @@ export const construirConsentimiento = (tipoKey = 'general') => {
 export const plantillaPorTipo = (tipoProcedimiento = '') => {
   const t = tipoProcedimiento.toLowerCase();
   if (/botox|toxina|xeomin|dysport|bocouture|neuronox/.test(t)) return 'toxina';
-  if (/juv[eé]derm|hialur|relleno|filler|restylane|belotero|radiesse|sculptra|teosyal/.test(t)) return 'relleno';
+  if (/bioestimul|sculptra|pol[ií]l[aá]ctico|plla|radiesse|hidroxiapatita|caha|policaprolactona|\bpcl\b|ellans[eé]|lanluma|gouri|harmonyca/.test(t)) return 'bioestimulador';
+  if (/peeling|exfoliaci[oó]n|tca|glic[oó]lico|salic[ií]lico|jessner|despigment|retinoico/.test(t)) return 'peeling';
+  if (/mesoterapia|\bmeso\b|intradermoterapia|c[oó]ctel|vitaminas intrad|dermapen/.test(t)) return 'mesoterapia';
+  if (/juv[eé]derm|hialur|relleno|filler|restylane|belotero|teosyal|stylage/.test(t)) return 'relleno';
   return 'general';
 };
+
+// Tipos disponibles para el selector de plantilla (orden de la UI)
+export const TIPOS_CONSENT = [
+  { k: 'toxina', l: 'Toxina' },
+  { k: 'relleno', l: 'Rellenos' },
+  { k: 'bioestimulador', l: 'Bioestimuladores' },
+  { k: 'peeling', l: 'Peeling' },
+  { k: 'mesoterapia', l: 'Mesoterapia' },
+  { k: 'general', l: 'General' },
+];
 
 // Compatibilidad: estructura usada por la pestaña de Consentimientos standalone.
 export const PLANTILLAS = {
