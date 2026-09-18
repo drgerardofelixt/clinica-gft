@@ -24,6 +24,19 @@ alter table public.consentimientos_estetica
   add column if not exists firma_paciente_b64 text,
   add column if not exists fecha              date default current_date;
 
+-- Si la tabla previa tenía procedimiento_id NOT NULL, lo hacemos opcional
+-- (el consentimiento se liga al paciente; ligar a un procedimiento es opcional).
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='consentimientos_estetica'
+      and column_name='procedimiento_id'
+  ) then
+    execute 'alter table public.consentimientos_estetica alter column procedimiento_id drop not null';
+  end if;
+end $$;
+
 -- RLS abierto para anon + authenticated (la app usa anon key)
 alter table public.consentimientos_estetica enable row level security;
 
