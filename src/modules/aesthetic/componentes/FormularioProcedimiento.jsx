@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../../supabase';
 import MapaFacialAnatomicoToxina from './MapaFacialAnatomicoToxina';
 import SignaturePad from './SignaturePad';
@@ -37,6 +37,62 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
     const p = construirConsentimiento(key);
     setConsentTitulo(p.titulo);
     setConsentTexto(aplicarNombre(p.texto, consentNombre || pacienteNombre));
+  };
+
+  // ── Borrador: auto-guardado + reanudar (hand-off compu → iPad) ──
+  const [borrador, setBorrador] = useState(null);      // borrador disponible para reanudar
+  const [guardadoBorrador, setGuardadoBorrador] = useState(null); // hora del último auto-guardado
+  const draftTimer = useRef(null);
+
+  // Cargar borrador existente al abrir (para ofrecer "Reanudar")
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      if (!pacienteId || procedimientoId) return; // solo en creación
+      const { data } = await supabase
+        .from('borradores_procedimiento')
+        .select('data, updated_at')
+        .eq('paciente_id', pacienteId)
+        .maybeSingle();
+      if (vivo && data?.data) setBorrador(data);
+    })();
+    return () => { vivo = false; };
+  }, [pacienteId, procedimientoId]);
+
+  // Auto-guardar (debounced) cuando hay contenido
+  useEffect(() => {
+    if (!pacienteId || procedimientoId) return;
+    const hayContenido = (formData.tipo_procedimiento || '').trim()
+      || Object.keys(formData.dosis_por_zona || {}).length
+      || (formData.notas_post || '').trim();
+    if (!hayContenido) return;
+    clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(async () => {
+      try {
+        await supabase.from('borradores_procedimiento').upsert({
+          paciente_id: pacienteId,
+          data: { formData, consentTitulo, consentTexto, consentNombre },
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'paciente_id' });
+        setGuardadoBorrador(new Date());
+      } catch (e) { /* silencioso */ }
+    }, 1500);
+    return () => clearTimeout(draftTimer.current);
+  }, [formData, consentTitulo, consentTexto, consentNombre, pacienteId, procedimientoId]);
+
+  const reanudarBorrador = () => {
+    const d = borrador?.data || {};
+    if (d.formData) setFormData(prev => ({ ...prev, ...d.formData }));
+    if (d.consentTitulo) setConsentTitulo(d.consentTitulo);
+    if (d.consentTexto) setConsentTexto(d.consentTexto);
+    if (d.consentNombre) setConsentNombre(d.consentNombre);
+    setBorrador(null);
+  };
+
+  const descartarBorrador = async () => {
+    try { await supabase.from('borradores_procedimiento').delete().eq('paciente_id', pacienteId); } catch {}
+    setBorrador(null);
+    setGuardadoBorrador(null);
   };
 
   const [formData, setFormData] = useState({
@@ -218,6 +274,11 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
         if (cErr) throw new Error('Procedimiento guardado, pero el consentimiento falló: ' + cErr.message);
       }
 
+      // Limpiar el borrador de este paciente (ya se finalizó)
+      try { await supabase.from('borradores_procedimiento').delete().eq('paciente_id', pacienteId); } catch {}
+      setBorrador(null);
+      setGuardadoBorrador(null);
+
       setExito(true);
       setTimeout(() => setExito(false), 3000);
       onGuardado(formData);
@@ -237,9 +298,33 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
       fontFamily: 'system-ui, -apple-system, sans-serif',
       color: '#1a1a1a'
     }}>
-      <h2 style={{ marginBottom: 16, color: '#1a1a1a' }}>
-        💉 Formulario de Procedimiento Estético
-      </h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <h2 style={{ margin: '0 0 16px 0', color: '#1a1a1a' }}>
+          💉 Formulario de Procedimiento Estético
+        </h2>
+        {guardadoBorrador && (
+          <span style={{ fontSize: 11, color: '#16a34a' }}>
+            ✓ Borrador guardado {guardadoBorrador.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
+
+      {/* Banner: reanudar borrador (hand-off compu → iPad) */}
+      {borrador && (
+        <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: 13, color: '#1e40af' }}>
+            📝 Hay un borrador guardado{borrador.updated_at ? ` (actualizado ${new Date(borrador.updated_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })})` : ''}. Ideal para que el paciente solo firme en el iPad.
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" onClick={reanudarBorrador} style={{ padding: '7px 14px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
+              Reanudar
+            </button>
+            <button type="button" onClick={descartarBorrador} style={{ padding: '7px 14px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
+              Descartar
+            </button>
+          </div>
+        </div>
+      )}
 
       {exito && (
         <div style={{
