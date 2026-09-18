@@ -74,16 +74,18 @@ const ConsentimientosEstetica = ({ paciente }) => {
     if (!w) { setError('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes.'); return; }
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${c.titulo || 'Consentimiento'}</title>
       <style>body{font-family:-apple-system,system-ui,Arial,sans-serif;color:#0f172a;max-width:720px;margin:40px auto;padding:0 24px;line-height:1.6}
-      h1{font-size:18px;text-align:center;margin-bottom:24px}p{white-space:pre-wrap;font-size:13px}
-      .firma{margin-top:40px;display:flex;justify-content:space-between;gap:40px}
-      .box{flex:1;text-align:center}.box img{max-height:90px;display:block;margin:0 auto 6px}
-      .line{border-top:1px solid #0f172a;padding-top:6px;font-size:12px}</style></head>
+      h1{font-size:17px;text-align:center;margin-bottom:20px}p{white-space:pre-wrap;font-size:12.5px}
+      .firmas{margin-top:36px;display:flex;flex-wrap:wrap;gap:28px}
+      .box{flex:1 1 40%;text-align:center}.box img{max-height:80px;display:block;margin:0 auto 4px}
+      .sp{height:80px}.line{border-top:1px solid #0f172a;padding-top:6px;font-size:11.5px}</style></head>
       <body><h1>${c.titulo || ''}</h1><p>${(c.texto || '').replace(/</g, '&lt;')}</p>
-      <div class="firma">
-        <div class="box">${c.firma_paciente_b64 ? `<img src="${c.firma_paciente_b64}"/>` : '<div style="height:90px"></div>'}<div class="line">${c.nombre_firmante || ''}<br/>Paciente</div></div>
-        <div class="box"><div style="height:90px"></div><div class="line">${MEDICO}<br/>Médico tratante</div></div>
+      <div class="firmas">
+        <div class="box">${c.firma_paciente_b64 ? `<img src="${c.firma_paciente_b64}"/>` : '<div class="sp"></div>'}<div class="line">${c.nombre_firmante || ''}<br/>Nombre y firma del paciente</div></div>
+        <div class="box"><div class="sp"></div><div class="line">${MEDICO}<br/>Nombre y firma del médico</div></div>
+        <div class="box"><div class="sp"></div><div class="line">Nombre y firma del testigo 1</div></div>
+        <div class="box"><div class="sp"></div><div class="line">Nombre y firma del testigo 2</div></div>
       </div>
-      <p style="text-align:right;font-size:12px;margin-top:24px">Fecha: ${fecha}</p>
+      <p style="text-align:right;font-size:11.5px;margin-top:24px">Fecha: ${fecha}</p>
       <script>window.onload=function(){window.print()}</script></body></html>`);
     w.document.close();
   };

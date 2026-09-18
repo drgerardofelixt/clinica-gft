@@ -1,40 +1,93 @@
+// Plantillas de consentimiento informado — estructura conforme a la
+// NOM-004-SSA3-2012 (expediente clínico) y estándar reforzado para estética
+// (SCJN, 2021). Textos EDITABLES; conviene validación legal antes de uso real.
+
 export const MEDICO = 'Dr. Gerardo Félix Tapia';
+export const ESTABLECIMIENTO = 'Consultorio del Dr. Gerardo Félix Tapia — Hermosillo, Sonora';
 
-export const PLANTILLAS = {
-  procedimiento: {
-    titulo: 'Consentimiento informado para procedimiento de medicina estética',
-    texto: `Yo, [PACIENTE], declaro que el ${MEDICO} me ha explicado de forma clara y en lenguaje comprensible la naturaleza del/los procedimiento(s) estético(s) que se me realizará(n), así como sus objetivos y alcances.
+// Riesgos específicos por tipo de procedimiento (enunciativos, no limitativos).
+const RIESGOS = {
+  toxina:
+    'dolor o ardor en el sitio de inyección, enrojecimiento, edema (inflamación), hematoma (moretón), cefalea (dolor de cabeza), asimetría de los resultados, ptosis palpebral (caída del párpado), descenso o caída de la ceja, sensación de pesadez, efecto de carácter TEMPORAL que requiere aplicaciones periódicas para mantenerse, y con menor frecuencia reacciones alérgicas o diseminación del efecto a músculos vecinos',
+  relleno:
+    'dolor, edema, enrojecimiento, hematoma, coloración anormal de la piel, infección, reacción alérgica, reactivación de herpes labial, formación de nódulos, grumos o irregularidades, migración o palpación del producto, y —de forma poco frecuente pero GRAVE— oclusión vascular que puede provocar necrosis (muerte) de la piel y, de manera excepcional, alteraciones visuales o pérdida de la visión. Entiendo que ante datos de oclusión vascular puede requerirse tratamiento urgente (por ejemplo, aplicación de hialuronidasa)',
+  general:
+    'dolor, enrojecimiento, inflamación, hematomas, infección, reacciones alérgicas, hiperpigmentación o cambios de coloración, cicatrización anormal, resultados temporales o insuficientes y la posible necesidad de sesiones o retoques adicionales',
+};
 
-1. Naturaleza del procedimiento. Se me ha informado en qué consiste el procedimiento, la técnica a emplear y los productos o sustancias que podrían utilizarse.
+const TITULOS = {
+  toxina: 'Consentimiento informado para aplicación de toxina botulínica',
+  relleno: 'Consentimiento informado para aplicación de rellenos dérmicos (ácido hialurónico u otros)',
+  general: 'Consentimiento informado para procedimiento de medicina estética',
+};
 
-2. Beneficios esperados. Comprendo que el objetivo es estético y que los resultados pueden variar de una persona a otra. Entiendo que NO se garantiza un resultado específico.
+const cuerpo = (tituloProc, riesgos) =>
+`${tituloProc}
 
-3. Riesgos y complicaciones. Se me han explicado los posibles riesgos, de forma enunciativa y no limitativa: dolor, enrojecimiento, inflamación, hematomas, asimetría, infección, reacciones alérgicas, resultados temporales o insuficientes, y la posible necesidad de retoques o sesiones adicionales.
+Establecimiento: ${ESTABLECIMIENTO}
+Médico tratante: ${MEDICO} · Cédula profesional: __________
+Lugar y fecha: __________________________
 
-4. Alternativas. Se me han explicado otras opciones de tratamiento, incluida la de no realizar ningún procedimiento.
+Yo, [PACIENTE], en pleno uso de mis facultades, declaro que el médico me ha explicado en lenguaje claro y comprensible la naturaleza, los objetivos y los alcances del procedimiento estético que autorizo, el cual se realiza de manera voluntaria y con fines ESTÉTICOS (no curativos).
 
-5. Cuidados posteriores. Me comprometo a seguir las indicaciones posteriores y a acudir a las citas de seguimiento.
+1. Acto autorizado y en qué consiste. Se me ha informado en qué consiste el procedimiento, la técnica a emplear y los productos o sustancias que podrían utilizarse.
 
-6. Carácter voluntario. Otorgo este consentimiento de manera libre y voluntaria. Sé que puedo revocarlo en cualquier momento antes del procedimiento, sin que ello afecte mi atención.
+2. Beneficios esperados. Comprendo que el objetivo es estético, que los resultados pueden variar de una persona a otra y que NO se me garantiza un resultado específico.
 
-7. He tenido la oportunidad de hacer preguntas y todas han sido respondidas a mi satisfacción.
+3. Riesgos y complicaciones. Se me han explicado los posibles riesgos, de forma enunciativa y no limitativa: ${riesgos}.
 
-Declaro haber leído y entendido este documento y acepto la realización del procedimiento.`,
-  },
-  fotografia: {
-    titulo: 'Consentimiento informado para toma y uso de fotografías clínicas',
-    texto: `Yo, [PACIENTE], autorizo al ${MEDICO} a tomar fotografías clínicas de mi rostro y/o de las zonas a tratar, antes, durante y después del/los procedimiento(s).
+4. Alternativas. Se me han explicado otras opciones de tratamiento, incluida la de NO realizar ningún procedimiento.
+
+5. Cuidados posteriores y seguimiento. Me comprometo a seguir las indicaciones posteriores y a acudir a las citas de control.
+
+6. Productos utilizados. Autorizo el uso de los productos indicados; se registrarán marca, lote y caducidad en mi expediente clínico.
+
+7. Atención de contingencias y urgencias. Autorizo al personal de salud para que, atendiendo al principio de libertad prescriptiva, me brinde la atención necesaria ante contingencias o urgencias derivadas del procedimiento.
+
+8. Preguntas. He tenido la oportunidad de hacer preguntas y todas mis dudas han sido resueltas a mi satisfacción.
+
+Declaro haber leído y comprendido la totalidad de este documento y otorgo mi consentimiento de forma libre e informada.`;
+
+export const PLANTILLA_FOTOGRAFIA = {
+  titulo: 'Consentimiento informado para toma y uso de fotografías clínicas',
+  texto:
+`Consentimiento informado para toma y uso de fotografías clínicas
+
+Establecimiento: ${ESTABLECIMIENTO}
+Médico tratante: ${MEDICO}
+Lugar y fecha: __________________________
+
+Yo, [PACIENTE], autorizo al ${MEDICO} a tomar fotografías clínicas de mi rostro y/o de las zonas a tratar, antes, durante y después del/los procedimiento(s).
 
 1. Finalidad. Las fotografías forman parte de mi expediente clínico y se utilizarán para documentar mi evolución, planear el tratamiento y comparar resultados (antes/después).
 
 2. Confidencialidad. Las imágenes se resguardarán de forma confidencial como parte de mi expediente, conforme a la normatividad aplicable en materia de datos personales y expediente clínico.
 
-3. Uso. Las fotografías se usarán únicamente con fines clínicos. Cualquier uso distinto (docencia, publicaciones, difusión o redes sociales) requerirá mi autorización expresa y por separado.
+3. Uso. Las fotografías se usarán ÚNICAMENTE con fines clínicos. Cualquier uso distinto (docencia, publicaciones, difusión o redes sociales) requerirá mi autorización expresa y por separado.
 
 4. Carácter voluntario y revocación. Otorgo esta autorización de forma libre y voluntaria y puedo revocarla por escrito en cualquier momento; la revocación no tendrá efectos retroactivos sobre usos ya realizados.
 
 He leído y comprendido este documento y autorizo la toma y el uso clínico de las fotografías.`,
-  },
+};
+
+// Construye {titulo, texto} para un tipo de procedimiento ('toxina'|'relleno'|'general')
+export const construirConsentimiento = (tipoKey = 'general') => {
+  const k = TITULOS[tipoKey] ? tipoKey : 'general';
+  return { titulo: TITULOS[k], texto: cuerpo(TITULOS[k], RIESGOS[k]) };
+};
+
+// Detecta el tipo de plantilla a partir del texto libre "tipo de procedimiento"
+export const plantillaPorTipo = (tipoProcedimiento = '') => {
+  const t = tipoProcedimiento.toLowerCase();
+  if (/botox|toxina|xeomin|dysport|bocouture|neuronox/.test(t)) return 'toxina';
+  if (/juv[eé]derm|hialur|relleno|filler|restylane|belotero|radiesse|sculptra|teosyal/.test(t)) return 'relleno';
+  return 'general';
+};
+
+// Compatibilidad: estructura usada por la pestaña de Consentimientos standalone.
+export const PLANTILLAS = {
+  procedimiento: construirConsentimiento('general'),
+  fotografia: PLANTILLA_FOTOGRAFIA,
 };
 
 export const aplicarNombre = (texto, nombre) =>

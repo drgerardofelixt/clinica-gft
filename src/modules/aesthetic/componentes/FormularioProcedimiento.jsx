@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../../../supabase';
 import MapaFacialAnatomicoToxina from './MapaFacialAnatomicoToxina';
 import SignaturePad from './SignaturePad';
-import { PLANTILLAS, aplicarNombre } from './consentTemplates';
+import { construirConsentimiento, plantillaPorTipo, aplicarNombre } from './consentTemplates';
 
 // Gestos principales para valoración de arrugas dinámicas (toxina botulínica).
 // Todas las fotos son OPCIONALES: se suben solo las que se necesiten según la
@@ -27,9 +27,17 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
   const [gestoSubiendo, setGestoSubiendo] = useState(null);
 
   // Consentimiento informado (se firma con el procedimiento, ligado 1:1)
-  const [consentTexto, setConsentTexto] = useState(aplicarNombre(PLANTILLAS.procedimiento.texto, pacienteNombre));
+  const consentInicial = construirConsentimiento('general');
+  const [consentTitulo, setConsentTitulo] = useState(consentInicial.titulo);
+  const [consentTexto, setConsentTexto] = useState(aplicarNombre(consentInicial.texto, pacienteNombre));
   const [consentNombre, setConsentNombre] = useState(pacienteNombre || '');
   const [consentFirma, setConsentFirma] = useState('');
+
+  const cargarPlantilla = (key) => {
+    const p = construirConsentimiento(key);
+    setConsentTitulo(p.titulo);
+    setConsentTexto(aplicarNombre(p.texto, consentNombre || pacienteNombre));
+  };
 
   const [formData, setFormData] = useState({
     // SECCIÓN 1: Datos básicos
@@ -201,7 +209,7 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
             paciente_id: pacienteId,
             procedimiento_id: procId,
             tipo: 'procedimiento',
-            titulo: PLANTILLAS.procedimiento.titulo,
+            titulo: consentTitulo,
             texto: consentTexto,
             nombre_firmante: consentNombre,
             firma_paciente_b64: consentFirma,
@@ -906,6 +914,22 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
             {consentFirma
               ? '✅ Consentimiento firmado — se guardará ligado a este procedimiento.'
               : '⚠️ Cada procedimiento debe tener su consentimiento informado firmado por el paciente.'}
+          </div>
+
+          <div style={{ marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginRight: 8 }}>Plantilla:</span>
+            {[{ k: 'toxina', l: 'Toxina' }, { k: 'relleno', l: 'Rellenos' }, { k: 'general', l: 'General' }].map(({ k, l }) => {
+              const sugerida = plantillaPorTipo(formData.tipo_procedimiento) === k;
+              return (
+                <button key={k} type="button" onClick={() => cargarPlantilla(k)}
+                  style={{ marginRight: 6, padding: '4px 10px', fontSize: 12, borderRadius: 14, cursor: 'pointer',
+                    border: '1px solid ' + (sugerida ? '#0066cc' : '#cbd5e1'),
+                    background: sugerida ? '#e6f1fb' : '#fff', color: sugerida ? '#0c447c' : '#334155',
+                    fontWeight: sugerida ? 'bold' : 'normal' }}>
+                  {l}{sugerida ? ' ·sugerida' : ''}
+                </button>
+              );
+            })}
           </div>
 
           <label style={{ display: 'block', fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginBottom: 4 }}>
