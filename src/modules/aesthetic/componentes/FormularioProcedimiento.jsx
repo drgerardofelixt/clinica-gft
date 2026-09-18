@@ -2,16 +2,20 @@ import { useState } from 'react';
 import { supabase } from '../../../supabase';
 import MapaFacialAnatomicoToxina from './MapaFacialAnatomicoToxina';
 
-// Gestos principales para valoración de arrugas dinámicas (toxina botulínica)
+// Gestos principales para valoración de arrugas dinámicas (toxina botulínica).
+// Todas las fotos son OPCIONALES: se suben solo las que se necesiten según la
+// zona a valorar. Agrupadas por tercio facial.
 const GESTOS_TOXINA = [
-  { id: 'reposo', nombre: 'Reposo (relajado)', desc: 'Rostro relajado, sin gesticular — línea base' },
-  { id: 'cejas', nombre: 'Elevar cejas', desc: 'Levantar cejas — líneas frontales (frontalis)' },
-  { id: 'ceno', nombre: 'Fruncir el ceño', desc: 'Gesto de enojo — entrecejo (glabela / corrugador)' },
-  { id: 'ojos', nombre: 'Apretar ojos / sonreír', desc: 'Sonrisa amplia o apretar ojos — patas de gallo' },
-  { id: 'nariz', nombre: 'Arrugar la nariz', desc: 'Bunny lines (nasalis)' },
-  { id: 'menton', nombre: 'Apretar labios / mentón', desc: 'Hoyuelos del mentón (mentalis)' },
-  { id: 'gingival', nombre: 'Sonrisa gingival', desc: 'Sonreír mostrando encías — elevador del labio' },
+  { id: 'reposo', nombre: 'Reposo (relajado)', desc: 'Rostro relajado, sin gesticular — línea base', tercio: 'General' },
+  { id: 'cejas', nombre: 'Elevar cejas', desc: 'Levantar cejas — líneas frontales (frontalis)', tercio: 'Tercio superior' },
+  { id: 'ceno', nombre: 'Fruncir el ceño', desc: 'Gesto de enojo — entrecejo (glabela / corrugador)', tercio: 'Tercio superior' },
+  { id: 'ojos', nombre: 'Apretar ojos / sonreír', desc: 'Sonrisa amplia o apretar ojos — patas de gallo', tercio: 'Tercio superior' },
+  { id: 'nariz', nombre: 'Arrugar la nariz', desc: 'Bunny lines (nasalis)', tercio: 'Tercio medio' },
+  { id: 'menton', nombre: 'Apretar labios / mentón', desc: 'Hoyuelos del mentón (mentalis)', tercio: 'Tercio inferior' },
+  { id: 'gingival', nombre: 'Sonrisa gingival', desc: 'Sonreír mostrando encías — elevador del labio', tercio: 'Tercio inferior' },
 ];
+
+const TERCIOS_ORDEN = ['General', 'Tercio superior', 'Tercio medio', 'Tercio inferior'];
 
 const FormularioProcedimiento = ({ pacienteId, procedimientoId = null, onGuardado = () => {} }) => {
   const [seccion, setSeccion] = useState('basicos'); // 'basicos' | 'mapa' | 'evaluacion' | 'complicaciones'
@@ -464,42 +468,50 @@ const FormularioProcedimiento = ({ pacienteId, procedimientoId = null, onGuardad
                 📸 Fotos de gestos para valoración de arrugas
               </h3>
               <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#666' }}>
-                Toxina botulínica detectada. Toma una foto del paciente en cada gesto principal.
+                Sube <strong>solo las que necesites</strong> — todas son opcionales. Ej.: si solo valoras el
+                tercio superior, toma únicamente esas.
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                {GESTOS_TOXINA.map((g) => (
-                  <div key={g.id} style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8, padding: 12 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: 12, color: '#1a1a1a' }}>{g.nombre}</div>
-                    <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>{g.desc}</div>
-                    {formData.fotos_gestos?.[g.id] ? (
-                      <img
-                        src={formData.fotos_gestos[g.id]}
-                        alt={g.nombre}
-                        style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd', cursor: 'pointer' }}
-                        onClick={() => window.open(formData.fotos_gestos[g.id], '_blank')}
-                      />
-                    ) : (
-                      <div style={{ width: '100%', height: 120, background: '#e3f2fd', border: '2px dashed #0066cc', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0066cc', fontSize: 11 }}>
-                        Sin foto
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      disabled={gestoSubiendo === g.id}
-                      onChange={(e) => { if (e.target.files?.[0]) subirFotoGesto(g.id, e.target.files[0]); }}
-                      style={{ width: '100%', marginTop: 8, fontSize: 11 }}
-                    />
-                    {gestoSubiendo === g.id && (
-                      <div style={{ fontSize: 11, color: '#0066cc', marginTop: 4 }}>⏳ Subiendo...</div>
-                    )}
-                    {formData.fotos_gestos?.[g.id] && gestoSubiendo !== g.id && (
-                      <div style={{ fontSize: 11, color: '#2e7d32', marginTop: 4, fontWeight: 'bold' }}>✓ Cargada</div>
-                    )}
+              {TERCIOS_ORDEN.filter(t => GESTOS_TOXINA.some(g => g.tercio === t)).map(tercio => (
+                <div key={tercio} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 'bold', color: '#0066cc', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+                    {tercio}
                   </div>
-                ))}
-              </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+                    {GESTOS_TOXINA.filter(g => g.tercio === tercio).map((g) => (
+                      <div key={g.id} style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontWeight: 'bold', fontSize: 12, color: '#1a1a1a' }}>{g.nombre}</div>
+                        <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>{g.desc}</div>
+                        {formData.fotos_gestos?.[g.id] ? (
+                          <img
+                            src={formData.fotos_gestos[g.id]}
+                            alt={g.nombre}
+                            style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd', cursor: 'pointer' }}
+                            onClick={() => window.open(formData.fotos_gestos[g.id], '_blank')}
+                          />
+                        ) : (
+                          <div style={{ width: '100%', height: 120, background: '#e3f2fd', border: '2px dashed #0066cc', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0066cc', fontSize: 11 }}>
+                            Sin foto (opcional)
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          disabled={gestoSubiendo === g.id}
+                          onChange={(e) => { if (e.target.files?.[0]) subirFotoGesto(g.id, e.target.files[0]); }}
+                          style={{ width: '100%', marginTop: 8, fontSize: 11 }}
+                        />
+                        {gestoSubiendo === g.id && (
+                          <div style={{ fontSize: 11, color: '#0066cc', marginTop: 4 }}>⏳ Subiendo...</div>
+                        )}
+                        {formData.fotos_gestos?.[g.id] && gestoSubiendo !== g.id && (
+                          <div style={{ fontSize: 11, color: '#2e7d32', marginTop: 4, fontWeight: 'bold' }}>✓ Cargada</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
