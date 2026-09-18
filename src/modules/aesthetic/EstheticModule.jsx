@@ -2,6 +2,7 @@ import { useState } from 'react';
 import NuevaConsultaEstetica from './vistas/NuevaConsultaEstetica';
 import VistaPacienteEstetica from './VistaPacienteEstetica';
 import GaleriaAntesDesp from './vistas/GaleriaAntesDesp';
+import ConsentimientosEstetica from './componentes/ConsentimientosEstetica';
 
 const EstheticModule = ({ paciente }) => {
   const [subpestana, setSubpestana] = useState('expediente');
@@ -82,6 +83,22 @@ const EstheticModule = ({ paciente }) => {
         >
           📸 Evolución Fotográfica
         </button>
+
+        <button
+          onClick={() => setSubpestana('consentimientos')}
+          style={{
+            padding: '8px 16px',
+            background: subpestana === 'consentimientos' ? '#0066cc' : 'transparent',
+            color: subpestana === 'consentimientos' ? '#fff' : '#666',
+            border: 'none',
+            borderRadius: 4,
+            cursor: 'pointer',
+            fontWeight: subpestana === 'consentimientos' ? 'bold' : 'normal',
+            fontSize: 13
+          }}
+        >
+          📄 Consentimientos
+        </button>
       </div>
 
       {/* CONTENIDO */}
@@ -99,6 +116,10 @@ const EstheticModule = ({ paciente }) => {
 
       {subpestana === 'galeria' && (
         <GaleriaAntesDesp pacienteId={paciente.id} />
+      )}
+
+      {subpestana === 'consentimientos' && (
+        <ConsentimientosEstetica paciente={paciente} />
       )}
     </div>
   );
