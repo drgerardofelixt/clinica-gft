@@ -39,62 +39,6 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
     setConsentTexto(aplicarNombre(p.texto, consentNombre || pacienteNombre));
   };
 
-  // ── Borrador: auto-guardado + reanudar (hand-off compu → iPad) ──
-  const [borrador, setBorrador] = useState(null);      // borrador disponible para reanudar
-  const [guardadoBorrador, setGuardadoBorrador] = useState(null); // hora del último auto-guardado
-  const draftTimer = useRef(null);
-
-  // Cargar borrador existente al abrir (para ofrecer "Reanudar")
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      if (!pacienteId || procedimientoId) return; // solo en creación
-      const { data } = await supabase
-        .from('borradores_procedimiento')
-        .select('data, updated_at')
-        .eq('paciente_id', pacienteId)
-        .maybeSingle();
-      if (vivo && data?.data) setBorrador(data);
-    })();
-    return () => { vivo = false; };
-  }, [pacienteId, procedimientoId]);
-
-  // Auto-guardar (debounced) cuando hay contenido
-  useEffect(() => {
-    if (!pacienteId || procedimientoId) return;
-    const hayContenido = (formData.tipo_procedimiento || '').trim()
-      || Object.keys(formData.dosis_por_zona || {}).length
-      || (formData.notas_post || '').trim();
-    if (!hayContenido) return;
-    clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(async () => {
-      try {
-        await supabase.from('borradores_procedimiento').upsert({
-          paciente_id: pacienteId,
-          data: { formData, consentTitulo, consentTexto, consentNombre },
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'paciente_id' });
-        setGuardadoBorrador(new Date());
-      } catch (e) { /* silencioso */ }
-    }, 1500);
-    return () => clearTimeout(draftTimer.current);
-  }, [formData, consentTitulo, consentTexto, consentNombre, pacienteId, procedimientoId]);
-
-  const reanudarBorrador = () => {
-    const d = borrador?.data || {};
-    if (d.formData) setFormData(prev => ({ ...prev, ...d.formData }));
-    if (d.consentTitulo) setConsentTitulo(d.consentTitulo);
-    if (d.consentTexto) setConsentTexto(d.consentTexto);
-    if (d.consentNombre) setConsentNombre(d.consentNombre);
-    setBorrador(null);
-  };
-
-  const descartarBorrador = async () => {
-    try { await supabase.from('borradores_procedimiento').delete().eq('paciente_id', pacienteId); } catch {}
-    setBorrador(null);
-    setGuardadoBorrador(null);
-  };
-
   const [formData, setFormData] = useState({
     // SECCIÓN 1: Datos básicos
     fecha: new Date().toISOString().split('T')[0],
@@ -150,6 +94,63 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
 
   const handleCheckboxChange = (field) => {
     setFormData(prev => ({ ...prev, [field]: !prev[field] }));
+  };
+
+  // ── Borrador: auto-guardado + reanudar (hand-off compu → iPad) ──
+  // Debe ir DESPUÉS de declarar formData (sus efectos lo referencian).
+  const [borrador, setBorrador] = useState(null);      // borrador disponible para reanudar
+  const [guardadoBorrador, setGuardadoBorrador] = useState(null); // hora del último auto-guardado
+  const draftTimer = useRef(null);
+
+  // Cargar borrador existente al abrir (para ofrecer "Reanudar")
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      if (!pacienteId || procedimientoId) return; // solo en creación
+      const { data } = await supabase
+        .from('borradores_procedimiento')
+        .select('data, updated_at')
+        .eq('paciente_id', pacienteId)
+        .maybeSingle();
+      if (vivo && data?.data) setBorrador(data);
+    })();
+    return () => { vivo = false; };
+  }, [pacienteId, procedimientoId]);
+
+  // Auto-guardar (debounced) cuando hay contenido
+  useEffect(() => {
+    if (!pacienteId || procedimientoId) return;
+    const hayContenido = (formData.tipo_procedimiento || '').trim()
+      || Object.keys(formData.dosis_por_zona || {}).length
+      || (formData.notas_post || '').trim();
+    if (!hayContenido) return;
+    clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(async () => {
+      try {
+        await supabase.from('borradores_procedimiento').upsert({
+          paciente_id: pacienteId,
+          data: { formData, consentTitulo, consentTexto, consentNombre },
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'paciente_id' });
+        setGuardadoBorrador(new Date());
+      } catch (e) { /* silencioso */ }
+    }, 1500);
+    return () => clearTimeout(draftTimer.current);
+  }, [formData, consentTitulo, consentTexto, consentNombre, pacienteId, procedimientoId]);
+
+  const reanudarBorrador = () => {
+    const d = borrador?.data || {};
+    if (d.formData) setFormData(prev => ({ ...prev, ...d.formData }));
+    if (d.consentTitulo) setConsentTitulo(d.consentTitulo);
+    if (d.consentTexto) setConsentTexto(d.consentTexto);
+    if (d.consentNombre) setConsentNombre(d.consentNombre);
+    setBorrador(null);
+  };
+
+  const descartarBorrador = async () => {
+    try { await supabase.from('borradores_procedimiento').delete().eq('paciente_id', pacienteId); } catch {}
+    setBorrador(null);
+    setGuardadoBorrador(null);
   };
 
   // ¿El procedimiento es toxina botulínica? (dispara la sección de gestos)
