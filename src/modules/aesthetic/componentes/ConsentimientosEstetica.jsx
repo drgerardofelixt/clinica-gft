@@ -1,115 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../../supabase';
-
-const MEDICO = 'Dr. Gerardo Félix Tapia';
-
-const PLANTILLAS = {
-  procedimiento: {
-    titulo: 'Consentimiento informado para procedimiento de medicina estética',
-    texto: `Yo, [PACIENTE], declaro que el ${MEDICO} me ha explicado de forma clara y en lenguaje comprensible la naturaleza del/los procedimiento(s) estético(s) que se me realizará(n), así como sus objetivos y alcances.
-
-1. Naturaleza del procedimiento. Se me ha informado en qué consiste el procedimiento, la técnica a emplear y los productos o sustancias que podrían utilizarse.
-
-2. Beneficios esperados. Comprendo que el objetivo es estético y que los resultados pueden variar de una persona a otra. Entiendo que NO se garantiza un resultado específico.
-
-3. Riesgos y complicaciones. Se me han explicado los posibles riesgos, de forma enunciativa y no limitativa: dolor, enrojecimiento, inflamación, hematomas, asimetría, infección, reacciones alérgicas, resultados temporales o insuficientes, y la posible necesidad de retoques o sesiones adicionales.
-
-4. Alternativas. Se me han explicado otras opciones de tratamiento, incluida la de no realizar ningún procedimiento.
-
-5. Cuidados posteriores. Me comprometo a seguir las indicaciones posteriores y a acudir a las citas de seguimiento.
-
-6. Carácter voluntario. Otorgo este consentimiento de manera libre y voluntaria. Sé que puedo revocarlo en cualquier momento antes del procedimiento, sin que ello afecte mi atención.
-
-7. He tenido la oportunidad de hacer preguntas y todas han sido respondidas a mi satisfacción.
-
-Declaro haber leído y entendido este documento y acepto la realización del procedimiento.`,
-  },
-  fotografia: {
-    titulo: 'Consentimiento informado para toma y uso de fotografías clínicas',
-    texto: `Yo, [PACIENTE], autorizo al ${MEDICO} a tomar fotografías clínicas de mi rostro y/o de las zonas a tratar, antes, durante y después del/los procedimiento(s).
-
-1. Finalidad. Las fotografías forman parte de mi expediente clínico y se utilizarán para documentar mi evolución, planear el tratamiento y comparar resultados (antes/después).
-
-2. Confidencialidad. Las imágenes se resguardarán de forma confidencial como parte de mi expediente, conforme a la normatividad aplicable en materia de datos personales y expediente clínico.
-
-3. Uso. Las fotografías se usarán únicamente con fines clínicos. Cualquier uso distinto (docencia, publicaciones, difusión o redes sociales) requerirá mi autorización expresa y por separado.
-
-4. Carácter voluntario y revocación. Otorgo esta autorización de forma libre y voluntaria y puedo revocarla por escrito en cualquier momento; la revocación no tendrá efectos retroactivos sobre usos ya realizados.
-
-He leído y comprendido este documento y autorizo la toma y el uso clínico de las fotografías.`,
-  },
-};
-
-// ── Pad de firma (Apple Pencil / dedo / mouse vía Pointer Events) ──
-function SignaturePad({ onChange }) {
-  const canvasRef = useRef(null);
-  const ctxRef = useRef(null);
-  const dibujando = useRef(false);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ratio = window.devicePixelRatio || 1;
-    const w = canvas.offsetWidth;
-    const h = canvas.offsetHeight;
-    canvas.width = w * ratio;
-    canvas.height = h * ratio;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#0f172a';
-    ctxRef.current = ctx;
-  }, []);
-
-  const pos = (e) => {
-    const r = canvasRef.current.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  };
-  const start = (e) => {
-    e.preventDefault();
-    dibujando.current = true;
-    const { x, y } = pos(e);
-    ctxRef.current.beginPath();
-    ctxRef.current.moveTo(x, y);
-  };
-  const move = (e) => {
-    if (!dibujando.current) return;
-    e.preventDefault();
-    const { x, y } = pos(e);
-    ctxRef.current.lineTo(x, y);
-    ctxRef.current.stroke();
-  };
-  const end = () => {
-    if (!dibujando.current) return;
-    dibujando.current = false;
-    onChange(canvasRef.current.toDataURL('image/png'));
-  };
-  const limpiar = () => {
-    const c = canvasRef.current;
-    ctxRef.current.clearRect(0, 0, c.width, c.height);
-    onChange('');
-  };
-
-  return (
-    <div>
-      <canvas
-        ref={canvasRef}
-        onPointerDown={start}
-        onPointerMove={move}
-        onPointerUp={end}
-        onPointerLeave={end}
-        style={{ width: '100%', height: 180, border: '2px dashed #94a3b8', borderRadius: 8, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }}
-      />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-        <span style={{ fontSize: 11, color: '#94a3b8' }}>Firme aquí con el Apple Pencil o el dedo</span>
-        <button onClick={limpiar} style={{ fontSize: 12, padding: '4px 10px', border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: 6, cursor: 'pointer', color: '#334155' }}>
-          Borrar firma
-        </button>
-      </div>
-    </div>
-  );
-}
+import SignaturePad from './SignaturePad';
+import { MEDICO, PLANTILLAS, aplicarNombre } from './consentTemplates';
 
 const ConsentimientosEstetica = ({ paciente }) => {
   const [tipo, setTipo] = useState(null); // 'procedimiento' | 'fotografia'
@@ -145,7 +37,7 @@ const ConsentimientosEstetica = ({ paciente }) => {
   const elegir = (t) => {
     setTipo(t);
     setTitulo(PLANTILLAS[t].titulo);
-    setTexto(PLANTILLAS[t].texto.replace('[PACIENTE]', paciente?.nombre || '__________'));
+    setTexto(aplicarNombre(PLANTILLAS[t].texto, paciente?.nombre));
     setNombre(paciente?.nombre || '');
     setFirma('');
     setError(null);

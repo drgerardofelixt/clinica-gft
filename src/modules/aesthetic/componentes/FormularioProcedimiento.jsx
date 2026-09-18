@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { supabase } from '../../../supabase';
 import MapaFacialAnatomicoToxina from './MapaFacialAnatomicoToxina';
+import SignaturePad from './SignaturePad';
+import { PLANTILLAS, aplicarNombre } from './consentTemplates';
 
 // Gestos principales para valoración de arrugas dinámicas (toxina botulínica).
 // Todas las fotos son OPCIONALES: se suben solo las que se necesiten según la
@@ -17,12 +19,17 @@ const GESTOS_TOXINA = [
 
 const TERCIOS_ORDEN = ['General', 'Tercio superior', 'Tercio medio', 'Tercio inferior'];
 
-const FormularioProcedimiento = ({ pacienteId, procedimientoId = null, onGuardado = () => {} }) => {
-  const [seccion, setSeccion] = useState('basicos'); // 'basicos' | 'mapa' | 'evaluacion' | 'complicaciones'
+const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimientoId = null, onGuardado = () => {} }) => {
+  const [seccion, setSeccion] = useState('basicos'); // 'basicos' | 'mapa' | 'evaluacion' | 'complicaciones' | 'consentimiento'
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
   const [exito, setExito] = useState(false);
   const [gestoSubiendo, setGestoSubiendo] = useState(null);
+
+  // Consentimiento informado (se firma con el procedimiento, ligado 1:1)
+  const [consentTexto, setConsentTexto] = useState(aplicarNombre(PLANTILLAS.procedimiento.texto, pacienteNombre));
+  const [consentNombre, setConsentNombre] = useState(pacienteNombre || '');
+  const [consentFirma, setConsentFirma] = useState('');
 
   const [formData, setFormData] = useState({
     // SECCIÓN 1: Datos básicos
@@ -159,6 +166,13 @@ const FormularioProcedimiento = ({ pacienteId, procedimientoId = null, onGuardad
           : {})
       };
 
+      // Aviso si el procedimiento no lleva consentimiento firmado
+      if (!consentFirma) {
+        const cont = window.confirm('Este procedimiento no tiene consentimiento informado firmado. ¿Guardar de todos modos?');
+        if (!cont) { setGuardando(false); return; }
+      }
+
+      let procId = procedimientoId;
       if (procedimientoId) {
         // ACTUALIZAR
         const { error: err } = await supabase
@@ -168,12 +182,32 @@ const FormularioProcedimiento = ({ pacienteId, procedimientoId = null, onGuardad
 
         if (err) throw err;
       } else {
-        // CREAR
-        const { error: err } = await supabase
+        // CREAR (devuelve el id para ligar el consentimiento)
+        const { data: ins, error: err } = await supabase
           .from('procedimientos_esteticos')
-          .insert(datosGuardar);
+          .insert(datosGuardar)
+          .select('id')
+          .single();
 
         if (err) throw err;
+        procId = ins.id;
+      }
+
+      // Consentimiento informado ligado al procedimiento (si se firmó)
+      if (consentFirma) {
+        const { error: cErr } = await supabase
+          .from('consentimientos_estetica')
+          .insert({
+            paciente_id: pacienteId,
+            procedimiento_id: procId,
+            tipo: 'procedimiento',
+            titulo: PLANTILLAS.procedimiento.titulo,
+            texto: consentTexto,
+            nombre_firmante: consentNombre,
+            firma_paciente_b64: consentFirma,
+            fecha: formData.fecha,
+          });
+        if (cErr) throw new Error('Procedimiento guardado, pero el consentimiento falló: ' + cErr.message);
       }
 
       setExito(true);
@@ -238,7 +272,8 @@ const FormularioProcedimiento = ({ pacienteId, procedimientoId = null, onGuardad
           { id: 'basicos', label: '📋 Básicos' },
           { id: 'mapa', label: '🗺️ Mapa Facial' },
           { id: 'evaluacion', label: '🔍 Evaluación' },
-          { id: 'complicaciones', label: '⚠️ Complicaciones' }
+          { id: 'complicaciones', label: '⚠️ Complicaciones' },
+          { id: 'consentimiento', label: '📄 Consentimiento' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -861,6 +896,45 @@ const FormularioProcedimiento = ({ pacienteId, procedimientoId = null, onGuardad
               ✓ Procedimiento sin complicaciones
             </div>
           )}
+        </div>
+      )}
+
+      {/* SECCIÓN 5: CONSENTIMIENTO INFORMADO */}
+      {seccion === 'consentimiento' && (
+        <div style={{ background: '#f5f5f5', padding: 20, borderRadius: 8, marginBottom: 20 }}>
+          <div style={{ background: consentFirma ? '#dcfce7' : '#fff7ed', border: '1px solid ' + (consentFirma ? '#16a34a' : '#fdba74'), color: consentFirma ? '#166534' : '#9a3412', padding: 10, borderRadius: 8, marginBottom: 14, fontSize: 12 }}>
+            {consentFirma
+              ? '✅ Consentimiento firmado — se guardará ligado a este procedimiento.'
+              : '⚠️ Cada procedimiento debe tener su consentimiento informado firmado por el paciente.'}
+          </div>
+
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginBottom: 4 }}>
+            Texto del consentimiento (editable):
+          </label>
+          <textarea
+            value={consentTexto}
+            onChange={(e) => setConsentTexto(e.target.value)}
+            style={{ width: '100%', minHeight: 220, padding: 12, border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 12.5, lineHeight: 1.5, fontFamily: 'inherit', boxSizing: 'border-box', color: '#1a1a1a' }}
+          />
+
+          <div style={{ marginTop: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginBottom: 4 }}>
+              Nombre de quien firma:
+            </label>
+            <input
+              value={consentNombre}
+              onChange={(e) => setConsentNombre(e.target.value)}
+              placeholder="Nombre del paciente"
+              style={{ width: '100%', padding: 9, border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', color: '#1a1a1a' }}
+            />
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginBottom: 4 }}>
+              Firma del paciente:
+            </label>
+            <SignaturePad onChange={setConsentFirma} />
+          </div>
         </div>
       )}
 

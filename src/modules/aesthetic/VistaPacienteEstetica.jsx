@@ -136,6 +136,7 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
           {tab === 'nuevo-procedimiento' && (
             <FormularioProcedimiento
               pacienteId={paciente.id}
+              pacienteNombre={paciente.nombre}
               onGuardado={onProcedimientoAgregado}
             />
           )}
