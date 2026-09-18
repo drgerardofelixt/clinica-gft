@@ -17,6 +17,16 @@ const RIESGOS = {
     'enrojecimiento, ardor, sensación de tirantez, descamación y formación de costras propias del procedimiento, sensibilidad cutánea, hiperpigmentación o hipopigmentación (con MAYOR riesgo en pieles morenas u oscuras, fototipos IV a VI), reactivación de herpes labial, infección, y —si la profundidad excede lo indicado para el tipo de piel— cicatrices. Me comprometo a evitar la exposición solar y a usar protector solar de forma estricta durante la recuperación',
   mesoterapia:
     'dolor o molestias por los múltiples pinchazos, enrojecimiento, edema (hinchazón), hematomas, comezón, pigmentación en los sitios de punción, infección local, reacción alérgica a los productos infiltrados y, en mesoterapia capilar, sensación temporal de acorchamiento del cuero cabelludo. Los resultados son variables y suelen requerir varias sesiones',
+  hilos:
+    'dolor, inflamación, edema, hematomas, sensación de tirantez, pliegues o irregularidades de la piel, hoyuelos, asimetría, palpación o visibilidad temporal de los hilos, extrusión (salida) del hilo, infección, reacción alérgica, y resultado de duración limitada que requiere sesiones de mantenimiento',
+  prp:
+    'al obtenerse de mi propia sangre (autólogo): molestias o hematoma en el sitio de extracción venosa; y en el sitio de aplicación, dolor, enrojecimiento, edema, hematoma (que suele reabsorberse en unos días), infección, y con menor frecuencia lesión de estructuras adyacentes o de troncos nerviosos con alteraciones de la sensibilidad. Los resultados son variables y suelen requerir varias sesiones',
+  laser:
+    'enrojecimiento, edema perifolicular y molestias durante y después de la sesión y, de forma menos frecuente, QUEMADURAS, ampollas, costras, erupciones acneiformes e hiper o hipopigmentación (habitualmente transitorias, con mayor riesgo en pieles bronceadas u oscuras). Requiere varias sesiones, NO garantiza la eliminación permanente del vello y obliga a evitar la exposición solar y el bronceado antes y después del tratamiento',
+  microneedling:
+    'enrojecimiento, irritación, descamación y sensibilidad que pueden durar algunos días, edema y hematomas, y como complicaciones graves aunque evitables, infección y formación de queloides o cicatrices. Requiere varias sesiones y fotoprotección estricta',
+  lipolisis:
+    'dolor, hinchazón (que puede ser marcada), hematomas, endurecimiento o nódulos temporales, entumecimiento o alteración de la sensibilidad en la zona, enrojecimiento, y de forma poco frecuente lesión nerviosa (por ejemplo, debilidad temporal de la sonrisa) o dificultad para tragar. Los resultados son graduales y suelen requerir varias sesiones',
   general:
     'dolor, enrojecimiento, inflamación, hematomas, infección, reacciones alérgicas, hiperpigmentación o cambios de coloración, cicatrización anormal, resultados temporales o insuficientes y la posible necesidad de sesiones o retoques adicionales',
 };
@@ -27,6 +37,11 @@ const TITULOS = {
   bioestimulador: 'Consentimiento informado para aplicación de bioestimuladores de colágeno',
   peeling: 'Consentimiento informado para peeling químico',
   mesoterapia: 'Consentimiento informado para mesoterapia',
+  hilos: 'Consentimiento informado para colocación de hilos tensores (PDO)',
+  prp: 'Consentimiento informado para aplicación de plasma rico en plaquetas (PRP)',
+  laser: 'Consentimiento informado para depilación láser',
+  microneedling: 'Consentimiento informado para microneedling (microagujas)',
+  lipolisis: 'Consentimiento informado para lipólisis inyectable',
   general: 'Consentimiento informado para procedimiento de medicina estética',
 };
 
@@ -90,8 +105,13 @@ export const plantillaPorTipo = (tipoProcedimiento = '') => {
   const t = tipoProcedimiento.toLowerCase();
   if (/botox|toxina|xeomin|dysport|bocouture|neuronox/.test(t)) return 'toxina';
   if (/bioestimul|sculptra|pol[ií]l[aá]ctico|plla|radiesse|hidroxiapatita|caha|policaprolactona|\bpcl\b|ellans[eé]|lanluma|gouri|harmonyca/.test(t)) return 'bioestimulador';
+  if (/hilo|\bpdo\b|tensor|thread|polidioxanona/.test(t)) return 'hilos';
+  if (/\bprp\b|plasma|plaquet|bioregener/.test(t)) return 'prp';
+  if (/l[aá]ser|depilaci[oó]n|diodo|alejandrita|\bipl\b|luz pulsada|fotodepil/.test(t)) return 'laser';
+  if (/microneedl|microaguj|dermapen|dermaroller|micropunci[oó]n/.test(t)) return 'microneedling';
+  if (/lip[oó]lisis|lipol[ií]tico|desoxic[oó]lico|deoxic[oó]lico|grasa localizada|adiposidad|papada/.test(t)) return 'lipolisis';
   if (/peeling|exfoliaci[oó]n|tca|glic[oó]lico|salic[ií]lico|jessner|despigment|retinoico/.test(t)) return 'peeling';
-  if (/mesoterapia|\bmeso\b|intradermoterapia|c[oó]ctel|vitaminas intrad|dermapen/.test(t)) return 'mesoterapia';
+  if (/mesoterapia|\bmeso\b|intradermoterapia|c[oó]ctel|vitaminas intrad/.test(t)) return 'mesoterapia';
   if (/juv[eé]derm|hialur|relleno|filler|restylane|belotero|teosyal|stylage/.test(t)) return 'relleno';
   return 'general';
 };
@@ -101,8 +121,13 @@ export const TIPOS_CONSENT = [
   { k: 'toxina', l: 'Toxina' },
   { k: 'relleno', l: 'Rellenos' },
   { k: 'bioestimulador', l: 'Bioestimuladores' },
+  { k: 'hilos', l: 'Hilos (PDO)' },
   { k: 'peeling', l: 'Peeling' },
   { k: 'mesoterapia', l: 'Mesoterapia' },
+  { k: 'prp', l: 'PRP' },
+  { k: 'laser', l: 'Depilación láser' },
+  { k: 'microneedling', l: 'Microneedling' },
+  { k: 'lipolisis', l: 'Lipólisis' },
   { k: 'general', l: 'General' },
 ];
 

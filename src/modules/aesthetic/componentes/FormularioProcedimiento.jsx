@@ -1001,20 +1001,22 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
               : '⚠️ Cada procedimiento debe tener su consentimiento informado firmado por el paciente.'}
           </div>
 
-          <div style={{ marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginRight: 8 }}>Plantilla:</span>
-            {TIPOS_CONSENT.map(({ k, l }) => {
-              const sugerida = plantillaPorTipo(formData.tipo_procedimiento) === k;
-              return (
-                <button key={k} type="button" onClick={() => cargarPlantilla(k)}
-                  style={{ marginRight: 6, padding: '4px 10px', fontSize: 12, borderRadius: 14, cursor: 'pointer',
-                    border: '1px solid ' + (sugerida ? '#0066cc' : '#cbd5e1'),
-                    background: sugerida ? '#e6f1fb' : '#fff', color: sugerida ? '#0c447c' : '#334155',
-                    fontWeight: sugerida ? 'bold' : 'normal' }}>
-                  {l}{sugerida ? ' ·sugerida' : ''}
-                </button>
-              );
-            })}
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginBottom: 6 }}>Plantilla (se sugiere según el procedimiento):</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {TIPOS_CONSENT.map(({ k, l }) => {
+                const sugerida = plantillaPorTipo(formData.tipo_procedimiento) === k;
+                return (
+                  <button key={k} type="button" onClick={() => cargarPlantilla(k)}
+                    style={{ padding: '4px 10px', fontSize: 12, borderRadius: 14, cursor: 'pointer',
+                      border: '1px solid ' + (sugerida ? '#0066cc' : '#cbd5e1'),
+                      background: sugerida ? '#e6f1fb' : '#fff', color: sugerida ? '#0c447c' : '#334155',
+                      fontWeight: sugerida ? 'bold' : 'normal' }}>
+                    {l}{sugerida ? ' ·sugerida' : ''}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <label style={{ display: 'block', fontSize: 12, fontWeight: 'bold', color: '#0f172a', marginBottom: 4 }}>
