@@ -17,7 +17,7 @@ const HistorialProcedimientos = ({ procedimientos, onActualizar }) => {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, color: '#1a1a1a' }}>
       {procedimientos.map((proc) => (
         <div
           key={proc.id}

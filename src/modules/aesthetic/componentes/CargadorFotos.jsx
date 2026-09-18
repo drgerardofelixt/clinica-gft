@@ -169,7 +169,8 @@ const CargadorFotos = ({ pacienteId, fotosExistentes = {}, onFotosGuardadas = ()
       maxWidth: 1000,
       margin: '0 auto',
       padding: 16,
-      fontFamily: 'system-ui, -apple-system, sans-serif'
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      color: '#1a1a1a'
     }}>
       <h2 style={{ marginBottom: 16, color: '#1a1a1a' }}>
         📸 Cargador de Fotos (5 ángulos)

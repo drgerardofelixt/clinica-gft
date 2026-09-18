@@ -21,7 +21,8 @@ const EstheticModule = ({ paciente }) => {
 
   return (
     <div style={{
-      fontFamily: 'system-ui, -apple-system, sans-serif'
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      color: '#1a1a1a'
     }}>
       {/* SUB-PESTAÑAS */}
       <div style={{

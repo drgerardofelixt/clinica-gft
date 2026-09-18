@@ -23,7 +23,8 @@ const PlanesTratamiento = ({ planes = [] }) => {
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      gap: 12
+      gap: 12,
+      color: '#1a1a1a'
     }}>
       {planes.map((plan, idx) => {
         // Fallback: preferir campos nuevos (Fase 2), caer a viejos si no existen

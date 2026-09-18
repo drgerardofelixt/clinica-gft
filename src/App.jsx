@@ -75,7 +75,7 @@ const Btn = ({onClick, children, color=C.azul, outline=false, icon, size="md", d
 
 // ── COMPONENTES UI BÁSICOS ────────────────────────────────────
 const Card = ({children, style={}}) => (
-  <div style={{background:"white",borderRadius:14,border:"1px solid "+C.grisMedio,
+  <div style={{background:"white",color:C.texto,borderRadius:14,border:"1px solid "+C.grisMedio,
     padding:18,marginBottom:12,
     boxShadow:"0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)",
     ...style}}>
@@ -246,7 +246,7 @@ const MicBtn = ({onResult, style={}}) => {
 const Modal = ({title, children, onClose, color}) => (
   <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:2000,
     overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-    <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:750,overflow:"hidden",
+    <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:750,overflow:"hidden",
       boxShadow:"0 25px 80px rgba(15,23,42,0.25), 0 8px 24px rgba(15,23,42,0.12)",margin:"20px 0"}}>
       <div style={{background:color||C.azul,padding:"16px 24px",display:"flex",
         justifyContent:"space-between",alignItems:"center"}}>
@@ -2274,7 +2274,7 @@ const PrintModal = ({titulo, children, onClose, onWA, onWAConPDF, extraHeader, p
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:3000,
       display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflow:"auto"}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:730,
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:730,
         maxHeight:"92vh",overflow:"hidden",display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
           padding:"12px 20px",background:C.azul}}>
@@ -4506,7 +4506,7 @@ const ModalReceta = ({p, firmaB64, onClose, onSave}) => {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2100,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:680,
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:680,
         overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
         <div style={{background:C.azul,padding:"14px 22px",display:"flex",
           justifyContent:"space-between",alignItems:"center"}}>
@@ -4794,7 +4794,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:700,
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:700,
         overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
         <div style={{background:C.verde,padding:"14px 22px",display:"flex",
           justifyContent:"space-between",alignItems:"center"}}>
@@ -4955,7 +4955,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
       {confirmarSinCita && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:9999,
           display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{background:"white",borderRadius:14,maxWidth:380,width:"100%",
+          <div style={{background:"white",color:C.texto,borderRadius:14,maxWidth:380,width:"100%",
             padding:24,boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}>
             <div style={{textAlign:"center",marginBottom:16}}>
               <div style={{fontSize:38,marginBottom:8}}>⚠️</div>
@@ -5026,7 +5026,7 @@ const ModalAgendarCita = ({p, consulta={}, gcalEventos=[], onClose}) => {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2100,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:560,overflow:"hidden",
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:560,overflow:"hidden",
         boxShadow:"0 20px 60px rgba(0,0,0,0.2)",margin:"24px 0"}}>
         <div style={{background:C.verde,padding:"14px 22px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{color:"white",fontWeight:800,fontSize:14}}>Agendar próxima cita — {p.nombre}</div>
@@ -5203,7 +5203,7 @@ const ModalLabs = ({p, onClose, onSave, firmaB64=null}) => {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:520,
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:520,
         overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
         <div style={{background:C.morado,padding:"14px 22px",display:"flex",
           justifyContent:"space-between",alignItems:"center"}}>
@@ -5332,7 +5332,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:2000,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:750,overflow:"hidden",
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:750,overflow:"hidden",
         boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
         <div style={{background:C.azul,padding:"16px 22px",display:"flex",
           justifyContent:"space-between",alignItems:"center"}}>
@@ -5663,7 +5663,7 @@ const ModalConfig = ({firmaB64, onSave, onClose, onMigrarCitas}) => {
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:4000,
       display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:460,
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:460,
         overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
         <div style={{background:C.azul,padding:"14px 22px",display:"flex",
           justifyContent:"space-between",alignItems:"center"}}>
@@ -8597,7 +8597,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
     {similarModal && (
       <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:3200,
         display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-        <div style={{background:"white",borderRadius:14,width:"100%",maxWidth:440,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
+        <div style={{background:"white",color:C.texto,borderRadius:14,width:"100%",maxWidth:440,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}}>
           <div style={{background:C.naranja,padding:"14px 20px",color:"white"}}>
             <div style={{fontWeight:800,fontSize:14}}>¿Es este paciente?</div>
             <div style={{fontSize:11,opacity:.9,marginTop:2}}>Ya existe un paciente con nombre parecido a “{nombre}”. Elige uno para no duplicar el expediente, o crea uno nuevo.</div>
@@ -8720,7 +8720,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:4100,
       overflow:"auto",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:560,overflow:"hidden",
+      <div style={{background:"white",color:C.texto,borderRadius:16,width:"100%",maxWidth:560,overflow:"hidden",
         boxShadow:"0 20px 60px rgba(0,0,0,0.25)",margin:"24px 0"}}>
         <div style={{background:C.azul,padding:"14px 22px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{color:"white",fontWeight:800,fontSize:14}}>Editar cita</div>

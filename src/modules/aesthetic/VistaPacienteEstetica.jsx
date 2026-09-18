@@ -60,7 +60,7 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
   };
 
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ padding: 20, color: '#1a1a1a' }}>
       {/* HEADER */}
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, color: C.azul }}>🎨 Medicina Estética</h2>
