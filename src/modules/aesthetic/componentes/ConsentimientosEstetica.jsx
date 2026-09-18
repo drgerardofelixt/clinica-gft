@@ -82,8 +82,9 @@ const ConsentimientosEstetica = ({ paciente }) => {
       <div class="firmas">
         <div class="box">${c.firma_paciente_b64 ? `<img src="${c.firma_paciente_b64}"/>` : '<div class="sp"></div>'}<div class="line">${c.nombre_firmante || ''}<br/>Nombre y firma del paciente</div></div>
         <div class="box"><div class="sp"></div><div class="line">${MEDICO}<br/>Nombre y firma del médico</div></div>
-        <div class="box"><div class="sp"></div><div class="line">Nombre y firma del testigo 1</div></div>
-        <div class="box"><div class="sp"></div><div class="line">Nombre y firma del testigo 2</div></div>
+      </div>
+      <div class="firmas" style="margin-top:20px">
+        <div class="box" style="flex:1 1 40%"><div class="sp"></div><div class="line">Testigo (opcional)</div></div>
       </div>
       <p style="text-align:right;font-size:11.5px;margin-top:24px">Fecha: ${fecha}</p>
       <script>window.onload=function(){window.print()}</script></body></html>`);
