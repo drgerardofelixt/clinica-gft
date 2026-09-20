@@ -18,6 +18,7 @@ import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, s
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import AdminProductos from "./modules/aesthetic";
 import EstheticModule from "./modules/aesthetic/EstheticModule";
+import PanelEstetica from "./modules/aesthetic/PanelEstetica";
 import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -9752,6 +9753,13 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [showImport, setShowImport] = useState(false);
   const [showEstetica, setShowEstetica] = useState(false); // overlay fullscreen del módulo de estética
   const [contentView, setContentView] = useState("dash");
+  // Área de trabajo: "obesidad" | "estetica" (switch superior; persiste entre sesiones)
+  const [area, setArea] = useState(() => { try { return localStorage.getItem("gft_area") || "obesidad"; } catch { return "obesidad"; } });
+  const cambiarArea = (a) => {
+    setArea(a);
+    try { localStorage.setItem("gft_area", a); } catch {}
+    setContentView(a === "estetica" ? "estetica" : "dash");
+  };
   const [busq, setBusq] = useState("");
   const [labsFilter, setLabsFilter] = useState(false);
   // Tick periódico para recalcular "paciente actual" conforme avanza el reloj
@@ -9991,6 +9999,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
 
   const topbarTitle = contentView==="dash"?"Buenos días, Dr. Félix":
+                      contentView==="estetica"?"Medicina Estética":
                       contentView==="calendario"?"Agenda":
                       contentView==="pacientes"?"Pacientes":
                       contentView==="citas"?"Modificar cita":
@@ -10010,7 +10019,34 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
         <div className="gft-sidebar__logo">
           <img src={logoNavbar} alt="Logo GFT" className="gft-sidebar__logo-img"/>
         </div>
+
+        {/* ── SWITCH DE ÁREA ─────────────────────────────────── */}
+        <div style={{display:"flex",gap:4,padding:"8px 10px 4px"}}>
+          {[["obesidad","🩺","Obesidad"],["estetica","💉","Estética"]].map(([a,ic,lb])=>(
+            <button key={a} onClick={()=>cambiarArea(a)}
+              style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+                padding:"8px 6px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:700,
+                border:"1px solid "+(area===a?"var(--gft-accent)":"var(--gft-border)"),
+                background:area===a?"var(--gft-accent-dim)":"transparent",
+                color:area===a?"var(--gft-accent-text)":"var(--gft-text-muted)"}}>
+              <span>{ic}</span>{lb}
+            </button>
+          ))}
+        </div>
+
         <nav className="gft-sidebar__nav">
+          {area==="estetica" && (
+            <>
+              <div className="gft-sidebar__section">MEDICINA ESTÉTICA</div>
+              <button className={"gft-sidebar__item"+(contentView==="estetica"?" gft-sidebar__item--active":"")}
+                onClick={()=>setContentView("estetica")}>
+                <span className="gft-sidebar__icon">💉</span>Panel Estética
+              </button>
+              <button className="gft-sidebar__item" onClick={()=>setShowEstetica(true)}>
+                <span className="gft-sidebar__icon">💊</span>Catálogo de productos
+              </button>
+            </>
+          )}
           <div className="gft-sidebar__section">HOY</div>
           {[["dash","🏠","Dashboard"],["calendario","📅","Agenda"]].map(([v,ic,lb])=>(
             <button key={v} className={"gft-sidebar__item"+(contentView===v?" gft-sidebar__item--active":"")}
@@ -10510,6 +10546,13 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           )}
 
           {/* ── VISTA PACIENTES (5b) ─────────────────────────── */}
+          {contentView==="estetica" && (
+            <PanelEstetica
+              onAbrirCatalogo={()=>setShowEstetica(true)}
+              onVerPacientes={()=>setContentView("pacientes")}
+              onAgendar={()=>onAgendar&&onAgendar(null)}
+            />
+          )}
           {contentView==="pacientes" && <PacientesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
 
           {/* ── VISTA AJUSTES (5d) ─────────────────────────────── */}
