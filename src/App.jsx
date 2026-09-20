@@ -19,6 +19,7 @@ import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import AdminProductos from "./modules/aesthetic";
 import EstheticModule from "./modules/aesthetic/EstheticModule";
 import PanelEstetica from "./modules/aesthetic/PanelEstetica";
+import ResumenMes from "./modules/aesthetic/ResumenMes";
 import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -9092,6 +9093,9 @@ const calcEstadisticas = (pacientes, citas) => {
   const atendidasTotal = citas.filter(c => c.estado==="completada").length;
   const atendidasMes   = citas.filter(c => c.estado==="completada" && mesDe(c.inicio)===mesActual).length;
   const programadasMes = citas.filter(c => mesDe(c.inicio)===mesActual && c.estado!=="cancelada").length;
+  // Canceladas del mes (por fecha de la cita) y nuevas agendadas del mes (por fecha de creación)
+  const canceladasMes  = citas.filter(c => c.estado==="cancelada" && mesDe(c.inicio)===mesActual).length;
+  const nuevasMes      = citas.filter(c => c.creadoEn && mesDe(c.creadoEn)===mesActual).length;
 
   // Historial mes-con-mes de CITAS, meses CONTINUOS desde la más antigua hasta el mes actual.
   const vacio = (m) => ({ mes:m, atendidas:0, programadas:0, primera_vez:0, seguimiento:0, MOUN:0, WEG:0 });
@@ -9128,7 +9132,7 @@ const calcEstadisticas = (pacientes, citas) => {
   }));
 
   return { activos, inactivos, totales, tratActivos, tratTotales, cruce,
-    atendidasMes, atendidasTotal, programadasMes, historial, consultasConFecha, consultasSinFecha };
+    atendidasMes, atendidasTotal, programadasMes, canceladasMes, nuevasMes, historial, consultasConFecha, consultasSinFecha };
 };
 
 // Snapshot (foto del estado ACTUAL) para un mes, reutilizando calcEstadisticas. No incluye citas (dinámicas).
@@ -10748,6 +10752,8 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
             );
             return (
               <>
+                {/* Resumen del mes: citas (nuevas/atendidas/canceladas) + ingresos */}
+                <ResumenMes atendidasMes={est.atendidasMes} canceladasMes={est.canceladasMes} nuevasMes={est.nuevasMes}/>
                 {/* Vista Reportes (5c) — resumen ejecutivo */}
                 <ReportesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>
                 {/* Detalle técnico + snapshots (conservado, colapsable) */}

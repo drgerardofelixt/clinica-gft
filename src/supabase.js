@@ -158,6 +158,7 @@ const rowToCita = (r) => ({
   origenUltimoCambio: r.origen_ultimo_cambio || 'app',
   tituloGenerado: r.titulo_generado || null,
   pendienteSincronizar: !!r.pendiente_sincronizar,
+  creadoEn: r.creado_en || null,
 })
 
 const citaPatchToRow = (cambios) => {

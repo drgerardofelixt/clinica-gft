@@ -48,9 +48,9 @@ export default function PanelEstetica({ onAbrirCatalogo, onVerPacientes, onAgend
     }
   };
 
+  // Nota: los ingresos NO van aquí (a petición del médico); se ven en Reportes.
   const tarjetas = [
     { l: 'Procedimientos del mes', v: kpi.mes, u: 'este mes', color: 'var(--gft-accent)' },
-    { l: 'Ingresos del mes', v: money(kpi.ingresosMes), u: 'cobrado', color: 'var(--gft-success)' },
     { l: 'Procedimientos totales', v: kpi.total, u: 'histórico', color: 'var(--gft-purple)' },
     { l: 'Consentimientos firmados', v: kpi.consent, u: 'en expediente', color: 'var(--gft-warning)' },
   ];
@@ -100,11 +100,9 @@ export default function PanelEstetica({ onAbrirCatalogo, onVerPacientes, onAgend
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 12px', borderBottom: i < recientes.length - 1 ? '1px solid var(--gft-border)' : 'none' }}>
               <div>
                 <div style={{ color: 'var(--gft-text)', fontSize: 14 }}>{p.nombre}</div>
-                <div style={{ color: 'var(--gft-text-muted)', fontSize: 12 }}>{p.tipo_procedimiento || 'Procedimiento'} · {fmtFecha(p.fecha_procedimiento || p.created_at)}</div>
+                <div style={{ color: 'var(--gft-text-muted)', fontSize: 12 }}>{p.tipo_procedimiento || 'Procedimiento'}</div>
               </div>
-              <div style={{ color: 'var(--gft-success)', fontWeight: 700, fontSize: 14 }}>
-                {money(p.precio_cobrado_mxn || p.costo_total_mxn || 0)}
-              </div>
+              <div style={{ color: 'var(--gft-text-muted)', fontSize: 12 }}>{fmtFecha(p.fecha_procedimiento || p.created_at)}</div>
             </div>
           ))
         )}
