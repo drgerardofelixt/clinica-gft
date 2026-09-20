@@ -1036,13 +1036,11 @@ const importarCambiosConsultorio = async () => {
         ausentesEsteCiclo.add(c.googleEventId);
         const n = (_ausenciasGCal.get(c.googleEventId) || 0) + 1;
         _ausenciasGCal.set(c.googleEventId, n);
-        if (n >= 2) {                         // ausente 2 ciclos seguidos → borrado real → cancelar
-          try {
-            await actualizarCita(c.id, { estado:"cancelada", origenUltimoCambio:"gcal" });
-            _ausenciasGCal.delete(c.googleEventId);
-            canceladas++;
-            avisos.unshift(`⚠️ El sistema canceló la cita de ${c.pacienteNombre}: su evento fue borrado en Google Calendar. Si fue un error, reactívala en "Administrar citas".`);
-          } catch(e){ console.warn("importar/cancelar:", e); }
+        // NO auto-cancelar: causaba pérdida de citas reales por lecturas parciales
+        // de Google (falsos positivos). La cita se CONSERVA intacta; solo se avisa
+        // UNA vez para revisión manual del médico.
+        if (n === 2) {
+          avisos.unshift(`ℹ️ La cita de ${c.pacienteNombre} no aparece por ahora en Google Calendar. Revísala manualmente si hace falta — el sistema ya NO cancela citas automáticamente.`);
         }
       }
       // Limpia contadores de eventos que ya no están ausentes (no arrastrar conteos viejos).
