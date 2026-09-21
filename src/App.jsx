@@ -873,22 +873,32 @@ const pushBorrarEventoGCal = async (cita) => {
   } catch(e) { console.warn("GCal borrar evento:", e); avisarFalloGCal("borrar", e); return false; }
 };
 
-// A4 — Sincroniza las citas con pendienteSincronizar=true que aún no tienen googleEventId.
-// Idempotente: salta las ya enlazadas. NUNCA rompe la app.
+// A4 — Sincroniza las citas con pendienteSincronizar=true.
+//  • Sin googleEventId → CREA el evento y lo enlaza.
+//  • Con googleEventId → hace PATCH (mueve/actualiza) el evento existente. Esto recupera los
+//    REAGENDADOS que no se pudieron empujar en el momento (p. ej. token de Google expirado):
+//    antes nunca se reintentaban y el evento se quedaba en el día viejo.
+// Idempotente. NUNCA rompe la app.
 const sincronizarPendientes = async () => {
   if (!isGoogleAuthorized()) return { ok:false, motivo:"google_desconectado", sincronizadas:0, total:0 };
   let pendientes = [];
-  try { pendientes = (await listarCitas({})).filter(c => c.pendienteSincronizar && !c.googleEventId); }
+  try { pendientes = (await listarCitas({})).filter(c => c.pendienteSincronizar && c.estado !== "cancelada"); }
   catch(e) { console.error("sincronizarPendientes/listar:", e); return { ok:false, motivo:"listar_fallo", sincronizadas:0, total:0 }; }
   if (pendientes.length === 0) return { ok:true, sincronizadas:0, total:0 }; // nada pendiente → no tocar Google (chequeo barato)
   const calendarId = await obtenerOCrearCalendarioConsultorio();
   if (!calendarId) return { ok:false, motivo:"sin_calendario", sincronizadas:0, total:pendientes.length };
   let n = 0;
   for (const c of pendientes) {
-    if (c.googleEventId) continue; // idempotente
     try {
-      const ev = await crearEventoEnCalendario(calendarId, citaAEvento(c));
-      if (ev && ev.id) { await actualizarCita(c.id, { googleEventId: ev.id, calendarId, pendienteSincronizar:false }); n++; }
+      if (c.googleEventId) {
+        // Reagendado/edición que no se empujó → mover el evento al slot correcto.
+        const ev = await actualizarEventoEnCalendario(c.calendarId || calendarId, c.googleEventId, citaAEvento(c));
+        if (ev) { await actualizarCita(c.id, { pendienteSincronizar:false }); n++; }
+      } else {
+        // Cita nueva sin evento → crear y enlazar.
+        const ev = await crearEventoEnCalendario(calendarId, citaAEvento(c));
+        if (ev && ev.id) { await actualizarCita(c.id, { googleEventId: ev.id, calendarId, pendienteSincronizar:false }); n++; }
+      }
     } catch(e) { console.warn("sincronizarPendientes/cita:", e); }
   }
   return { ok:true, sincronizadas:n, total:pendientes.length };
@@ -8395,6 +8405,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const pedirEleccionPaciente = (candidatos) => new Promise(res => { resolverSimilar.current = res; setSimilarModal({candidatos}); });
   const responderSimilar = (val) => { setSimilarModal(null); const r = resolverSimilar.current; resolverSimilar.current = null; if (r) r(val); };
   const [citasDia,setCitasDia] = useState([]);     // citas del consultorio (tabla citas) del día, para la tira de horarios
+  const [gcalDia,setGcalDia]   = useState([]);     // eventos del calendario del consultorio EN VIVO (aún no importados)
 
   const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
 
@@ -8417,6 +8428,41 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       .catch(()=>{ if(activo) setOcupadoDia([]); });
     return ()=>{ activo=false; };
   },[fecha]);
+
+  // Lee EN VIVO el calendario del consultorio del día (para ver ocupado aunque el evento aún no se haya
+  // importado a la tabla — antes solo aparecían tras el ciclo de 75s).
+  useEffect(()=>{
+    let activo = true;
+    if (!fecha || !isGoogleAuthorized()) { setGcalDia([]); return; }
+    (async()=>{
+      try {
+        const calId = getCalendarioConsultorioId();
+        if (!calId) { if(activo) setGcalDia([]); return; }
+        const evs = await leerEventosDeCalendario(calId, { timeMin:`${fecha}T00:00:00-07:00`, timeMax:`${fecha}T23:59:59-07:00` });
+        if (activo) setGcalDia((evs||[]).filter(e=>e.start?.dateTime).map(e=>({
+          inicio:e.start.dateTime, fin:e.end?.dateTime||e.start.dateTime,
+          pacienteNombre:(e.summary||"Ocupado").split(" · ")[0], tipo:"seguimiento", googleEventId:e.id })));
+      } catch { if(activo) setGcalDia([]); }
+    })();
+    return ()=>{ activo=false; };
+  },[fecha]);
+
+  // Citas del día para la tira: tabla + eventos en vivo del consultorio (sin duplicar por googleEventId).
+  const citasDiaMerged = [
+    ...citasDia,
+    ...gcalDia.filter(g => !citasDia.some(c => c.googleEventId && c.googleEventId===g.googleEventId)),
+  ];
+  // Aviso claro si el horario elegido choca con una cita/evento del consultorio.
+  const choqueCita = (()=>{
+    if (!fecha || !hora) return null;
+    const dur = tipo==="primera_vez"?60:30;
+    const a = new Date(`${fecha}T${hora}:00-07:00`).getTime();
+    const b = a + dur*60000;
+    return citasDiaMerged.find(c=>{
+      const ci=new Date(c.inicio).getTime(), cf=new Date(c.fin).getTime();
+      return !isNaN(ci)&&!isNaN(cf)&&a<cf&&b>ci;
+    }) || null;
+  })();
 
   // Advertencia (no bloqueante) si la hora elegida se solapa con un evento personal.
   const choque = (()=>{
@@ -8576,7 +8622,14 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
           </div>
         </Row>
 
-        <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
+        <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDiaMerged} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
+
+        {choqueCita && (
+          <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#FEF2F2",
+            border:"1px solid #FCA5A5",fontSize:11,color:"#B91C1C",fontWeight:700}}>
+            🔴 Ese horario ya está ocupado: <b>{choqueCita.pacienteNombre || "otra cita"}</b>. Elige otra hora o encímala bajo tu criterio.
+          </div>
+        )}
 
         {choque && (
           <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#FFF7ED",
