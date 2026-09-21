@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../supabase';
 import SignaturePad from './SignaturePad';
 import { MEDICO, PLANTILLAS, aplicarNombre } from './consentTemplates';
+import logoDoc from '../../../assets/images/DrGFT-logo-02-trimmed.png';
 
-const ConsentimientosEstetica = ({ paciente }) => {
+const CEDULA = 'Céd. Prof. 15131213 · Reg. SSA: 10361/16';
+
+const ConsentimientosEstetica = ({ paciente, firmaB64 = null }) => {
   const [tipo, setTipo] = useState(null); // 'procedimiento' | 'fotografia'
   const [titulo, setTitulo] = useState('');
   const [texto, setTexto] = useState('');
@@ -70,24 +73,53 @@ const ConsentimientosEstetica = ({ paciente }) => {
 
   const imprimir = (c) => {
     const fecha = new Date(c.fecha || c.created_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    const esc = (s) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const logoUrl = new URL(logoDoc, window.location.origin).href; // absoluto para la ventana nueva
+    const firmaMedico = firmaB64
+      ? `<img class="firma-img" src="${firmaB64}" alt="Firma médico"/>`
+      : '<div class="sp"></div>';
+    const firmaPaciente = c.firma_paciente_b64
+      ? `<img class="firma-img" src="${c.firma_paciente_b64}" alt="Firma paciente"/>`
+      : '<div class="sp"></div>';
+
     const w = window.open('', '_blank');
     if (!w) { setError('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes.'); return; }
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${c.titulo || 'Consentimiento'}</title>
-      <style>body{font-family:-apple-system,system-ui,Arial,sans-serif;color:#0f172a;max-width:720px;margin:40px auto;padding:0 24px;line-height:1.6}
-      h1{font-size:17px;text-align:center;margin-bottom:20px}p{white-space:pre-wrap;font-size:12.5px}
-      .firmas{margin-top:36px;display:flex;flex-wrap:wrap;gap:28px}
-      .box{flex:1 1 40%;text-align:center}.box img{max-height:80px;display:block;margin:0 auto 4px}
-      .sp{height:80px}.line{border-top:1px solid #0f172a;padding-top:6px;font-size:11.5px}</style></head>
-      <body><h1>${c.titulo || ''}</h1><p>${(c.texto || '').replace(/</g, '&lt;')}</p>
-      <div class="firmas">
-        <div class="box">${c.firma_paciente_b64 ? `<img src="${c.firma_paciente_b64}"/>` : '<div class="sp"></div>'}<div class="line">${c.nombre_firmante || ''}<br/>Nombre y firma del paciente</div></div>
-        <div class="box"><div class="sp"></div><div class="line">${MEDICO}<br/>Nombre y firma del médico</div></div>
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(c.titulo || 'Consentimiento')}</title>
+      <style>
+        @page { size: letter; margin: 16mm 16mm 14mm; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, system-ui, Arial, sans-serif; color: #1A2332; margin: 0; line-height: 1.55; }
+        .doc { max-width: 720px; margin: 0 auto; padding: 0 8px; }
+        .head { text-align: center; border-bottom: 2px solid #1A2332; padding-bottom: 10px; margin-bottom: 16px; }
+        .head img { height: 74px; object-fit: contain; }
+        h1 { font-size: 16px; text-align: center; margin: 0 0 14px; page-break-after: avoid; }
+        .cuerpo { white-space: pre-wrap; font-size: 12px; text-align: justify; }
+        .firmas { margin-top: 34px; display: flex; flex-wrap: wrap; gap: 24px; page-break-inside: avoid; }
+        .box { flex: 1 1 44%; text-align: center; }
+        .firma-img { max-height: 74px; max-width: 90%; display: block; margin: 0 auto 2px; }
+        .sp { height: 74px; }
+        .line { border-top: 1px solid #1A2332; padding-top: 6px; font-size: 11px; }
+        .line b { display: block; }
+        .ced { font-size: 9px; color: #64748B; }
+        .fecha { text-align: right; font-size: 11px; margin-top: 20px; color: #475569; }
+        .testigo { margin-top: 18px; page-break-inside: avoid; }
+        .testigo .box { flex: 1 1 44%; margin: 0 auto; }
+      </style></head>
+      <body><div class="doc">
+        <div class="head"><img src="${logoUrl}" alt="Consultorio Dr. Gerardo Félix Tapia"/></div>
+        <h1>${esc(c.titulo || '')}</h1>
+        <div class="cuerpo">${esc(c.texto || '')}</div>
+        <div class="firmas">
+          <div class="box">${firmaPaciente}<div class="line"><b>${esc(c.nombre_firmante || '')}</b>Nombre y firma del paciente</div></div>
+          <div class="box">${firmaMedico}<div class="line"><b>${MEDICO}</b>Médico tratante<div class="ced">${CEDULA}</div></div></div>
+        </div>
+        <div class="firmas testigo">
+          <div class="box"><div class="sp"></div><div class="line">Testigo (opcional)</div></div>
+        </div>
+        <div class="fecha">Hermosillo, Sonora · Fecha: ${fecha}</div>
       </div>
-      <div class="firmas" style="margin-top:20px">
-        <div class="box" style="flex:1 1 40%"><div class="sp"></div><div class="line">Testigo (opcional)</div></div>
-      </div>
-      <p style="text-align:right;font-size:11.5px;margin-top:24px">Fecha: ${fecha}</p>
-      <script>window.onload=function(){window.print()}</script></body></html>`);
+      <script>window.onload=function(){setTimeout(function(){window.print()},250)}</script>
+      </body></html>`);
     w.document.close();
   };
 

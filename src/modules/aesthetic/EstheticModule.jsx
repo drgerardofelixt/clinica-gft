@@ -4,7 +4,7 @@ import VistaPacienteEstetica from './VistaPacienteEstetica';
 import GaleriaAntesDesp from './vistas/GaleriaAntesDesp';
 import ConsentimientosEstetica from './componentes/ConsentimientosEstetica';
 
-const EstheticModule = ({ paciente }) => {
+const EstheticModule = ({ paciente, firmaB64 = null }) => {
   const [subpestana, setSubpestana] = useState('expediente');
 
   if (!paciente || !paciente.id) {
@@ -119,7 +119,7 @@ const EstheticModule = ({ paciente }) => {
       )}
 
       {subpestana === 'consentimientos' && (
-        <ConsentimientosEstetica paciente={paciente} />
+        <ConsentimientosEstetica paciente={paciente} firmaB64={firmaB64} />
       )}
     </div>
   );

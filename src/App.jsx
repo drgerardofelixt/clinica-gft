@@ -7052,7 +7052,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           )
         )}
         {tab==="estetica" && (
-          <EstheticModule paciente={p}/>
+          <EstheticModule paciente={p} firmaB64={firmaB64||IMG_FIRMA}/>
         )}
 
         {tab==="hc" && (
