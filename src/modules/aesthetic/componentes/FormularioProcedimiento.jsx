@@ -96,13 +96,17 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
     setFormData(prev => ({ ...prev, [field]: !prev[field] }));
   };
 
-  // ── Borrador: auto-guardado + reanudar (hand-off compu → iPad) ──
+  // ── Borrador: auto-guardado + reanudar + hand-off a iPad ──
   // Debe ir DESPUÉS de declarar formData (sus efectos lo referencian).
   const [borrador, setBorrador] = useState(null);      // borrador disponible para reanudar
+  const [firmaLista, setFirmaLista] = useState(false);  // el borrador viene marcado "listo para firmar"
   const [guardadoBorrador, setGuardadoBorrador] = useState(null); // hora del último auto-guardado
+  const [esperandoFirma, setEsperandoFirma] = useState(false); // compu esperando firma en iPad
+  const [firmaCompletada, setFirmaCompletada] = useState(false);
   const draftTimer = useRef(null);
+  const pollFirma = useRef(null);
 
-  // Cargar borrador existente al abrir (para ofrecer "Reanudar")
+  // Cargar borrador existente al abrir (para ofrecer "Reanudar" / "Firmar ahora")
   useEffect(() => {
     let vivo = true;
     (async () => {
@@ -112,14 +116,14 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
         .select('data, updated_at')
         .eq('paciente_id', pacienteId)
         .maybeSingle();
-      if (vivo && data?.data) setBorrador(data);
+      if (vivo && data?.data) { setBorrador(data); setFirmaLista(!!data.data._firma); }
     })();
     return () => { vivo = false; };
   }, [pacienteId, procedimientoId]);
 
-  // Auto-guardar (debounced) cuando hay contenido
+  // Auto-guardar (debounced) — pausado mientras la compu espera firma en el iPad
   useEffect(() => {
-    if (!pacienteId || procedimientoId) return;
+    if (!pacienteId || procedimientoId || esperandoFirma) return;
     const hayContenido = (formData.tipo_procedimiento || '').trim()
       || Object.keys(formData.dosis_por_zona || {}).length
       || (formData.notas_post || '').trim();
@@ -136,22 +140,66 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
       } catch (e) { /* silencioso */ }
     }, 1500);
     return () => clearTimeout(draftTimer.current);
-  }, [formData, consentTitulo, consentTexto, consentNombre, pacienteId, procedimientoId]);
+  }, [formData, consentTitulo, consentTexto, consentNombre, pacienteId, procedimientoId, esperandoFirma]);
 
-  const reanudarBorrador = () => {
+  // Limpieza del poll al desmontar
+  useEffect(() => () => clearInterval(pollFirma.current), []);
+
+  const reanudarBorrador = (irAFirma = false) => {
     const d = borrador?.data || {};
     if (d.formData) setFormData(prev => ({ ...prev, ...d.formData }));
     if (d.consentTitulo) setConsentTitulo(d.consentTitulo);
     if (d.consentTexto) setConsentTexto(d.consentTexto);
     if (d.consentNombre) setConsentNombre(d.consentNombre);
     setBorrador(null);
+    setFirmaLista(false);
+    if (irAFirma) setSeccion('consentimiento');
   };
 
   const descartarBorrador = async () => {
     try { await supabase.from('borradores_procedimiento').delete().eq('paciente_id', pacienteId); } catch {}
     setBorrador(null);
+    setFirmaLista(false);
     setGuardadoBorrador(null);
   };
+
+  // COMPUTADORA: deja el borrador listo para firmar en el iPad y espera el aviso
+  const prepararFirma = async () => {
+    if (!(formData.tipo_procedimiento || '').trim()) {
+      setError('Escribe el tipo de procedimiento antes de preparar la firma.');
+      setSeccion('basicos');
+      return;
+    }
+    try {
+      setError(null);
+      clearTimeout(draftTimer.current);
+      await supabase.from('borradores_procedimiento').upsert({
+        paciente_id: pacienteId,
+        data: { formData, consentTitulo, consentTexto, consentNombre, _firma: true },
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'paciente_id' });
+      setGuardadoBorrador(new Date());
+      setEsperandoFirma(true);
+      // Poll: cuando el iPad guarde, el borrador se borra → detectamos que ya firmaron
+      clearInterval(pollFirma.current);
+      pollFirma.current = setInterval(async () => {
+        try {
+          const { data } = await supabase.from('borradores_procedimiento')
+            .select('paciente_id').eq('paciente_id', pacienteId).maybeSingle();
+          if (!data) {
+            clearInterval(pollFirma.current);
+            setEsperandoFirma(false);
+            setFirmaCompletada(true);
+            onGuardado(formData);
+          }
+        } catch (e) { /* reintenta */ }
+      }, 4000);
+    } catch (e) {
+      setError('No se pudo preparar la firma: ' + (e.message || e));
+    }
+  };
+
+  const cancelarEspera = () => { clearInterval(pollFirma.current); setEsperandoFirma(false); };
 
   // ¿El procedimiento es toxina botulínica? (dispara la sección de gestos)
   const esToxina = /botox|toxina/i.test(formData.tipo_procedimiento || '');
@@ -310,21 +358,56 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
         )}
       </div>
 
-      {/* Banner: reanudar borrador (hand-off compu → iPad) */}
-      {borrador && (
-        <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 13, color: '#1e40af' }}>
-            📝 Hay un borrador guardado{borrador.updated_at ? ` (actualizado ${new Date(borrador.updated_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })})` : ''}. Ideal para que el paciente solo firme en el iPad.
+      {/* COMPUTADORA: esperando la firma en el iPad */}
+      {esperandoFirma && (
+        <div style={{ background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 8, padding: 14, marginBottom: 16, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: 13, color: '#9a3412' }}>
+            ⏳ <strong>Esperando la firma en el iPad…</strong> Abre este paciente en el iPad y toca <strong>“✍️ Firmar ahora”</strong>. No guardes aquí; en cuanto el paciente firme, se guarda solo y te aviso.
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" onClick={reanudarBorrador} style={{ padding: '7px 14px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
-              Reanudar
-            </button>
-            <button type="button" onClick={descartarBorrador} style={{ padding: '7px 14px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
-              Descartar
-            </button>
-          </div>
+          <button type="button" onClick={cancelarEspera} style={{ padding: '7px 14px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
+            Cancelar espera
+          </button>
         </div>
+      )}
+
+      {/* COMPUTADORA: el paciente ya firmó */}
+      {firmaCompletada && (
+        <div style={{ background: '#dcfce7', border: '1px solid #16a34a', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 14, color: '#166534', fontWeight: 'bold' }}>
+          ✅ El paciente firmó en el iPad y el procedimiento quedó guardado.
+        </div>
+      )}
+
+      {/* Banner: reanudar / firmar ahora (hand-off compu → iPad) */}
+      {borrador && !esperandoFirma && (
+        firmaLista ? (
+          <div style={{ background: '#ecfdf5', border: '2px solid #16a34a', borderRadius: 8, padding: 14, marginBottom: 16, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 14, color: '#166534', fontWeight: 'bold' }}>
+              ✍️ Listo para firmar — el médico dejó todo preparado en la computadora.
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => reanudarBorrador(true)} style={{ padding: '10px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 'bold', fontSize: 14 }}>
+                ✍️ Firmar ahora
+              </button>
+              <button type="button" onClick={() => reanudarBorrador(false)} style={{ padding: '10px 14px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
+                Solo abrir
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 13, color: '#1e40af' }}>
+              📝 Hay un borrador guardado{borrador.updated_at ? ` (actualizado ${new Date(borrador.updated_at).toLocaleString('es-MX', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })})` : ''}. Ideal para que el paciente solo firme en el iPad.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => reanudarBorrador(false)} style={{ padding: '7px 14px', background: '#0066cc', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
+                Reanudar
+              </button>
+              <button type="button" onClick={descartarBorrador} style={{ padding: '7px 14px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
+                Descartar
+              </button>
+            </div>
+          </div>
+        )
       )}
 
       {exito && (
@@ -1050,24 +1133,33 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
         </div>
       )}
 
-      {/* BOTÓN GUARDAR */}
-      <button
-        onClick={guardarProcedimiento}
-        disabled={guardando}
-        style={{
-          width: '100%',
-          padding: 14,
-          background: guardando ? '#ccc' : '#2e7d32',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 6,
-          fontSize: 14,
-          fontWeight: 'bold',
-          cursor: guardando ? 'not-allowed' : 'pointer'
-        }}
-      >
-        {guardando ? '⏳ Guardando...' : '💾 GUARDAR PROCEDIMIENTO'}
-      </button>
+      {/* BOTONES: preparar firma (compu) + guardar */}
+      {esperandoFirma ? (
+        <div style={{ padding: 14, textAlign: 'center', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 8, color: '#9a3412', fontSize: 14, fontWeight: 'bold' }}>
+          ⏳ Esperando la firma en el iPad…
+        </div>
+      ) : firmaCompletada ? (
+        <div style={{ padding: 14, textAlign: 'center', background: '#dcfce7', border: '1px solid #16a34a', borderRadius: 8, color: '#166534', fontSize: 14, fontWeight: 'bold' }}>
+          ✅ Procedimiento firmado y guardado.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          <button
+            onClick={prepararFirma}
+            disabled={guardando}
+            style={{ flex: '1 1 240px', padding: 14, background: '#0066cc', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'not-allowed' : 'pointer' }}
+          >
+            📲 Preparar firma en el iPad
+          </button>
+          <button
+            onClick={guardarProcedimiento}
+            disabled={guardando}
+            style={{ flex: '1 1 240px', padding: 14, background: guardando ? '#ccc' : '#2e7d32', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'not-allowed' : 'pointer' }}
+          >
+            {guardando ? '⏳ Guardando...' : '💾 GUARDAR PROCEDIMIENTO'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
