@@ -84,51 +84,67 @@ const ConsentimientosEstetica = ({ paciente, firmaB64 = null }) => {
 
     const w = window.open('', '_blank');
     if (!w) { setError('El navegador bloqueó la ventana de impresión. Permite ventanas emergentes.'); return; }
-    const pie = esc(`Consentimiento informado — ${c.titulo || ''} · Paciente: ${c.nombre_firmante || ''} · ${fecha}`);
+    const idDoc = esc(`${c.titulo || 'Consentimiento'} · Paciente: ${c.nombre_firmante || ''} · ${fecha}`);
+    // Header (logo con cédula) y pie (dirección) IGUAL que recetas/órdenes.
+    // Se usan thead/tfoot para que se repitan en TODAS las hojas al imprimir.
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(c.titulo || 'Consentimiento')}</title>
       <style>
-        @page { size: letter; margin: 16mm 16mm 16mm; }
+        @page { size: letter; margin: 14mm 16mm; }
         * { box-sizing: border-box; }
-        body { font-family: -apple-system, system-ui, Arial, sans-serif; color: #1A2332; margin: 0; line-height: 1.55; }
-        .doc { max-width: 720px; margin: 0 auto; padding: 0 8px 12mm; }
-        .head { text-align: center; border-bottom: 2px solid #1A2332; padding-bottom: 10px; margin-bottom: 16px; }
-        .head img { height: 74px; object-fit: contain; }
-        h1 { font-size: 16px; text-align: center; margin: 0 0 14px; page-break-after: avoid; }
+        body { font-family: Arial, -apple-system, system-ui, sans-serif; color: #0F172A; margin: 0; line-height: 1.5; }
+        table.page { width: 100%; border-collapse: collapse; }
+        thead { display: table-header-group; }
+        tfoot { display: table-footer-group; }
+        .head { padding-bottom: 12px; margin-bottom: 16px; border-bottom: 2px solid rgba(27,63,139,0.2); }
+        .head img { height: 96px; width: auto; max-width: 100%; display: block; }
+        .foot { padding-top: 8px; margin-top: 14px; border-top: 1px solid #E2E8F0; text-align: center; font-size: 9px; color: #94A3B8; }
+        .foot .dir { font-weight: 700; }
+        .foot .iddoc { margin-top: 4px; font-size: 8px; color: #B6C0CE; }
+        .th-pad { height: 4px; }
+        h1 { font-size: 16px; color: #1B3F8B; text-align: center; margin: 4px 0 12px; page-break-after: avoid; }
         .cuerpo { white-space: pre-wrap; font-size: 12px; text-align: justify; }
-        /* Cierre + firmas SIEMPRE juntos y con una cláusula de contexto (no firmas "solas") */
+        /* Cierre + firmas SIEMPRE juntos, con cláusula de contexto (no firmas "solas") */
         .cierre { page-break-inside: avoid; margin-top: 26px; }
-        .cierre-nota { font-size: 11px; font-weight: 700; text-align: center; border: 1px solid #1A2332; border-radius: 6px; padding: 8px 10px; margin-bottom: 18px; }
+        .cierre-nota { font-size: 11px; font-weight: 700; text-align: center; border: 1px solid #1B3F8B; border-radius: 6px; padding: 8px 10px; margin-bottom: 18px; color: #1B3F8B; }
         .firmas { display: flex; flex-wrap: wrap; gap: 24px; }
         .box { flex: 1 1 44%; text-align: center; }
         .firma-img { max-height: 74px; max-width: 90%; display: block; margin: 0 auto 2px; }
         .sp { height: 74px; }
-        .line { border-top: 1px solid #1A2332; padding-top: 6px; font-size: 11px; }
+        .line { border-top: 1px solid #0F172A; padding-top: 6px; font-size: 11px; }
         .line b { display: block; }
         .ced { font-size: 9px; color: #64748B; }
         .fecha { text-align: right; font-size: 11px; margin-top: 16px; color: #475569; }
         .testigo { margin-top: 16px; }
         .testigo .box { flex: 1 1 44%; margin: 0 auto; }
-        /* Pie que se repite en TODAS las hojas: identifica el documento */
-        .pie { position: fixed; left: 0; right: 0; bottom: 5mm; text-align: center; font-size: 8px; color: #94a3b8; }
       </style></head>
       <body>
-      <div class="pie">${pie}</div>
-      <div class="doc">
-        <div class="head"><img src="${logoUrl}" alt="Consultorio Dr. Gerardo Félix Tapia"/></div>
-        <h1>${esc(c.titulo || '')}</h1>
-        <div class="cuerpo">${esc(c.texto || '')}</div>
-        <div class="cierre">
-          <div class="cierre-nota">Los abajo firmantes manifiestan su conformidad con el contenido de este documento: “${esc(c.titulo || 'consentimiento informado')}”.</div>
-          <div class="firmas">
-            <div class="box">${firmaPaciente}<div class="line"><b>${esc(c.nombre_firmante || '')}</b>Nombre y firma del paciente</div></div>
-            <div class="box">${firmaMedico}<div class="line"><b>${MEDICO}</b>Médico tratante<div class="ced">${CEDULA}</div></div></div>
+      <table class="page">
+        <thead><tr><td>
+          <div class="head"><img src="${logoUrl}" alt="Consultorio Dr. Gerardo Félix Tapia"/></div>
+        </td></tr></thead>
+        <tfoot><tr><td>
+          <div class="foot">
+            <div class="dir">Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
+            <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+            <div class="iddoc">${idDoc}</div>
           </div>
-          <div class="firmas testigo">
-            <div class="box"><div class="sp"></div><div class="line">Testigo (opcional)</div></div>
+        </td></tr></tfoot>
+        <tbody><tr><td>
+          <h1>${esc(c.titulo || '')}</h1>
+          <div class="cuerpo">${esc(c.texto || '')}</div>
+          <div class="cierre">
+            <div class="cierre-nota">Los abajo firmantes manifiestan su conformidad con el contenido de este documento: “${esc(c.titulo || 'consentimiento informado')}”.</div>
+            <div class="firmas">
+              <div class="box">${firmaPaciente}<div class="line"><b>${esc(c.nombre_firmante || '')}</b>Nombre y firma del paciente</div></div>
+              <div class="box">${firmaMedico}<div class="line"><b>${MEDICO}</b>Médico tratante<div class="ced">${CEDULA}</div></div></div>
+            </div>
+            <div class="firmas testigo">
+              <div class="box"><div class="sp"></div><div class="line">Testigo (opcional)</div></div>
+            </div>
+            <div class="fecha">Hermosillo, Sonora · Fecha: ${fecha}</div>
           </div>
-          <div class="fecha">Hermosillo, Sonora · Fecha: ${fecha}</div>
-        </div>
-      </div>
+        </td></tr></tbody>
+      </table>
       <script>window.onload=function(){setTimeout(function(){window.print()},250)}</script>
       </body></html>`);
     w.document.close();
