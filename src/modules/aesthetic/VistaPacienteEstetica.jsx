@@ -18,6 +18,19 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
   const [planes, setPlanes] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
+  const [procEditando, setProcEditando] = useState(null); // procedimiento abierto para ver/editar
+
+  const eliminarProcedimiento = async (proc) => {
+    if (!window.confirm('¿Eliminar este procedimiento? Esta acción no se puede deshacer.')) return;
+    try {
+      const { error: err } = await supabase.from('procedimientos_esteticos').delete().eq('id', proc.id);
+      if (err) throw err;
+      setProcEditando(null);
+      cargarDatos();
+    } catch (e) {
+      setError('No se pudo eliminar: ' + (e.message || e));
+    }
+  };
 
   useEffect(() => {
     cargarDatos();
@@ -125,12 +138,30 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
         <div style={{ padding: 12, background: '#fee', color: '#c00', borderRadius: 8 }}>
           ❌ {error}
         </div>
+      ) : procEditando ? (
+        <div>
+          <button
+            onClick={() => setProcEditando(null)}
+            style={{ marginBottom: 12, padding: '7px 14px', border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: 6, cursor: 'pointer', color: '#334155', fontSize: 13, fontWeight: 'bold' }}
+          >
+            ← Volver a procedimientos
+          </button>
+          <FormularioProcedimiento
+            pacienteId={paciente.id}
+            pacienteNombre={paciente.nombre}
+            procedimientoId={procEditando.id}
+            procedimientoInicial={procEditando}
+            onGuardado={() => { setProcEditando(null); cargarDatos(); }}
+            onEliminar={() => eliminarProcedimiento(procEditando)}
+          />
+        </div>
       ) : (
         <>
           {tab === 'procedimientos' && (
             <HistorialProcedimientos
               procedimientos={procedimientos}
               onActualizar={cargarDatos}
+              onAbrir={(p) => setProcEditando(p)}
             />
           )}
           {tab === 'nuevo-procedimiento' && (

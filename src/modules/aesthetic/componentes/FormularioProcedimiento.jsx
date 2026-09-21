@@ -19,7 +19,39 @@ const GESTOS_TOXINA = [
 
 const TERCIOS_ORDEN = ['General', 'Tercio superior', 'Tercio medio', 'Tercio inferior'];
 
-const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimientoId = null, onGuardado = () => {} }) => {
+// Mapea una fila de procedimientos_esteticos → estado del formulario (para editar)
+const mapProcAForm = (r) => ({
+  fecha: r.fecha_procedimiento || new Date().toISOString().split('T')[0],
+  tipo_procedimiento: r.tipo_procedimiento || '',
+  paciente_id: r.paciente_id,
+  dosis_por_zona: r.dosis_por_zona || {},
+  productos_utilizados: (Array.isArray(r.productos_utilizados) && r.productos_utilizados.length)
+    ? r.productos_utilizados : [{ tipo: '', marca: '', lote: '', cantidad: '' }],
+  gais_antes: r.gais_antes ?? r.gais_score_antes ?? 3,
+  foto_pre_url: r.foto_pre_url || '',
+  notas_pre: r.notas_pre || '',
+  duracion_minutos: r.duracion_minutos ?? 15,
+  anestesia: r.anestesia || 'Crema tópica',
+  tiempo_anestesia: r.tiempo_anestesia ?? 10,
+  tecnicas: r.tecnicas || [],
+  incidencias_durante: r.incidencias_durante || '',
+  gais_despues: r.gais_despues ?? r.gais_score_despues ?? 4,
+  foto_post_url: r.foto_post_url || '',
+  eritema: r.eritema || 'ninguno',
+  edema: r.edema || 'ninguno',
+  equimosis: r.equimosis || 'ninguno',
+  dolor: r.dolor || 'ninguno',
+  satisfaccion_paciente: r.satisfaccion_paciente ?? 8,
+  notas_post: r.notas_post || r.notas_clinicas || '',
+  tiene_complicaciones: !!r.tiene_complicaciones,
+  complicaciones_descripcion: r.complicaciones_descripcion || '',
+  proxima_cita_seguimiento_24h: '',
+  proxima_cita_seguimiento_48h: '',
+  proxima_cita_siguiente_procedimiento: '',
+  fotos_gestos: r.fotos_gestos || {},
+});
+
+const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimientoId = null, procedimientoInicial = null, onGuardado = () => {}, onEliminar = null }) => {
   const [seccion, setSeccion] = useState('basicos'); // 'basicos' | 'mapa' | 'evaluacion' | 'complicaciones' | 'consentimiento'
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
@@ -39,7 +71,7 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
     setConsentTexto(aplicarNombre(p.texto, consentNombre || pacienteNombre));
   };
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => procedimientoInicial ? mapProcAForm(procedimientoInicial) : {
     // SECCIÓN 1: Datos básicos
     fecha: new Date().toISOString().split('T')[0],
     tipo_procedimiento: '',
@@ -237,10 +269,6 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
         throw new Error('Tipo de procedimiento es requerido');
       }
 
-      if (Object.keys(formData.dosis_por_zona).length === 0) {
-        throw new Error('Debes inyectar al menos una zona');
-      }
-
       const datosGuardar = {
         paciente_id: pacienteId,
         fecha_procedimiento: formData.fecha,
@@ -349,7 +377,7 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: '0 0 16px 0', color: '#1a1a1a' }}>
-          💉 Formulario de Procedimiento Estético
+          {procedimientoId ? '✏️ Editar procedimiento' : '💉 Formulario de Procedimiento Estético'}
         </h2>
         {guardadoBorrador && (
           <span style={{ fontSize: 11, color: '#16a34a' }}>
@@ -1144,20 +1172,31 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
         </div>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          <button
-            onClick={prepararFirma}
-            disabled={guardando}
-            style={{ flex: '1 1 240px', padding: 14, background: '#0066cc', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'not-allowed' : 'pointer' }}
-          >
-            📲 Preparar firma en el iPad
-          </button>
+          {!procedimientoId && (
+            <button
+              onClick={prepararFirma}
+              disabled={guardando}
+              style={{ flex: '1 1 220px', padding: 14, background: '#0066cc', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'not-allowed' : 'pointer' }}
+            >
+              📲 Preparar firma en el iPad
+            </button>
+          )}
           <button
             onClick={guardarProcedimiento}
             disabled={guardando}
-            style={{ flex: '1 1 240px', padding: 14, background: guardando ? '#ccc' : '#2e7d32', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'not-allowed' : 'pointer' }}
+            style={{ flex: '1 1 220px', padding: 14, background: guardando ? '#ccc' : '#2e7d32', color: '#fff', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'not-allowed' : 'pointer' }}
           >
-            {guardando ? '⏳ Guardando...' : '💾 GUARDAR PROCEDIMIENTO'}
+            {guardando ? '⏳ Guardando...' : (procedimientoId ? '💾 GUARDAR CAMBIOS' : '💾 GUARDAR PROCEDIMIENTO')}
           </button>
+          {onEliminar && (
+            <button
+              onClick={onEliminar}
+              disabled={guardando}
+              style={{ flex: '0 1 160px', padding: 14, background: '#fff', color: '#b91c1c', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 14, fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              🗑 Eliminar
+            </button>
+          )}
         </div>
       )}
     </div>

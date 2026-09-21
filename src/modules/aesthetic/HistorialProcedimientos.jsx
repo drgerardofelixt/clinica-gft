@@ -7,7 +7,7 @@ const C = {
   gris: '#f5f5f5',
 };
 
-const HistorialProcedimientos = ({ procedimientos, onActualizar }) => {
+const HistorialProcedimientos = ({ procedimientos, onActualizar, onAbrir }) => {
   if (procedimientos.length === 0) {
     return (
       <div style={{ padding: 20, textAlign: 'center', color: C.suave }}>
@@ -21,31 +21,34 @@ const HistorialProcedimientos = ({ procedimientos, onActualizar }) => {
       {procedimientos.map((proc) => (
         <div
           key={proc.id}
+          onClick={() => onAbrir && onAbrir(proc)}
           style={{
             border: `1px solid ${C.gris}`,
             borderRadius: 8,
             padding: 16,
             background: '#fafafa',
+            cursor: onAbrir ? 'pointer' : 'default',
           }}
         >
           {/* HEADER */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
             <div>
               <div style={{ fontWeight: 'bold', fontSize: 14, color: '#000' }}>
-                📅 {new Date(proc.fecha_procedimiento).toLocaleDateString('es-MX', {
+                📅 {proc.fecha_procedimiento ? new Date(proc.fecha_procedimiento).toLocaleDateString('es-MX', {
                   year: 'numeric',
                   month: 'long',
                   day: 'numeric',
-                })}
+                }) : 'Sin fecha'}
               </div>
               <div style={{ fontSize: 12, color: C.suave, marginTop: 2 }}>
-                {proc.procedimiento_tipo || 'Procedimiento'}
+                {proc.tipo_procedimiento || proc.procedimiento_tipo || 'Procedimiento'}
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
+              {onAbrir && <div style={{ fontSize: 12, color: C.azul, fontWeight: 'bold', marginBottom: 4 }}>✏️ Abrir →</div>}
               <div style={{ fontSize: 11, color: C.suave }}>GAIS</div>
               <div style={{ fontSize: 16, fontWeight: 'bold', color: C.verde }}>
-                {proc.gais_score_antes} → {proc.gais_score_despues}
+                {(proc.gais_antes ?? proc.gais_score_antes ?? '—')} → {(proc.gais_despues ?? proc.gais_score_despues ?? '—')}
               </div>
             </div>
           </div>
