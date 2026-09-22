@@ -8764,6 +8764,10 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
             else await actualizarCita(cita.id, { pendienteSincronizar:true });
           } catch(e){ try { await actualizarCita(cita.id, { pendienteSincronizar:true }); } catch(_){} }
         }
+      } else {
+        // Google DESCONECTADO al reagendar → marcar pendiente para que se mueva el evento
+        // en cuanto se reconecte (antes no se marcaba y el evento se quedaba en el día viejo).
+        try { await actualizarCita(cita.id, { pendienteSincronizar:true }); } catch(e){}
       }
       onSaved && onSaved();
     } catch(e) { console.error("actualizarCita:",e); alert("⚠️ No se pudo guardar la cita."); }
