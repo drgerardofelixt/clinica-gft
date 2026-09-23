@@ -1250,7 +1250,13 @@ const enviarReprogramacionCita = (cita, paciente) => {
 const construirMsgRecordatorio = (c) => {
   const fechaMx = new Date(c.fecha+"T00:00:00").toLocaleDateString("es-MX",{weekday:"long",day:"numeric",month:"long"});
   const nombre = (c.pac?.nombre||"paciente").split(" ")[0];
-  return `Hola ${nombre}, le recordamos y confirmamos su cita de mañana.\n`
+  // "de mañana" solo si la cita es literalmente mañana; si no (p. ej. sábado recordando el lunes),
+  // usar frase neutra para no confundir al paciente. El renglón "Fecha:" siempre lleva el día exacto.
+  const hoy0 = new Date(); hoy0.setHours(0,0,0,0);
+  const citaDia = new Date(c.fecha+"T00:00:00"); citaDia.setHours(0,0,0,0);
+  const difDias = Math.round((citaDia - hoy0)/86400000);
+  const cuandoTxt = difDias===1 ? "su cita de mañana" : difDias===0 ? "su cita de hoy" : "su próxima cita";
+  return `Hola ${nombre}, le recordamos y confirmamos ${cuandoTxt}.\n`
     + `Fecha: ${fechaMx}\n`
     + (c.hora?`Hora: ${c.hora} hrs\n`:"")
     + `Médico: Dr. Gerardo Félix Tapia\n`
@@ -9969,9 +9975,18 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   // citasHoy incluye app + gcal (usa citasDia, no solo todasCitas)
   const citasHoy = (citasDia[hoyStr]||[]).slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
-  // Citas MAÑANA — ídem, incluye app + gcal
-  const manana = new Date(hoy); manana.setDate(manana.getDate()+1);
-  const mananaStr = `${manana.getFullYear()}-${String(manana.getMonth()+1).padStart(2,"0")}-${String(manana.getDate()).padStart(2,"0")}`;
+  // Citas MAÑANA — en realidad, el PRÓXIMO DÍA LABORAL. Como el domingo no se trabaja, cuando hoy es
+  // sábado "mañana" salta al lunes: así el sábado el médico ya ve (y puede recordar) las citas del lunes.
+  const literalManana = new Date(hoy); literalManana.setDate(literalManana.getDate()+1);
+  const manana = new Date(literalManana);
+  if (manana.getDay()===0) manana.setDate(manana.getDate()+1);   // domingo → salta al lunes
+  const fmtDia = (d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const mananaStr = fmtDia(manana);
+  const esSaltoManana = mananaStr !== fmtDia(literalManana);     // true = mostramos un día distinto a "mañana literal"
+  const _capMes = (s)=>s.charAt(0).toUpperCase()+s.slice(1);
+  const mananaDiaNom = _capMes(manana.toLocaleDateString("es-MX",{weekday:"long"}));
+  const mananaLabel = esSaltoManana ? `${mananaDiaNom} ${manana.getDate()}` : "Mañana";       // título del rail
+  const mananaTitulo = esSaltoManana ? `Pacientes del ${mananaDiaNom.toLowerCase()}` : "Pacientes de mañana";
   const citasManana = (citasDia[mananaStr]||[]).slice().sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
   // ── FASE D1: citas leídas de la tabla `citas` (v2). Una cita = un registro = una tarjeta. ──
@@ -10073,8 +10088,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   // al final para resolverse individualmente (no traban el lote).
   const enviarRecordatoriosLote = () => {
     const citas = citasV2Manana;
-    if (!citas.length) { alert("No hay citas para mañana."); return; }
-    if (!confirm(`Se abrirán recordatorios de WhatsApp para las citas de mañana (${citas.length}).\nNota: el navegador puede limitar abrir muchas pestañas a la vez.\n¿Continuar?`)) return;
+    const diaTxt = esSaltoManana ? `del ${mananaDiaNom.toLowerCase()} ${manana.getDate()}` : "de mañana";
+    if (!citas.length) { alert(`No hay citas ${diaTxt}.`); return; }
+    if (!confirm(`Se abrirán recordatorios de WhatsApp para las citas ${diaTxt} (${citas.length}).\nNota: el navegador puede limitar abrir muchas pestañas a la vez.\n¿Continuar?`)) return;
     const sinTel = []; let enviados = 0;
     citas.forEach(c => {
       const pac = pacById(c.pacienteId);
@@ -10565,16 +10581,21 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
                 </div>
 
-                {/* ── Col 2 — Mañana (Pacientes de mañana) ── */}
+                {/* ── Col 2 — Próximo día laboral (mañana; sábado → lunes) ── */}
                 <div>
-                  {/* Pacientes de mañana — desde la tabla `citas` (v2) */}
+                  {/* Pacientes del próximo día laboral — desde la tabla `citas` (v2) */}
                   <div className="gft-panel">
                     <div className="gft-panel__header">
-                      <div className="gft-panel__title">Pacientes de mañana</div>
+                      <div className="gft-panel__title">{mananaTitulo}</div>
                       {citasV2Manana.length>0&&<span className="gft-panel__count">{citasV2Manana.length}</span>}
                     </div>
+                    {esSaltoManana && (
+                      <div style={{fontSize:11,color:"var(--gft-accent)",fontWeight:600,margin:"0 0 6px"}}>
+                        📅 {mananaDiaNom} {manana.getDate()} · el domingo no hay consulta
+                      </div>
+                    )}
                     {citasV2Manana.length===0 ? (
-                      <div className="gft-panel__empty">Sin citas programadas para mañana</div>
+                      <div className="gft-panel__empty">Sin citas programadas para {esSaltoManana?"el "+mananaDiaNom.toLowerCase():"mañana"}</div>
                     ) : citasV2Manana.map((c,i)=>{
                       const {fecha,hora}=isoAInputsHmo(c.inicio);
                       const pac=pacById(c.pacienteId);
@@ -10713,8 +10734,9 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                       ); })}
                 </div>
                 <div className="gft-panel" style={{marginBottom:0}}>
-                  <div className="gft-panel__header"><div className="gft-panel__title">Mañana · {citasV2Manana.length} cita{citasV2Manana.length!==1?"s":""}</div></div>
-                  {citasV2Manana.length===0 ? <div className="gft-panel__empty">Sin citas mañana</div> : (<>
+                  <div className="gft-panel__header"><div className="gft-panel__title">{mananaLabel} · {citasV2Manana.length} cita{citasV2Manana.length!==1?"s":""}</div></div>
+                  {esSaltoManana && <div style={{fontSize:10.5,color:"var(--gft-accent)",fontWeight:600,margin:"2px 0 6px"}}>El domingo no hay consulta — recuérdales hoy</div>}
+                  {citasV2Manana.length===0 ? <div className="gft-panel__empty">Sin citas {esSaltoManana?"el "+mananaDiaNom.toLowerCase():"mañana"}</div> : (<>
                     {citasV2Manana.map((c)=>{ const {hora}=isoAInputsHmo(c.inicio);
                       const col=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
                       const suf={primera_vez:"1ª vez",seguimiento:"Seg."}[c.tipo]||"";
