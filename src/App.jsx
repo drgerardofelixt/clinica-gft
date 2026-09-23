@@ -994,8 +994,18 @@ const importarCambiosConsultorio = async () => {
   try { eventos = await leerEventosDeCalendario(calendarId, { timeMin:desde.toISOString(), timeMax:hasta.toISOString() }); }
   catch(e){ console.warn("importar/leer:", e); return { ok:false, motivo:"lectura_fallo" }; }
 
-  const avisos = []; let nuevas=0, actualizadas=0, canceladas=0;
+  const avisos = []; let nuevas=0, actualizadas=0, canceladas=0, dupEvitadas=0;
   const seen = new Set();
+  // Índice de citas ACTIVAS ya existentes por (hora exacta + nombre) para no re-crear duplicados desde
+  // un segundo evento de Google en el mismo slot (causa del "aparece doble": un evento extra sin cita
+  // ligada se importaba como cita nueva aunque ya existiera la que agendó el médico).
+  const normNom = (s)=>(s||"").toLowerCase().replace(/\s+/g," ").trim();
+  const slotKey = (inicio, nombre)=>{ const t=Date.parse(inicio); return `${isNaN(t)?inicio:t}__${normNom(nombre)}`; };
+  const ocupadosSlot = new Set();
+  try {
+    const activasWin = await listarCitas({ desde:desde.toISOString(), hasta:hasta.toISOString() });
+    for (const c of activasWin) if (c.estado!=="cancelada") ocupadosSlot.add(slotKey(c.inicio, c.pacienteNombre));
+  } catch(e){ console.warn("importar/indice:", e); }
   for (const ev of eventos) {
     if (!ev.id || !ev.start?.dateTime) continue;  // ignora eventos de día completo / inválidos
     seen.add(ev.id);
@@ -1018,6 +1028,10 @@ const importarCambiosConsultorio = async () => {
       }
       // Si lo local es más reciente, gana local: no se toca (lo subirá D2-A / sincronizarPendientes).
     } else {
+      // ¿Ya existe una cita activa en el MISMO slot con el MISMO nombre? Entonces este es un evento
+      // duplicado/huérfano (segundo evento de Google para la misma cita) → NO crear otra fila. El evento
+      // sobrante lo limpia "Reparar sincronización". Esto evita el "aparece doble".
+      if (ocupadosSlot.has(slotKey(inicioISO, nombre))) { dupEvitadas++; continue; }
       // Evento creado directamente en Google (ej. desde el teléfono) → alta en la tabla.
       try {
         const nueva = construirCitaV2({ pacienteNombre:nombre, tipo:"seguimiento", fecha:"2000-01-01", hora:"00:00" });
@@ -1026,6 +1040,7 @@ const importarCambiosConsultorio = async () => {
         nueva.tituloGenerado = ev.summary || nueva.tituloGenerado;
         nueva.origenUltimoCambio = "gcal"; nueva.pendienteSincronizar = false;
         await crearCita(nueva); nuevas++;
+        ocupadosSlot.add(slotKey(inicioISO, nombre)); // evita duplicar dentro del mismo ciclo
       } catch(e){ console.warn("importar/crear:", e); }
     }
   }
@@ -1059,7 +1074,7 @@ const importarCambiosConsultorio = async () => {
       for (const gid of [..._ausenciasGCal.keys()]) if (!ausentesEsteCiclo.has(gid)) _ausenciasGCal.delete(gid);
     } catch(e){ console.warn("importar/borrados:", e); }
   }
-  return { ok:true, nuevas, actualizadas, canceladas, avisos };
+  return { ok:true, nuevas, actualizadas, canceladas, dupEvitadas, avisos };
 };
 
 // B4 — Lee los eventos de los calendarios PERSONALES seleccionados (solo lectura) como bloques "ocupado".
