@@ -203,6 +203,18 @@ export const listarCitas = async ({ desde, hasta } = {}) => {
   return (data || []).map(rowToCita)
 }
 
+// Citas que SOLAPAN el rango [desde, hasta] (no solo las que INICIAN en él). Necesario para que un
+// evento largo (viaje, vacaciones, bloque de varias horas/días) aparezca ocupado en TODOS los días que
+// abarca, no solo el día en que empieza. Overlap: inicio < hasta && fin > desde.
+export const listarCitasSolapando = async ({ desde, hasta } = {}) => {
+  let q = supabase.from('citas').select('*').order('inicio', { ascending: true })
+  if (hasta) q = q.lt('inicio', aOffsetHermosillo(hasta))
+  if (desde) q = q.gt('fin', aOffsetHermosillo(desde))
+  const { data, error } = await q
+  if (error) throw error
+  return (data || []).map(rowToCita)
+}
+
 export const obtenerCitaPorGoogleEventId = async (googleEventId) => {
   if (!googleEventId) return null
   const { data, error } = await supabase.from('citas').select('*').eq('google_event_id', googleEventId).maybeSingle()

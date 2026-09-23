@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles, getUltimoErrorGCal, limpiarUltimoErrorGCal, verificarScopeToken, tieneScopeEscritura, reconectarGoogleCalendar, getScopeGuardado } from "./googleCalendar.js";
-import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
+import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, listarCitasSolapando, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import AdminProductos from "./modules/aesthetic";
 import EstheticModule from "./modules/aesthetic/EstheticModule";
@@ -7782,7 +7782,8 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
     const dur = (c.inicio && c.fin) ? Math.max(15, Math.round((new Date(c.fin)-new Date(c.inicio))/60000))
       : (c.tipo==="primera_vez"?60:30);
     return { key:"cita-"+c.id, fecha, hora:hora||"09:00", dur, nombre:c.pacienteNombre||"Cita",
-      tipo:c.tipo, color:COLOR_TIPO_CITA[c.tipo]||"var(--gft-success)", cita:c };
+      tipo:c.tipo, color:COLOR_TIPO_CITA[c.tipo]||"var(--gft-success)", cita:c,
+      iniMs:new Date(c.inicio).getTime(), finMs:new Date(c.fin||c.inicio).getTime() };
   });
   const evDe = (fecha) => eventos.filter(e=>e.fecha===fecha).sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
 
@@ -7790,9 +7791,25 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   const ocupEv = (ocupado||[]).filter(o=>!o.allDay).map((o,i)=>{
     const {fecha,hora} = isoAInputsHmo(o.inicio);
     const dur = (o.inicio && o.fin) ? Math.max(15, Math.round((new Date(o.fin)-new Date(o.inicio))/60000)) : 30;
-    return { key:"oc-"+i, fecha, hora:hora||"00:00", dur, nombre:o.summary||"Ocupado", calendario:o.calendario };
+    return { key:"oc-"+i, fecha, hora:hora||"00:00", dur, nombre:o.summary||"Ocupado", calendario:o.calendario,
+      iniMs:new Date(o.inicio).getTime(), finMs:new Date(o.fin||o.inicio).getTime() };
   });
   const ocupDe = (fecha) => ocupEv.filter(e=>e.fecha===fecha);
+
+  // ── Cobertura de eventos LARGOS (varias horas o varios días: viajes, vacaciones, bloques) ──
+  // Un evento que dura más de 1 hora se pinta también en cada celda (día+hora) que abarca, no solo en
+  // su hora de inicio. En la celda de inicio va el bloque completo; en las demás, una franja "en curso".
+  const HORA_MS = 3600000;
+  const celdaRango = (fecha, h) => {
+    const s = new Date(`${fecha}T${String(h).padStart(2,"0")}:00:00-07:00`).getTime();
+    return [s, s + HORA_MS];
+  };
+  const empiezaEnCelda = (e, fecha, h) => e.fecha===fecha && horaBucket(e.hora)===h;
+  // Eventos (citas / ocupado) que CUBREN la celda pero NO empiezan ahí (continuación de un bloque largo).
+  const contDe = (lista, fecha, h) => {
+    const [s, e2] = celdaRango(fecha, h);
+    return lista.filter(e => (e.finMs - e.iniMs) > HORA_MS && e.iniMs < e2 && e.finMs > s && !empiezaEnCelda(e, fecha, h));
+  };
 
   // ── Navegación ──
   const navega = (n) => {
@@ -7853,6 +7870,26 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
       🔒 {!compact && <b>{e.hora} </b>}{e.nombre}
     </div>
   );
+
+  // Franja de "continuación" de un evento largo (viaje, vacaciones, bloque de varias horas): aparece en
+  // cada celda que el evento abarca aparte de su hora de inicio. Para citas usa su color; para bloques
+  // personales/ocupados, gris rayado. Clic (si es cita) abre su menú, igual que el bloque principal.
+  const BandaContinua = ({e, personal}) => {
+    const col = personal ? "#9CA3AF" : (e.color || "var(--gft-accent)");
+    const tint = personal
+      ? "repeating-linear-gradient(45deg,#9CA3AF22,#9CA3AF22 4px,#9CA3AF33 4px,#9CA3AF33 8px)"
+      : `color-mix(in srgb, ${col} 12%, transparent)`;
+    return (
+      <div
+        onClick={(ev)=>{ if(!personal && e.cita){ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); } }}
+        title={`↕ ${e.nombre} — continúa (${e.hora} → ${new Date(e.finMs).toLocaleString("es-MX",{weekday:"short",hour:"2-digit",minute:"2-digit"})})`}
+        style={{background:tint, borderLeft:`3px dashed ${col}`, borderRadius:6, padding:"2px 6px", margin:"2px 0",
+          cursor:(!personal&&e.cita)?"pointer":"default", fontSize:9.5, fontWeight:600,
+          color:personal?"var(--gft-text-muted)":"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
+        ↕ {e.nombre}
+      </div>
+    );
+  };
 
   // ── Vista MES ──
   const renderMes = () => {
@@ -7930,6 +7967,8 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
                 return (
                   <div key={f+h} style={{borderTop:"1px solid var(--gft-border)",borderLeft:"1px solid var(--gft-border)",
                     minWidth:0,minHeight:46,padding:1,background:bg}}>
+                    {contDe(ocupEv,f,h).map(e=><BandaContinua key={e.key+"-c"+h} e={e} personal/>)}
+                    {contDe(eventos,f,h).map(e=><BandaContinua key={e.key+"-c"+h} e={e}/>)}
                     {ocs.map(e=><BloqueOcupado key={e.key} e={e}/>)}
                     {evs.map(e=><Bloque key={e.key} e={e}/>)}
                   </div>
@@ -8425,10 +8464,11 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
 
   // Carga las citas del consultorio del día elegido (no canceladas) para la tira de horarios libre/ocupado.
+  // Solapando: incluye eventos largos (viajes/vacaciones) que empezaron ANTES pero cubren este día.
   useEffect(()=>{
     let activo = true;
     if (!fecha) { setCitasDia([]); return; }
-    listarCitas({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
+    listarCitasSolapando({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
       .then(cs=>{ if(activo) setCitasDia((cs||[]).filter(c=>c.estado!=="cancelada")); })
       .catch(()=>{ if(activo) setCitasDia([]); });
     return ()=>{ activo=false; };
@@ -8713,7 +8753,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   useEffect(()=>{
     let activo=true;
     if(!fecha){ setCitasDia([]); setOcupadoDia([]); return; }
-    listarCitas({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
+    listarCitasSolapando({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
       .then(cs=>{ if(activo) setCitasDia((cs||[]).filter(c=>c.estado!=="cancelada" && c.id!==cita.id)); })
       .catch(()=>{ if(activo) setCitasDia([]); });
     leerEventosOcupado({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
