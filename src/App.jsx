@@ -2122,12 +2122,27 @@ const sanitizeFilename = (str) =>
 // Si el contenido tiene elementos .pdf-page → cada uno se captura como UNA página carta (816×1056px @96dpi).
 // Si no, y singlePage=true → toda la captura a 1 página carta. Si no, paginado mm clásico.
 const LETTER_PX = [816, 1056];
+// Calidad JPEG para los PDFs. JPEG (no PNG) reduce el peso ~10x manteniendo texto legible para impresión.
+const PDF_JPEG_Q = 0.78;
+// Escala de captura de los documentos (recetas/órdenes/consentimientos). 1.6 ≈ 154 dpi: nítido para
+// imprimir y mucho más ligero que 2. Con esto y el JPEG, una hoja pesa ~0.3 MB (antes varios MB en PNG).
+const PDF_SCALE = 1.6;
+// Convierte un canvas (o una franja de él) a JPEG sobre fondo blanco. JPEG no tiene transparencia, por eso
+// se rellena de blanco antes; así el peso baja de decenas de MB a cientos de KB.
+const canvasAJpeg = (canvas, y=0, hPx=canvas.height) => {
+  const tmp = document.createElement("canvas");
+  tmp.width = canvas.width; tmp.height = hPx;
+  const ctx = tmp.getContext("2d");
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, tmp.width, tmp.height);
+  ctx.drawImage(canvas, 0, y, canvas.width, hPx, 0, 0, canvas.width, hPx);
+  return tmp.toDataURL("image/jpeg", PDF_JPEG_Q);
+};
 const construirPDF = async (contentRef, {singlePage=false}={}) => {
   const [{default: jsPDF}, {default: html2canvas}] = await Promise.all([
     import("jspdf"), import("html2canvas")
   ]);
   const root = contentRef.current;
-  const render = (el) => html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false });
+  const render = (el) => html2canvas(el, { scale: PDF_SCALE, useCORS: true, backgroundColor: "#ffffff", logging: false });
   const pageEls = root.querySelectorAll(".pdf-page");
 
   // Documento compuesto por páginas fijas → 1 .pdf-page = 1 hoja carta
@@ -2138,16 +2153,15 @@ const construirPDF = async (contentRef, {singlePage=false}={}) => {
       if (i > 0) pdf.addPage(LETTER_PX, "portrait");
       let w = 816, h = 816 * (canvas.height / canvas.width);
       if (h > 1056) { h = 1056; w = 1056 * (canvas.width / canvas.height); } // contenido más alto → ajustar para caber
-      pdf.addImage(canvas.toDataURL("image/png", 0.95), "PNG", (816 - w) / 2, 0, w, h);
+      pdf.addImage(canvasAJpeg(canvas), "JPEG", (816 - w) / 2, 0, w, h);
     }
     return pdf;
   }
 
   const canvas = await render(root);
-  const imgData = canvas.toDataURL("image/png", 0.95);
   if (singlePage) {
     const pdf = new jsPDF({orientation: "portrait", unit: "px", format: LETTER_PX});
-    pdf.addImage(imgData, "PNG", 0, 0, 816, 1056);
+    pdf.addImage(canvasAJpeg(canvas), "JPEG", 0, 0, 816, 1056);
     return pdf;
   }
   const pdf = new jsPDF({orientation: "portrait", unit: "mm", format: "letter"});
@@ -2156,10 +2170,19 @@ const construirPDF = async (contentRef, {singlePage=false}={}) => {
   const pdfH = pdf.internal.pageSize.getHeight() - margin * 2;
   const imgH = pdfW * (canvas.height / canvas.width);
   if (imgH <= pdfH) {
-    pdf.addImage(imgData, "PNG", margin, margin, pdfW, imgH);
+    pdf.addImage(canvasAJpeg(canvas), "JPEG", margin, margin, pdfW, imgH);
   } else {
-    let y = 0;
-    while (y < imgH - 0.5) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, "PNG", margin, margin - y, pdfW, imgH); y += pdfH; }
+    // Paginado por REBANADAS: cada hoja lleva solo su franja del canvas (antes se incrustaba la imagen
+    // completa en cada página → el PDF pesaba N veces de más; esa era la causa principal de los 40 MB).
+    const pxPorMm = canvas.width / pdfW;
+    const pageHpx = Math.floor(pdfH * pxPorMm);
+    let y = 0, primera = true;
+    while (y < canvas.height) {
+      const slicePx = Math.min(pageHpx, canvas.height - y);
+      if (!primera) pdf.addPage();
+      pdf.addImage(canvasAJpeg(canvas, y, slicePx), "JPEG", margin, margin, pdfW, slicePx / pxPorMm);
+      primera = false; y += slicePx;
+    }
   }
   return pdf;
 };
@@ -9619,7 +9642,7 @@ const ReportesView = ({pacientes=[], citasV2=[], onVer}) => {
       const [{default:jsPDF},{default:html2canvas}]=await Promise.all([import("jspdf"),import("html2canvas")]);
       const canvas=await html2canvas(contentRef.current,{scale:2,backgroundColor:"#0B111E",logging:false});
       const pdf=new jsPDF({orientation:canvas.width>=canvas.height?"landscape":"portrait",unit:"px",format:[canvas.width,canvas.height]});
-      pdf.addImage(canvas.toDataURL("image/png"),"PNG",0,0,canvas.width,canvas.height);
+      pdf.addImage(canvasAJpeg(canvas),"JPEG",0,0,canvas.width,canvas.height);
       pdf.save(`reportes-clinica-${periodoLabel}.pdf`);
     }catch(e){ alert("No se pudo exportar el PDF: "+(e?.message||e)); }
     finally{ setExportando(false); }

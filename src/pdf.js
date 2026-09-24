@@ -13,7 +13,7 @@ export const generarPDF = async (elementoRef, titulo) => {
 
   // Capturar contenido como canvas en alta resolución
   const canvas = await html2canvas(elemento, {
-    scale: 2,
+    scale: 1.6,               // ≈154 dpi: nítido para imprimir y ligero (antes 2 = PDFs pesados)
     useCORS: true,
     backgroundColor: '#ffffff',
     logging: false,
@@ -30,20 +30,32 @@ export const generarPDF = async (elementoRef, titulo) => {
   const margin = 10
   const pdfWidth = pdf.internal.pageSize.getWidth() - margin * 2
   const pdfHeight = pdf.internal.pageSize.getHeight() - margin * 2
-  const imgData = canvas.toDataURL('image/png', 0.95)
   const ratio = canvas.height / canvas.width
   const imgHeight = pdfWidth * ratio
 
+  // JPEG (no PNG) sobre fondo blanco: reduce el peso ~10x. Convierte el canvas o una franja a JPEG.
+  const aJpeg = (y, hPx) => {
+    const tmp = document.createElement('canvas')
+    tmp.width = canvas.width; tmp.height = hPx
+    const ctx = tmp.getContext('2d')
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, tmp.width, tmp.height)
+    ctx.drawImage(canvas, 0, y, canvas.width, hPx, 0, 0, canvas.width, hPx)
+    return tmp.toDataURL('image/jpeg', 0.78)
+  }
+
   if (imgHeight <= pdfHeight) {
-    // Todo cabe en una página
-    pdf.addImage(imgData, 'PNG', margin, margin, pdfWidth, imgHeight)
+    pdf.addImage(aJpeg(0, canvas.height), 'JPEG', margin, margin, pdfWidth, imgHeight)
   } else {
-    // Dividir en múltiples páginas
-    let yPos = 0
-    while (yPos < imgHeight) {
-      if (yPos > 0) pdf.addPage()
-      pdf.addImage(imgData, 'PNG', margin, margin - yPos, pdfWidth, imgHeight)
-      yPos += pdfHeight
+    // Paginado por REBANADAS: cada hoja lleva solo su franja (antes se incrustaba la imagen completa en
+    // cada página → el PDF pesaba N veces de más).
+    const pxPorMm = canvas.width / pdfWidth
+    const pageHpx = Math.floor(pdfHeight * pxPorMm)
+    let y = 0, primera = true
+    while (y < canvas.height) {
+      const slicePx = Math.min(pageHpx, canvas.height - y)
+      if (!primera) pdf.addPage()
+      pdf.addImage(aJpeg(y, slicePx), 'JPEG', margin, margin, pdfWidth, slicePx / pxPorMm)
+      primera = false; y += slicePx
     }
   }
 
