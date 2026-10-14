@@ -33,6 +33,36 @@ export const getPacientes = async () => {
   return (data || []).map(rowToPaciente)
 }
 
+// Rol del usuario con sesión iniciada ('admin' | 'asistente' | null). La app lo usa para
+// decidir qué puede ver/hacer. La fuente de verdad real son las políticas RLS en la base.
+export const getRolActual = async () => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data, error } = await supabase.from('perfiles').select('rol').eq('user_id', user.id).maybeSingle()
+  // La verdad real la imponen las políticas RLS; este rol es solo para la interfaz.
+  if (error) { console.warn('getRolActual:', error.message); return 'admin' } // tabla aún no creada → no bloquear al dueño
+  return data?.rol || 'asistente'   // usuario sin perfil asignado → mínimo privilegio
+}
+
+// Directorio de pacientes SIN datos clínicos (vista segura). Lo usa la asistente: solo contacto.
+export const getPacientesDirectorio = async () => {
+  const { data, error } = await supabase
+    .from('pacientes_directorio')
+    .select('id, nombre, telefono, sexo')
+    .order('nombre')
+  if (error) throw error
+  return (data || []).map(r => ({ id: r.id, nombre: r.nombre || '', telefono: r.telefono || '', sexo: r.sexo || '' }))
+}
+
+// Alta de paciente para la asistente: inserta SIN leer de vuelta el expediente (RLS le niega el
+// SELECT del expediente). El id ya se genera en la app, así que no hace falta el readback.
+export const savePacienteBasico = async (paciente) => {
+  const row = pacienteToRow(paciente)
+  const { error } = await supabase.from('pacientes').insert(row)
+  if (error) throw error
+  return { id: paciente.id, nombre: paciente.nombre || '', telefono: paciente.telefono || '', sexo: paciente.sexo || '' }
+}
+
 export const savePaciente = async (paciente) => {
   const row = pacienteToRow(paciente)
   const { data, error } = await supabase

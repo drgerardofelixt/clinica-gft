@@ -14,7 +14,16 @@ import { createPortal } from "react-dom";
 // pdf.js exports used elsewhere; keep import to avoid tree-shaking removal
 import "./pdf.js";
 import { initGoogleCalendar, authorizeGoogleCalendar, isGoogleAuthorized, revokeGoogleAccess, crearEventoGCal, leerEventosGCal, actualizarEventoGCal, obtenerOCrearCalendarioConsultorio, getCalendarioConsultorioId, crearEventoEnCalendario, actualizarEventoEnCalendario, leerEventosDeCalendario, borrarEventoEnCalendario, listarCalendariosDisponibles, getUltimoErrorGCal, limpiarUltimoErrorGCal, verificarScopeToken, tieneScopeEscritura, reconectarGoogleCalendar, getScopeGuardado } from "./googleCalendar.js";
-import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, listarCitasSolapando, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot } from "./supabase.js";
+import { getPacientes, savePaciente, deletePaciente, saveConsulta, saveReceta, saveLaboratorio, saveCita, supabase, getConfig, setConfig, crearCita, actualizarCita, borrarCita, listarCitas, listarCitasSolapando, obtenerCitaPorGoogleEventId, guardarSnapshotMes, listarSnapshots, obtenerSnapshot, getRolActual, getPacientesDirectorio, savePacienteBasico } from "./supabase.js";
+
+// Dominio interno fijo para las cuentas por "usuario" (sin correo real). La asistente teclea solo
+// su usuario (p. ej. "asistente") y la app le agrega este dominio para el login de Supabase.
+const DOMINIO_USUARIO = "drgerardofelix.local";
+const normalizarLogin = (v) => {
+  const s = (v||"").trim();
+  if (!s) return s;
+  return s.includes("@") ? s.toLowerCase() : `${s.toLowerCase()}@${DOMINIO_USUARIO}`;
+};
 import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import AdminProductos from "./modules/aesthetic";
 import EstheticModule from "./modules/aesthetic/EstheticModule";
@@ -9890,7 +9899,7 @@ const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
   );
 };
 
-const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita, firmaB64, onSaveFirma, onMigrarCitas}) => {
+const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita, firmaB64, onSaveFirma, onMigrarCitas}) => {
   const pedirWA = useWA();  // envío WhatsApp con fallback a modal si el paciente no tiene teléfono
   const [mesOffset, setMesOffset] = useState(0);
   const [diaSel, setDiaSel] = useState(null);
@@ -9900,6 +9909,15 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
   const [contentView, setContentView] = useState("dash");
   // Área de trabajo: "obesidad" | "estetica" (switch superior; persiste entre sesiones)
   const [area, setArea] = useState(() => { try { return localStorage.getItem("gft_area") || "obesidad"; } catch { return "obesidad"; } });
+  // La asistente solo puede estar en vistas de agenda/labs; si cae en otra, se la regresa a la Agenda.
+  // Tampoco usa el área de estética.
+  const VISTAS_ASISTENTE = ["calendario","citas","admincitas"];
+  useEffect(()=>{
+    if (!esAsistente) return;
+    if (area !== "obesidad") setArea("obesidad");
+    if (!VISTAS_ASISTENTE.includes(contentView)) setContentView("calendario");
+  }, [esAsistente, contentView, area]);
+
   const cambiarArea = (a) => {
     setArea(a);
     try { localStorage.setItem("gft_area", a); } catch {}
@@ -10176,7 +10194,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
         </div>
 
         {/* ── SWITCH DE ÁREA ─────────────────────────────────── */}
-        <div style={{display:"flex",gap:4,padding:"8px 10px 4px"}}>
+        {!esAsistente && <div style={{display:"flex",gap:4,padding:"8px 10px 4px"}}>
           {[["obesidad","🩺","Obesidad"],["estetica","💉","Estética"]].map(([a,ic,lb])=>(
             <button key={a} onClick={()=>cambiarArea(a)}
               style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
@@ -10187,10 +10205,10 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
               <span>{ic}</span>{lb}
             </button>
           ))}
-        </div>
+        </div>}
 
         <nav className="gft-sidebar__nav">
-          {area==="estetica" && (
+          {!esAsistente && area==="estetica" && (
             <>
               <div className="gft-sidebar__section">MEDICINA ESTÉTICA</div>
               <button className={"gft-sidebar__item"+(contentView==="estetica"?" gft-sidebar__item--active":"")}
@@ -10203,25 +10221,32 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
             </>
           )}
           <div className="gft-sidebar__section">HOY</div>
-          {[["dash","🏠","Dashboard"],["calendario","📅","Agenda"]].map(([v,ic,lb])=>(
+          {(esAsistente ? [["calendario","📅","Agenda"]] : [["dash","🏠","Dashboard"],["calendario","📅","Agenda"]]).map(([v,ic,lb])=>(
             <button key={v} className={"gft-sidebar__item"+(contentView===v?" gft-sidebar__item--active":"")}
               onClick={()=>setContentView(v)}>
               <span className="gft-sidebar__icon">{ic}</span>{lb}
             </button>
           ))}
 
-          <div className="gft-sidebar__section">CLÍNICA</div>
-          <button className={"gft-sidebar__item"+(contentView==="pacientes"?" gft-sidebar__item--active":"")}
-            onClick={()=>setContentView("pacientes")}>
-            <span className="gft-sidebar__icon">👥</span>Pacientes
-            {pacientes.length>0 && <span style={{marginLeft:"auto",fontSize:11,color:"var(--gft-text-muted)",fontWeight:600}}>{pacientes.length}</span>}
-          </button>
+          <div className="gft-sidebar__section">{esAsistente ? "AGENDA Y LABS" : "CLÍNICA"}</div>
+          {!esAsistente && (
+            <button className={"gft-sidebar__item"+(contentView==="pacientes"?" gft-sidebar__item--active":"")}
+              onClick={()=>setContentView("pacientes")}>
+              <span className="gft-sidebar__icon">👥</span>Pacientes
+              {pacientes.length>0 && <span style={{marginLeft:"auto",fontSize:11,color:"var(--gft-text-muted)",fontWeight:600}}>{pacientes.length}</span>}
+            </button>
+          )}
           <button className="gft-sidebar__item" onClick={onOrdenRapida}>
             <span className="gft-sidebar__icon">🧪</span>Orden de labs
           </button>
           <button className="gft-sidebar__item" onClick={()=>onAgendar&&onAgendar(null)}>
             <span className="gft-sidebar__icon">🗓</span>Agendar cita
           </button>
+          {esAsistente && (
+            <button className="gft-sidebar__item" onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>
+              <span className="gft-sidebar__icon">➕</span>Registrar paciente
+            </button>
+          )}
           <button className={"gft-sidebar__item"+(contentView==="citas"?" gft-sidebar__item--active":"")}
             onClick={()=>setContentView("citas")}>
             <span className="gft-sidebar__icon">✏️</span>Modificar cita
@@ -10231,6 +10256,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
             <span className="gft-sidebar__icon">🗂️</span>Administrar citas
           </button>
 
+          {!esAsistente && <>
           <div className="gft-sidebar__section">SISTEMA</div>
           <button className={"gft-sidebar__item"+(contentView==="stats"?" gft-sidebar__item--active":"")}
             onClick={()=>setContentView("stats")}>
@@ -10243,8 +10269,14 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           <button className="gft-sidebar__item" onClick={()=>setShowEstetica(true)}>
             <span className="gft-sidebar__icon">💊</span>Medicina Estética
           </button>
+          </>}
+          {esAsistente && (
+            <button className="gft-sidebar__item" onClick={()=>onCerrarSesion&&onCerrarSesion()} style={{color:"var(--gft-text-muted)"}}>
+              <span className="gft-sidebar__icon">🚪</span>Cerrar sesión
+            </button>
+          )}
 
-          <div style={{marginTop:"auto",padding:"16px 10px 8px",borderTop:"1px solid var(--gft-border)"}}>
+          {!esAsistente && <div style={{marginTop:"auto",padding:"16px 10px 8px",borderTop:"1px solid var(--gft-border)"}}>
             {gcalAuthed ? (
               <div style={{display:"flex",alignItems:"center",gap:8,fontSize:11,color:"var(--gft-success)"}}>
                 <span style={{fontSize:8}}>●</span>
@@ -10257,7 +10289,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
                 <span className="gft-sidebar__icon">📅</span>Conectar GCal
               </button>
             )}
-          </div>
+          </div>}
         </nav>
       </aside>
 
@@ -10319,7 +10351,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
         <main className="gft-content gft-fade-in" key={contentView}>
 
           {/* ── VISTA DASHBOARD ─────────────────────────────── */}
-          {contentView==="dash" && (
+          {contentView==="dash" && !esAsistente && (
             <>
               {/* Stats row */}
               <div className="gft-dash-stats">
@@ -10706,17 +10738,17 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
           )}
 
           {/* ── VISTA PACIENTES (5b) ─────────────────────────── */}
-          {contentView==="estetica" && (
+          {contentView==="estetica" && !esAsistente && (
             <PanelEstetica
               onAbrirCatalogo={()=>setShowEstetica(true)}
               onVerPacientes={()=>setContentView("pacientes")}
               onAgendar={()=>onAgendar&&onAgendar(null)}
             />
           )}
-          {contentView==="pacientes" && <PacientesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
+          {contentView==="pacientes" && !esAsistente && <PacientesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
 
           {/* ── VISTA AJUSTES (5d) ─────────────────────────────── */}
-          {contentView==="ajustes" && <AjustesView pacientes={pacientes} firmaB64={firmaB64} onSaveFirma={onSaveFirma}
+          {contentView==="ajustes" && !esAsistente && <AjustesView pacientes={pacientes} firmaB64={firmaB64} onSaveFirma={onSaveFirma}
             gcalAuthed={gcalAuthed} gcalEventos={gcalEventos} onGcalConnect={onGcalConnect} onGcalDisconnect={onGcalDisconnect}
             onMigrarCitas={onMigrarCitas}/>}
 
@@ -10889,7 +10921,7 @@ const Dashboard = ({pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente,
 
           {contentView==="admincitas" && <AdminCitas pacientes={pacientes}/>}
 
-          {contentView==="stats" && (()=>{
+          {contentView==="stats" && !esAsistente && (()=>{
             const ejeStyle = { fontSize:9, fill:"var(--gft-text-muted)" };
             const tipStyle = { fontSize:10, borderRadius:8, background:"var(--gft-surface)", border:"1px solid var(--gft-border)", color:"var(--gft-text)" };
             const ult = est.historial[est.historial.length-1] || null;
@@ -11182,11 +11214,11 @@ const Login = ({ onLogin }) => {
     setError("");
     setCargando(true);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizarLogin(email), password });
       if (error) throw error;
       onLogin(data.user);
     } catch (err) {
-      setError("Credenciales incorrectas. Verifica tu correo y contraseña.");
+      setError("Usuario o contraseña incorrectos. Verifica e intenta de nuevo.");
     } finally {
       setCargando(false);
     }
@@ -11202,8 +11234,8 @@ const Login = ({ onLogin }) => {
           <div style={{fontSize:12,color:C.suave}}>Sistema clínico · Medicina Integral</div>
         </div>
         <div style={{marginBottom:14}}>
-          <label style={{fontSize:11,fontWeight:700,color:C.azul,display:"block",marginBottom:5}}>Correo electrónico</label>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required autoFocus
+          <label style={{fontSize:11,fontWeight:700,color:C.azul,display:"block",marginBottom:5}}>Usuario o correo</label>
+          <input type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={email} onChange={e=>setEmail(e.target.value)} required autoFocus
             style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1px solid "+C.grisMedio,fontSize:13,boxSizing:"border-box"}}/>
         </div>
         <div style={{marginBottom:18}}>
@@ -11225,6 +11257,8 @@ const Login = ({ onLogin }) => {
 
 export default function App() {
   const [usuario, setUsuario] = useState(null);
+  const [rol, setRol] = useState(null);                 // 'admin' | 'asistente' | null
+  const esAsistente = rol === "asistente";
   const [verificandoAuth, setVerificandoAuth] = useState(true);
   const [pacientes, setPacientes] = useState([]);
   const [activo, setActivo] = useState(null);
@@ -11286,7 +11320,8 @@ export default function App() {
 
   const cargarPacientes = async () => {
     try {
-      const data = await getPacientes();
+      // La asistente solo recibe el directorio (contacto, sin expediente clínico).
+      const data = rol === "asistente" ? await getPacientesDirectorio() : await getPacientes();
       setPacientes(data);
     } catch(e) {
       console.error("Error cargando pacientes:", e);
@@ -11308,18 +11343,27 @@ export default function App() {
     return () => subscription.unsubscribe();
   },[]);
 
+  // Al autenticar, cargar el rol del usuario (admin/asistente) para los candados de la interfaz.
   useEffect(()=>{
-    if (!usuario) return;
-    cargarPacientes();
-    getConfig("firma_digital").then(d=>{ if(d) setFirmaB64(d); });
+    if (!usuario) { setRol(null); return; }
+    let activo = true;
+    getRolActual().then(r=>{ if(activo) setRol(r || "admin"); }).catch(()=>{ if(activo) setRol("admin"); });
+    return ()=>{ activo=false; };
   },[usuario]);
+
+  useEffect(()=>{
+    if (!usuario || !rol) return;
+    cargarPacientes();
+    if (rol === "admin") getConfig("firma_digital").then(d=>{ if(d) setFirmaB64(d); });
+  },[usuario, rol]);
 
   const savePac = async (p) => {
     try {
-      const saved = await savePaciente(p);
+      // La asistente da de alta pacientes de 1ª vez sin poder leer el expediente (savePacienteBasico).
+      const saved = esAsistente ? await savePacienteBasico(p) : await savePaciente(p);
       await cargarPacientes();
-      if (saved) setActivo(saved);
-    } catch(e) { console.error("Error guardando paciente:", e); }
+      if (saved && !esAsistente) setActivo(saved);
+    } catch(e) { console.error("Error guardando paciente:", e); alert("No se pudo guardar el paciente."); }
     setMNuevo(false);
   };
   const updPac = async (p) => {
@@ -11441,7 +11485,8 @@ export default function App() {
     );
   }
 
-  if (activo) {
+  // La asistente NUNCA abre el expediente clínico (defensa en profundidad además de RLS).
+  if (activo && !esAsistente) {
     return (
       <SinTelProvider onGuardarTelefono={guardarTelefonoPaciente}>
       <VistaPaciente
@@ -11459,8 +11504,10 @@ export default function App() {
   return (
     <SinTelProvider onGuardarTelefono={guardarTelefonoPaciente}>
       <Dashboard
+        esAsistente={esAsistente}
+        onCerrarSesion={async()=>{ await supabase.auth.signOut(); }}
         pacientes={pacientes}
-        onVer={p=>setActivo(p)}
+        onVer={p=> esAsistente ? setAgendarPara(p) : setActivo(p)}
         onOrdenRapida={()=>setShowOrdenRapida(true)}
         onAgendar={p=>setAgendarPara(p)}
         onNuevoPaciente={()=>setMNuevo(true)}
