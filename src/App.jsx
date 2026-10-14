@@ -7796,7 +7796,7 @@ const getAvatarColor = (nombre="") => {
 };
 
 // ── Vista de Calendario completo (mes / semana / día, drag&drop, app + GCal) ──
-const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCancelar, pacById, gcalNode=null, onNueva, rail=null}) => {
+const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCancelar, onTerminar, pacById, gcalNode=null, onNueva, rail=null}) => {
   const fmtD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   const [vista, setVista] = useState("semana");        // mes | semana | dia
   const [refStr, setRefStr] = useState(() => fmtD(new Date()));
@@ -8110,6 +8110,13 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
             strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>{paths}</svg>
         );
         const items = [
+          // Marcar ATENDIDA — clave para que el conteo mensual de citas atendidas sea real.
+          ...(onTerminar && c.estado!=="completada" && c.estado!=="cancelada"
+            ? [{l:"Marcar como atendida", icon:sw(<path d="M20 6 9 17l-5-5"/>, "var(--gft-success)"), fn:()=>{ onTerminar(c); }}]
+            : []),
+          ...(c.estado==="completada"
+            ? [{l:"✓ Atendida", icon:sw(<path d="M20 6 9 17l-5-5"/>, "var(--gft-success)"), fn:()=>{ onEditar&&onEditar(c); }}]
+            : []),
           {l:"Reagendar", icon:sw(<><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></>, "var(--gft-accent)"), fn:()=>{ onEditar&&onEditar(c); }},
           {l:"Enviar recordatorio", icon:sw(<path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2z"/>, "var(--gft-success)"), fn:()=>{ onRecordar&&onRecordar(c); }},
           {l:"Editar cita", icon:sw(<><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></>, "var(--gft-text-2)"), fn:()=>{ onEditar&&onEditar(c); }},
@@ -10774,6 +10781,20 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             // ahora es clic en el número/encabezado del día dentro del calendario principal.
             const rail = (
               <>
+                {/* Contadores del MES (en vivo, por estado): programadas y atendidas de este mes. */}
+                <div className="gft-panel" style={{marginBottom:0}}>
+                  <div className="gft-panel__header"><div className="gft-panel__title">Este mes</div></div>
+                  <div style={{display:"flex",gap:10}}>
+                    <div style={{flex:1,textAlign:"center",padding:"6px 4px",background:"var(--gft-bg)",borderRadius:9,border:"1px solid var(--gft-border)"}}>
+                      <div style={{fontSize:20,fontWeight:800,color:"var(--gft-warning)"}}>{est.programadasMes}</div>
+                      <div style={{fontSize:10,color:"var(--gft-text-muted)",fontWeight:600}}>Programadas</div>
+                    </div>
+                    <div style={{flex:1,textAlign:"center",padding:"6px 4px",background:"var(--gft-bg)",borderRadius:9,border:"1px solid var(--gft-border)"}}>
+                      <div style={{fontSize:20,fontWeight:800,color:"var(--gft-success)"}}>{est.atendidasMes}</div>
+                      <div style={{fontSize:10,color:"var(--gft-text-muted)",fontWeight:600}}>Atendidas</div>
+                    </div>
+                  </div>
+                </div>
                 <div className="gft-panel" style={{marginBottom:0}}>
                   <div className="gft-panel__header"><div className="gft-panel__title">Hoy · {citasV2Hoy.length} cita{citasV2Hoy.length!==1?"s":""}</div></div>
                   {citasV2Hoy.length===0 ? <div className="gft-panel__empty">Sin citas hoy</div>
@@ -10811,7 +10832,8 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
               <Calendario citasV2={citasV2} ocupado={ocupadoV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}
                 onRecordar={(c)=>{ const pac=pacById(c.pacienteId); const {fecha,hora}=isoAInputsHmo(c.inicio); enviarRecordatorio({pac:pac||{nombre:c.pacienteNombre}, fecha, hora}); }}
                 onCancelar={(c)=>cancelarCitaV2(c)}
-                gcalNode={gcalNode} onNueva={()=>onAgendar&&onAgendar(null)} rail={rail}/>
+                onTerminar={(c)=>terminarCita(c)}
+                gcalNode={esAsistente ? null : gcalNode} onNueva={()=>onAgendar&&onAgendar(null)} rail={rail}/>
             );
           })()}
 
@@ -11525,9 +11547,10 @@ export default function App() {
         onLabsRapida={p=>setRapidaLabsPac(p)}
         onMoverCita={moverCita}
       />
-      {rapidaRecetaPac&&<ModalReceta p={rapidaRecetaPac} firmaB64={firmaB64} onClose={()=>setRapidaRecetaPac(null)}
+      {/* La asistente NO puede crear recetas (bloqueado por completo). */}
+      {rapidaRecetaPac && !esAsistente &&<ModalReceta p={rapidaRecetaPac} firmaB64={firmaB64} onClose={()=>setRapidaRecetaPac(null)}
         onSave={async r=>{ if(!rapidaRecetaPac._libre) await updPac({...rapidaRecetaPac,recetas:[...(rapidaRecetaPac.recetas||[]),r]}); setRapidaRecetaPac(null);}}/>}
-      {rapidaLabsPac&&<ModalLabs p={rapidaLabsPac} firmaB64={firmaB64} onClose={()=>setRapidaLabsPac(null)}
+      {rapidaLabsPac&&<ModalLabs p={rapidaLabsPac} firmaB64={esAsistente?null:firmaB64} onClose={()=>setRapidaLabsPac(null)}
         onSave={async l=>{ if(!rapidaLabsPac._libre) await updPac({...rapidaLabsPac,laboratorios:[...(rapidaLabsPac.laboratorios||[]),l]}); setRapidaLabsPac(null);}}/>}
       {mNuevo && <ModalPaciente onClose={()=>setMNuevo(false)} onSave={savePac}/>}
       {showConfig && (
@@ -11556,7 +11579,7 @@ export default function App() {
         </div>
       )}
       {showOrdenRapida && (
-        <OrdenRapida onClose={()=>setShowOrdenRapida(false)} firmaB64={firmaB64}/>
+        <OrdenRapida onClose={()=>setShowOrdenRapida(false)} firmaB64={esAsistente?null:firmaB64}/>
       )}
       {/* Entry unificado (Fase C): sidebar "Agendar cita" y "Agendar cita" del dashboard/pacientes.
           ModalAgenda (viejo) queda en el código pero ya no se usa. */}
