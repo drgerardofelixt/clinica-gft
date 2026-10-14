@@ -10626,12 +10626,13 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                           </div>
                           {!terminada && !cancelada && (
                             <div style={{display:"flex",gap:6,marginTop:8,justifyContent:"flex-end",flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
-                              <button title="Marcar terminada" className="gft-btn gft-btn--secondary gft-btn--sm"
-                                style={{fontSize:11}} onClick={()=>terminarCita(c)}>✅</button>
-                              <button title="Cancelar cita" className="gft-btn gft-btn--secondary gft-btn--sm"
-                                style={{fontSize:11}} onClick={()=>cancelarCitaV2(c)}>❌</button>
+                              <button title="Marcar la consulta como atendida" className="gft-btn gft-btn--sm"
+                                style={{fontSize:11,fontWeight:700,background:"var(--gft-success)",color:"#fff",border:"none"}}
+                                onClick={()=>terminarCita(c)}>✅ Atendida</button>
                               <button title="Reagendar" className="gft-btn gft-btn--secondary gft-btn--sm"
-                                style={{fontSize:11}} onClick={()=>setCitaEditar(c)}>🔄</button>
+                                style={{fontSize:11}} onClick={()=>setCitaEditar(c)}>🔄 Reagendar</button>
+                              <button title="Cancelar cita" className="gft-btn gft-btn--secondary gft-btn--sm"
+                                style={{fontSize:11,color:"var(--gft-danger)"}} onClick={()=>cancelarCitaV2(c)}>❌ Cancelar</button>
                               <button title="Enviar confirmación por WhatsApp" className="gft-btn gft-btn--secondary gft-btn--sm"
                                 style={{fontSize:11}} onClick={()=>pedirWA(pac||{nombre:c.pacienteNombre}, construirMsgConfirmacion(c, c.pacienteNombre||pac?.nombre||"paciente"))}>📱</button>
                             </div>
