@@ -9918,7 +9918,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
   const [area, setArea] = useState(() => { try { return localStorage.getItem("gft_area") || "obesidad"; } catch { return "obesidad"; } });
   // La asistente solo puede estar en vistas de agenda/labs; si cae en otra, se la regresa a la Agenda.
   // Tampoco usa el área de estética.
-  const VISTAS_ASISTENTE = ["calendario","citas","admincitas"];
+  const VISTAS_ASISTENTE = ["calendario"];
   useEffect(()=>{
     if (!esAsistente) return;
     if (area !== "obesidad") setArea("obesidad");
@@ -10249,11 +10249,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
           <button className="gft-sidebar__item" onClick={()=>onAgendar&&onAgendar(null)}>
             <span className="gft-sidebar__icon">🗓</span>Agendar cita
           </button>
-          {esAsistente && (
-            <button className="gft-sidebar__item" onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>
-              <span className="gft-sidebar__icon">➕</span>Registrar paciente
-            </button>
-          )}
+          {!esAsistente && <>
           <button className={"gft-sidebar__item"+(contentView==="citas"?" gft-sidebar__item--active":"")}
             onClick={()=>setContentView("citas")}>
             <span className="gft-sidebar__icon">✏️</span>Modificar cita
@@ -10262,6 +10258,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             onClick={()=>setContentView("admincitas")}>
             <span className="gft-sidebar__icon">🗂️</span>Administrar citas
           </button>
+          </>}
 
           {!esAsistente && <>
           <div className="gft-sidebar__section">SISTEMA</div>
@@ -10344,9 +10341,9 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
               );
             })()}
           </div>
-          <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>
+          {!esAsistente && <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>
             + Nuevo paciente
-          </button>
+          </button>}
           <button onClick={async()=>{if(confirm("¿Cerrar sesión?")){await supabase.auth.signOut();}}}
             style={{background:"var(--gft-surface2)",border:"1px solid var(--gft-border)",color:"var(--gft-text-2)",
               fontSize:14,cursor:"pointer",borderRadius:8,padding:"7px 10px"}} title="Cerrar sesión">
@@ -10858,7 +10855,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
           )}
 
           {/* ── VISTA MODIFICAR CITA ─────────────────────────── */}
-          {contentView==="citas" && (()=>{
+          {contentView==="citas" && !esAsistente && (()=>{
             const proximas = todasCitas
               .filter(c => c.fecha >= hoyStr)
               .sort((a,b)=>(a.fecha+a.hora).localeCompare(b.fecha+b.hora));
@@ -10942,7 +10939,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             );
           })()}
 
-          {contentView==="admincitas" && <AdminCitas pacientes={pacientes}/>}
+          {contentView==="admincitas" && !esAsistente && <AdminCitas pacientes={pacientes}/>}
 
           {contentView==="stats" && !esAsistente && (()=>{
             const ejeStyle = { fontSize:9, fill:"var(--gft-text-muted)" };
@@ -11553,7 +11550,7 @@ export default function App() {
         onSave={async r=>{ if(!rapidaRecetaPac._libre) await updPac({...rapidaRecetaPac,recetas:[...(rapidaRecetaPac.recetas||[]),r]}); setRapidaRecetaPac(null);}}/>}
       {rapidaLabsPac&&<ModalLabs p={rapidaLabsPac} firmaB64={esAsistente?null:firmaB64} onClose={()=>setRapidaLabsPac(null)}
         onSave={async l=>{ if(!rapidaLabsPac._libre) await updPac({...rapidaLabsPac,laboratorios:[...(rapidaLabsPac.laboratorios||[]),l]}); setRapidaLabsPac(null);}}/>}
-      {mNuevo && <ModalPaciente onClose={()=>setMNuevo(false)} onSave={savePac}/>}
+      {mNuevo && !esAsistente && <ModalPaciente onClose={()=>setMNuevo(false)} onSave={savePac}/>}
       {showConfig && (
         <ModalConfig firmaB64={firmaB64} onSave={saveFirma} onClose={()=>setShowConfig(false)}
           onMigrarCitas={()=>migrarCitasFuturas(pacientes)}/>
