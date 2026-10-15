@@ -69,8 +69,12 @@ export const savePaciente = async (paciente) => {
     .from('pacientes')
     .upsert(row, { onConflict: 'id' })
     .select('id, nombre, telefono, sexo, datos_clinicos')
-  if (error) throw error
-  return rowToPaciente(data[0])
+  if (!error) return rowToPaciente(data[0])
+  // La asistente puede INSERTAR pero RLS le niega leer de vuelta el expediente, lo que hace fallar
+  // el upsert con representación. Reintenta sin readback (el id ya lo generó la app).
+  const retry = await supabase.from('pacientes').upsert(row, { onConflict: 'id' })
+  if (retry.error) throw retry.error
+  return { id: paciente.id, nombre: paciente.nombre || '', telefono: paciente.telefono || '', sexo: paciente.sexo || '' }
 }
 
 export const deletePaciente = async (id) => {
