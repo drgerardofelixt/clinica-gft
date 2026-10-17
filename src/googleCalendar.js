@@ -156,7 +156,7 @@ export const crearEventoGCal = async (nombre, telefono, fecha, hora, tipoCita, d
         summary: titulo || `${nombre} — ${tipo}`,
         ...(colorId ? { colorId: String(colorId) } : {}),
         description: `Cita: ${tipo} (${duracionMin} min)${telefono?"\nTeléfono: "+telefono:""}`,
-        location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
+        location: "Clínica Beaunit, Blvd. Justo Sierra 104, Col. Pitic, Hermosillo, Sonora",
         start: { dateTime: iniISO, timeZone: "America/Hermosillo" },
         end:   { dateTime: finISO, timeZone: "America/Hermosillo" },
         reminders: { useDefault: false, overrides: [

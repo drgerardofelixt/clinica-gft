@@ -3,7 +3,7 @@
 // (SCJN, 2021). Textos EDITABLES; conviene validación legal antes de uso real.
 
 export const MEDICO = 'Dr. Gerardo Félix Tapia';
-export const ESTABLECIMIENTO = 'Consultorio del Dr. Gerardo Félix Tapia — Hermosillo, Sonora';
+export const ESTABLECIMIENTO = 'Clínica Beaunit — Dr. Gerardo Félix Tapia · Blvd. Justo Sierra 104, Col. Pitic, Hermosillo, Sonora';
 
 // Riesgos específicos por tipo de procedimiento (enunciativos, no limitativos).
 const RIESGOS = {

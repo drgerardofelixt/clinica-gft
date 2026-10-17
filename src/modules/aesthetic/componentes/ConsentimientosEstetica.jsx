@@ -117,7 +117,7 @@ const ConsentimientosEstetica = ({ paciente, firmaB64 = null }) => {
       </style></head>
       <body>
         <div class="pie">
-          <div class="dir">Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
+          <div class="dir">Clínica Beaunit · Blvd. Justo Sierra 104, Col. Pitic · CP: 83150 · Hermosillo, Sonora</div>
           <div class="tel">(662) 298-4145 · dr.gerardofelix@gmail.com</div>
           <div class="iddoc">${idDoc}</div>
         </div>

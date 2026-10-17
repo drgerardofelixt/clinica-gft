@@ -289,6 +289,20 @@ const sSet = async (k, v) => {
   } catch(e) { console.error(e); }
 };
 
+// ── DATOS DEL CONSULTORIO ───────────────────────────────────
+// Centralizados aquí para cambiar la dirección en TODA la app (documentos + mensajes) desde un solo lugar.
+const CLINICA = {
+  nombre: "Clínica Beaunit",
+  // Pie de documentos (recetas/órdenes/consentimientos): una línea destacada.
+  footer: "Clínica Beaunit · Blvd. Justo Sierra 104, Col. Pitic · CP: 83150 · Hermosillo, Sonora",
+  // Dirección en una línea para WhatsApp y Google Calendar.
+  direccion: "Clínica Beaunit, Blvd. Justo Sierra 104, Col. Pitic, Hermosillo, Sonora",
+  // Liga de ubicación (Google Maps) que se agrega a los mensajes del paciente.
+  ubicacionUrl: "https://share.google/oIIdr6wqtpegiqSLK",
+  tel: "(662) 298-4145",
+  email: "dr.gerardofelix@gmail.com",
+};
+
 // ── UTILS ────────────────────────────────────────────────────
 // Fecha LOCAL de hoy (Hermosillo), NO UTC: new Date().toISOString() daba el día siguiente después de las 5pm
 // (17:00 local = 00:00 UTC). Se construye desde los componentes locales, igual que hoyLocal en MiniCalendario.
@@ -574,7 +588,7 @@ const agregarAGoogleCalendar = async (nombre, telefono, fecha, hora, tipoCita, d
       const finDate = new Date(iniDate.getTime() + (duracionMin||30)*60000);
       const fin = `${finDate.getFullYear()}${String(finDate.getMonth()+1).padStart(2,"0")}${String(finDate.getDate()).padStart(2,"0")}T${String(finDate.getHours()).padStart(2,"0")}${String(finDate.getMinutes()).padStart(2,"0")}00`;
       const tipo = tipoCita === "primera" ? "Primera vez" : "Seguimiento";
-      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(nombre+" — "+tipo)}&dates=${ini}/${fin}&location=${encodeURIComponent("Av. Adolfo de la Huerta 200A 2do piso, Hermosillo")}`;
+      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(nombre+" — "+tipo)}&dates=${ini}/${fin}&location=${encodeURIComponent(CLINICA.direccion)}`;
       window.open(url, "_blank");
     }
   } else {
@@ -797,7 +811,7 @@ const agendarCitaV2 = async (datosCita, persistirCita) => {
       inicioISO: cita.inicio,
       finISO: cita.fin,
       colorId: cita.tipo==="primera_vez" ? "9" : "2",
-      location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
+      location: CLINICA.direccion,
     });
   }
 
@@ -828,7 +842,7 @@ const citaAEvento = (cita) => ({
   inicioISO: cita.inicio,
   finISO: cita.fin,
   colorId: cita.tipo==="primera_vez" ? "9" : "2",
-  location: "Av. Adolfo de la Huerta 200A 2do piso, Col. Pitic, Hermosillo, Sonora",
+  location: CLINICA.direccion,
 });
 
 // Muestra una alerta VISIBLE cuando la sincronización con Google falla. No bloquea el flujo
@@ -1223,7 +1237,8 @@ const construirMsgConfirmacion = (cita, nombre) => {
   return `Hola ${nombre}, le confirmamos su cita de ${tipoLegible} con el Dr. Gerardo Félix Tapia.\n`
     + `Fecha: ${fechaLarga}\n`
     + `Hora: ${hora12h}\n`
-    + `Dirección: Av. Adolfo de la Huerta 200A, 2do piso, Col. Pitic, Hermosillo\n`
+    + `Dirección: ${CLINICA.direccion}\n`
+    + `Ubicación: ${CLINICA.ubicacionUrl}\n`
     + `Cualquier duda, puede responder por este medio. Quedamos a sus órdenes.`;
 };
 // Variante para REPROGRAMACIÓN: aclara al paciente que la cita cambió de fecha/hora (no es una cita nueva).
@@ -1239,7 +1254,8 @@ const construirMsgReprogramada = (cita, nombre) => {
   return `Hola ${nombre}, le confirmamos que su cita de ${tipoLegible} con el Dr. Gerardo Félix Tapia ha sido reprogramada.\n`
     + `Nueva fecha: ${fechaLarga}\n`
     + `Nueva hora: ${hora12h}\n`
-    + `Dirección: Av. Adolfo de la Huerta 200A, 2do piso, Col. Pitic, Hermosillo\n`
+    + `Dirección: ${CLINICA.direccion}\n`
+    + `Ubicación: ${CLINICA.ubicacionUrl}\n`
     + `Cualquier duda, puede responder por este medio. Quedamos a sus órdenes.`;
 };
 // Abre WhatsApp con la confirmación de la cita. Reutiliza enviarWA (formateo 52 + limpieza).
@@ -1269,6 +1285,8 @@ const construirMsgRecordatorio = (c) => {
     + `Fecha: ${fechaMx}\n`
     + (c.hora?`Hora: ${c.hora} hrs\n`:"")
     + `Médico: Dr. Gerardo Félix Tapia\n`
+    + `Dirección: ${CLINICA.direccion}\n`
+    + `Ubicación: ${CLINICA.ubicacionUrl}\n`
     + `¿Nos confirma su asistencia? Quedamos al pendiente. Gracias.`;
 };
 
@@ -2105,8 +2123,8 @@ const LogoDoc = ({compact=false, conCedula=true}) => (
 const FooterDoc = () => (
   <div style={{marginTop:20,paddingTop:8,borderTop:"1px solid #E2E8F0",
     textAlign:"center",fontSize:9,color:"#94A3B8"}}>
-    <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-    <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+    <div style={{fontWeight:700}}>{CLINICA.footer}</div>
+    <div>{CLINICA.tel} · {CLINICA.email}</div>
   </div>
 );
 
@@ -2627,8 +2645,8 @@ const DocExpediente = ({p}) => {
               : grupo.map((c,idx)=>fila(c, pi*POR_PAGINA+idx))}
           </div>
           <div style={{paddingTop:6,borderTop:"1px solid #E2E8F0",textAlign:"center",fontSize:9,color:"#94A3B8"}}>
-            <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-            <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+            <div style={{fontWeight:700}}>{CLINICA.footer}</div>
+            <div>{CLINICA.tel} · {CLINICA.email}</div>
           </div>
         </div>
       ))}
@@ -3624,8 +3642,8 @@ const DocProgreso = ({p}) => {
     <div style={{marginTop:"auto",paddingTop:10,borderTop:"1px solid #E2E8F0",display:"flex",
       justifyContent:"space-between",alignItems:"flex-end",fontSize:8,color:C.suave,gap:12}}>
       <div style={{lineHeight:1.5}}>
-        <div style={{fontWeight:700}}>Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP: 83150 · Hermosillo, Sonora</div>
-        <div>(662) 298-4145 · dr.gerardofelix@gmail.com</div>
+        <div style={{fontWeight:700}}>{CLINICA.footer}</div>
+        <div>{CLINICA.tel} · {CLINICA.email}</div>
       </div>
       <span style={{fontWeight:700,color:C.azul,flexShrink:0}}>Hoja {n} de 3</span>
     </div>
@@ -9443,7 +9461,8 @@ const AjustesView = ({pacientes=[], firmaB64, onSaveFirma, gcalAuthed, gcalEvent
           <Card titulo="Datos del consultorio">
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
               <Field label="Nombre" value="Dr. Gerardo Félix Tapia — Medicina Integral"/>
-              <Field label="Dirección" value="Av. Adolfo de la Huerta 200A 2do piso · Col. Pitic, CP 83150 · Hermosillo, Sonora"/>
+              <Field label="Clínica" value={CLINICA.nombre}/>
+              <Field label="Dirección" value={CLINICA.footer}/>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <Field label="Teléfono" value="(662) 298-4145"/>
                 <Field label="Correo" value="dr.gerardofelix@gmail.com"/>
