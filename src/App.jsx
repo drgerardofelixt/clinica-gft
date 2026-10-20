@@ -3373,12 +3373,13 @@ const DocProgreso = ({p}) => {
             border: `3px solid ${zonaActual.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.25)', boxSizing: 'border-box',
           }} />
         </div>
-        {/* Etiquetas de zona: nombre + límite numérico bajo cada color */}
-        <div style={{ display: 'flex', marginTop: 6, fontSize: 9, fontWeight: 700, textAlign: 'center' }}>
+        {/* Etiquetas de zona: columnas IGUALES (no proporcionales) para que nunca se encimen,
+            en el mismo orden ascendente del color. Cada una muestra nombre + rango numérico. */}
+        <div style={{ display: 'flex', marginTop: 6, fontSize: 8, fontWeight: 700, textAlign: 'center' }}>
           {zonas.map((z, i) => { const activa = v >= z.min && v < z.max; return (
-            <div key={i} style={{ width: `${wz(z)}%` }}>
-              <div style={{ color: z.color }}>{z.label}{activa ? ' ●' : ''}</div>
-              {z.rango && <div className="d" style={{ color: '#94A3B8' }}>{z.rango}</div>}
+            <div key={i} style={{ flex: 1, minWidth: 0, padding: '0 1px' }}>
+              <div style={{ color: z.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.label}{activa ? ' ●' : ''}</div>
+              {z.rango && <div className="d" style={{ color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.rango}</div>}
             </div>
           ); })}
         </div>
@@ -3865,12 +3866,18 @@ const DocProgreso = ({p}) => {
           <MetaBarra zonas={ZONAS_GRASA[sexoKey]} valorHoy={ultima?.grasa} valorMeta={metaGrasaPct}
             domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%"
             etiquetaRango={`Meta de grasa saludable para tu sexo: ${metaGrasaPct}%`}/>
+          {(!esPrimeraToma && penultima?.grasa!=null && penultima?.grasa!=="") && (
+            <div style={{fontSize:10,color:C.suave,marginTop:4}}>Mes anterior: {penultima.grasa}%</div>
+          )}
         </>)}
         {/* Grasa visceral — sin meta personalizada: mini-indicador de zona (menor es mejor). */}
         {(ultima?.visceral!=null && ultima?.visceral!=="" && !isNaN(parseFloat(ultima.visceral))) && (<>
           <div style={{fontSize:14,fontWeight:500,color:'#26324A',margin:'12px 0 6px'}}>Grasa visceral</div>
           <RangoProp label="Nivel actual" value={ultima?.visceral} dmin={1} dmax={20} zonas={ZONAS_VISCERAL}/>
-          <div style={{fontSize:9,color:C.suave,marginTop:-6,marginBottom:2}}>Rango saludable de referencia: 1–9 (sin meta personalizada; mantenerlo bajo protege tu corazón y tu metabolismo).</div>
+          {(!esPrimeraToma && penultima?.visceral!=null && penultima?.visceral!=="") && (
+            <div style={{fontSize:10,color:C.suave,marginTop:2}}>Mes anterior: {penultima.visceral}</div>
+          )}
+          <div style={{fontSize:9,color:C.suave,marginTop:2,marginBottom:2}}>Rango saludable de referencia: 1–9 (sin meta personalizada; mantenerlo bajo protege tu corazón y tu metabolismo).</div>
         </>)}
         {/* Fila 1 — Composición corporal */}
         <div style={{fontSize:9,fontWeight:700,color:C.suave,letterSpacing:.4,margin:"14px 0 6px"}}>COMPOSICIÓN CORPORAL</div>
@@ -3898,6 +3905,9 @@ const DocProgreso = ({p}) => {
                 return <div style={{fontSize:8.5,fontWeight:700,color:col,marginTop:3}}>{et}</div>;
               })()}
               <div style={{fontSize:8,color:C.suave,marginTop:2}}>Rango saludable: {aguaZona.min}–{aguaZona.max}%</div>
+              {(!esPrimeraToma && penultima?.agua!=null && penultima?.agua!=="") && (
+                <div style={{fontSize:8,color:C.suave,marginTop:1}}>Mes anterior: {penultima.agua}%</div>
+              )}
             </div>
           )}
         </div>
