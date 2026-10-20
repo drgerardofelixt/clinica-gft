@@ -3795,7 +3795,12 @@ const DocProgreso = ({p}) => {
             {l:"Índice de masa grasa (IMG)", v:imgAct, u:"", vc:"#B45309", accent:"#B45309",
               linea:imgZona?{t:imgZona.label,c:imgZona.color}:null, prev:esPrimeraToma?null:prevTxt(imgPrev,"")},
             {l:"Grasa corporal", v:grasaKgAct, u:" kg", vc:"#D97706", accent:"#D97706",
-              linea:grasaLinea, prev:esPrimeraToma?null:prevTxt(grasaKgPrev," kg")},
+              linea:grasaLinea, prev:esPrimeraToma?null:(()=>{
+                const kg = (grasaKgPrev!=null&&grasaKgPrev!=="") ? `${grasaKgPrev} kg` : null;
+                const pct = (penultima?.grasa!=null&&penultima?.grasa!=="") ? `${penultima.grasa}%` : null;
+                const partes = [kg,pct].filter(Boolean);
+                return partes.length ? `Mes anterior: ${partes.join(" · ")}` : null;
+              })()},
             {l:"Masa muscular", v:ultima?.musculo, u:" kg", vc:"#7B3F3F", accent:"#7B3F3F",
               linea:esPrimeraToma?null:dmStr(ultima?.musculo, musculoPrev, " kg", false), prev:esPrimeraToma?null:prevTxt(musculoPrev," kg")},
             {l:"Cintura", v:caAct, u:" cm", vc:C.azul,
