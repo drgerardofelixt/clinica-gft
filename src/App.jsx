@@ -8224,9 +8224,9 @@ const fmtCitaHmo = (iso) => {
 const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG" };
 // Colores por tipo (fuente única, usada en agenda + dashboard): seguimiento AZUL, primera vez TEAL.
 const COLOR_TIPO_CITA = { primera_vez:"var(--gft-success)", seguimiento:"var(--gft-accent)" };
-// Color de la cita en la agenda: Estética tiene su propia paleta (morado/fucsia) para distinguirla
-// de Obesidad (verde/azul), tanto en primera vez como en seguimiento.
-const COLOR_ESTETICA_CITA = { primera_vez:"#C026D3", seguimiento:"#8B5CF6" };
+// Color de la cita en la agenda: Estética tiene su propia paleta (naranja/amarillo oscuros) para
+// distinguirla de Obesidad (verde/azul), tanto en primera vez como en seguimiento.
+const COLOR_ESTETICA_CITA = { primera_vez:"#C2410C", seguimiento:"#CA8A04" };
 const colorDeCita = (c) => {
   if (c && c.area === "estetica") return COLOR_ESTETICA_CITA[c.tipo] || COLOR_ESTETICA_CITA.seguimiento;
   return COLOR_TIPO_CITA[c?.tipo] || "var(--gft-success)";
