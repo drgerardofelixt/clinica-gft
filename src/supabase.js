@@ -151,6 +151,7 @@ const CITA_FIELD_MAP = {
   origen: 'origen',
   origenUltimoCambio: 'origen_ultimo_cambio', tituloGenerado: 'titulo_generado',
   pendienteSincronizar: 'pendiente_sincronizar',
+  area: 'area', modalidad: 'modalidad',
 }
 
 const citaToRow = (c) => ({
@@ -172,6 +173,8 @@ const citaToRow = (c) => ({
   origen_ultimo_cambio: c.origenUltimoCambio || 'app',
   titulo_generado: c.tituloGenerado || null,
   pendiente_sincronizar: !!c.pendienteSincronizar,
+  area: c.area || null,              // 'obesidad' | 'estetica'
+  modalidad: c.modalidad || null,    // 'presencial' | 'linea'
 })
 
 const rowToCita = (r) => ({
@@ -193,6 +196,8 @@ const rowToCita = (r) => ({
   origenUltimoCambio: r.origen_ultimo_cambio || 'app',
   tituloGenerado: r.titulo_generado || null,
   pendienteSincronizar: !!r.pendiente_sincronizar,
+  area: r.area || null,
+  modalidad: r.modalidad || null,
   creadoEn: r.creado_en || null,
 })
 

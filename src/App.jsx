@@ -303,6 +303,11 @@ const CLINICA = {
   email: "dr.gerardofelix@gmail.com",
 };
 
+// Bloque de ubicación para los mensajes al paciente: si la cita es EN LÍNEA no se pone dirección.
+const bloqueUbicacionMsg = (modalidad) => modalidad === "linea"
+  ? `Modalidad: Cita EN LÍNEA 💻 (no necesita acudir al consultorio)\n`
+  : `Dirección: ${CLINICA.direccion}\nUbicación: ${CLINICA.ubicacionUrl}\n`;
+
 // ── UTILS ────────────────────────────────────────────────────
 // Fecha LOCAL de hoy (Hermosillo), NO UTC: new Date().toISOString() daba el día siguiente después de las 5pm
 // (17:00 local = 00:00 UTC). Se construye desde los componentes locales, igual que hoyLocal en MiniCalendario.
@@ -751,7 +756,7 @@ const generarTituloCita = (cita) => {
 // Construye una cita v2 con la forma objetivo (sin googleEventId aún).
 const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=null,
   pacienteNombre="", tipo="seguimiento", medicamento=null, dosis=null, origen=null, numeroVisita=null,
-  fecha, hora, estado="agendada", origenUltimoCambio="app" } = {}) => {
+  fecha, hora, estado="agendada", origenUltimoCambio="app", area=null, modalidad=null } = {}) => {
   const dur = tipo === "primera_vez" ? 60 : 30;
   const cita = {
     id: id || crypto.randomUUID(),
@@ -772,6 +777,8 @@ const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=n
     origenUltimoCambio: origenUltimoCambio,
     pendienteSincronizar: false,
     tituloGenerado: "",
+    area: area || null,            // 'obesidad' | 'estetica'
+    modalidad: modalidad || null,  // 'presencial' | 'linea'
   };
   cita.tituloGenerado = generarTituloCita(cita);
   return cita;
@@ -1237,8 +1244,7 @@ const construirMsgConfirmacion = (cita, nombre) => {
   return `Hola ${nombre}, le confirmamos su cita de ${tipoLegible} con el Dr. Gerardo Félix Tapia.\n`
     + `Fecha: ${fechaLarga}\n`
     + `Hora: ${hora12h}\n`
-    + `Dirección: ${CLINICA.direccion}\n`
-    + `Ubicación: ${CLINICA.ubicacionUrl}\n`
+    + bloqueUbicacionMsg(cita.modalidad)
     + `Cualquier duda, puede responder por este medio. Quedamos a sus órdenes.`;
 };
 // Variante para REPROGRAMACIÓN: aclara al paciente que la cita cambió de fecha/hora (no es una cita nueva).
@@ -1254,8 +1260,7 @@ const construirMsgReprogramada = (cita, nombre) => {
   return `Hola ${nombre}, le confirmamos que su cita de ${tipoLegible} con el Dr. Gerardo Félix Tapia ha sido reprogramada.\n`
     + `Nueva fecha: ${fechaLarga}\n`
     + `Nueva hora: ${hora12h}\n`
-    + `Dirección: ${CLINICA.direccion}\n`
-    + `Ubicación: ${CLINICA.ubicacionUrl}\n`
+    + bloqueUbicacionMsg(cita.modalidad)
     + `Cualquier duda, puede responder por este medio. Quedamos a sus órdenes.`;
 };
 // Abre WhatsApp con la confirmación de la cita. Reutiliza enviarWA (formateo 52 + limpieza).
@@ -1285,8 +1290,7 @@ const construirMsgRecordatorio = (c) => {
     + `Fecha: ${fechaMx}\n`
     + (c.hora?`Hora: ${c.hora} hrs\n`:"")
     + `Médico: Dr. Gerardo Félix Tapia\n`
-    + `Dirección: ${CLINICA.direccion}\n`
-    + `Ubicación: ${CLINICA.ubicacionUrl}\n`
+    + bloqueUbicacionMsg(c.modalidad)
     + `¿Nos confirma su asistencia? Quedamos al pendiente. Gracias.`;
 };
 
@@ -7853,7 +7857,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
     const dur = (c.inicio && c.fin) ? Math.max(15, Math.round((new Date(c.fin)-new Date(c.inicio))/60000))
       : (c.tipo==="primera_vez"?60:30);
     return { key:"cita-"+c.id, fecha, hora:hora||"09:00", dur, nombre:c.pacienteNombre||"Cita",
-      tipo:c.tipo, color:COLOR_TIPO_CITA[c.tipo]||"var(--gft-success)", cita:c,
+      tipo:c.tipo, color:colorDeCita(c), cita:c,
       iniMs:new Date(c.inicio).getTime(), finMs:new Date(c.fin||c.inicio).getTime() };
   });
   const evDe = (fecha) => eventos.filter(e=>e.fecha===fecha).sort((a,b)=>(a.hora||"").localeCompare(b.hora||""));
@@ -8220,6 +8224,13 @@ const fmtCitaHmo = (iso) => {
 const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG" };
 // Colores por tipo (fuente única, usada en agenda + dashboard): seguimiento AZUL, primera vez TEAL.
 const COLOR_TIPO_CITA = { primera_vez:"var(--gft-success)", seguimiento:"var(--gft-accent)" };
+// Color de la cita en la agenda: Estética tiene su propia paleta (morado/fucsia) para distinguirla
+// de Obesidad (verde/azul), tanto en primera vez como en seguimiento.
+const COLOR_ESTETICA_CITA = { primera_vez:"#C026D3", seguimiento:"#8B5CF6" };
+const colorDeCita = (c) => {
+  if (c && c.area === "estetica") return COLOR_ESTETICA_CITA[c.tipo] || COLOR_ESTETICA_CITA.seguimiento;
+  return COLOR_TIPO_CITA[c?.tipo] || "var(--gft-success)";
+};
 const DOSIS_INICIALES = { MOUN:["2.5mg"], WEG:["0.25mg","0.5mg"] };
 
 // C2 — Sugerencia de dosis (solo ayuda editable) para una cita de seguimiento.
@@ -8528,6 +8539,8 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const [origen,setOrigen]   = useState("");
   const [fecha,setFecha]     = useState(hoy());
   const [hora,setHora]       = useState("");
+  const [area,setArea]       = useState("obesidad");      // obesidad | estetica
+  const [modalidad,setModalidad] = useState("presencial"); // presencial | linea
   const [guardando,setGuardando] = useState(false);
   const [mostrarSug,setMostrarSug] = useState(false);
   const [ocupadoDia,setOcupadoDia] = useState([]); // bloques "ocupado" del día elegido (solo lectura)
@@ -8671,7 +8684,8 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       }
       // C4 — Guardado unificado: construirCitaV2 (genera título) + crearCita
       const cita = construirCitaV2({ pacienteId, pacienteNombre:nombre.trim(), tipo,
-        medicamento: med||null, dosis: med?(dosis||null):null, origen: origen||null, fecha, hora });
+        medicamento: med||null, dosis: med?(dosis||null):null, origen: origen||null, fecha, hora,
+        area, modalidad });
       cita.pendienteSincronizar = true; // se baja a false si Google la sincroniza enseguida
       const creada = await crearCita(cita);
       // TAREA 1 — Confirmación por WhatsApp LO ANTES POSIBLE (antes de la sync con Google) para
@@ -8705,6 +8719,15 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={[
           {value:"primera_vez",label:"Primera vez"},
           {value:"seguimiento",label:"Seguimiento"}]}/>
+
+        <Row>
+          <Sel label="Área" value={area} onChange={setArea} opts={[
+            {value:"obesidad",label:"Obesidad"},
+            {value:"estetica",label:"Medicina Estética"}]}/>
+          <Sel label="Modalidad" value={modalidad} onChange={setModalidad} opts={[
+            {value:"presencial",label:"Presencial"},
+            {value:"linea",label:"En línea"}]}/>
+        </Row>
 
         <div style={{position:"relative"}}>
           <Inp label={"Nombre del paciente"+(esPrim?"":" *")} value={nombre}
@@ -10178,7 +10201,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
       const pac = pacById(c.pacienteId);
       const {fecha,hora} = isoAInputsHmo(c.inicio);
       const tel = String(pac?.telefono||"").replace(/\D/g,"");
-      const arg = { pac: pac||{nombre:c.pacienteNombre, id:c.pacienteId}, fecha, hora };
+      const arg = { pac: pac||{nombre:c.pacienteNombre, id:c.pacienteId}, fecha, hora, modalidad:c.modalidad };
       if (tel.length>=10) { enviarWA(tel, construirMsgRecordatorio(arg)); enviados++; }
       else sinTel.push(arg);
     });
@@ -10626,7 +10649,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                     ) : citasV2Hoy.map((c,i)=>{
                       const hora=isoAInputsHmo(c.inicio).hora;
                       const pac=pacById(c.pacienteId);
-                      const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const chipColor=colorDeCita(c);
                       const medTxt=c.medicamento?[c.medicamento,c.dosis].filter(Boolean).join(" "):"";
                       const terminada = c.estado==="completada";
                       const cancelada = c.estado==="cancelada";
@@ -10693,7 +10716,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                     ) : citasV2Manana.map((c,i)=>{
                       const {fecha,hora}=isoAInputsHmo(c.inicio);
                       const pac=pacById(c.pacienteId);
-                      const chipColor=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const chipColor=colorDeCita(c);
                       const medTxt=c.medicamento?[c.medicamento,c.dosis].filter(Boolean).join(" "):"";
                       return (
                         <div key={c.id} style={{
@@ -10718,7 +10741,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                             {pac&&(pac.telefono?(
                               <button className="gft-btn gft-btn--secondary gft-btn--sm"
                                 style={{fontSize:11}}
-                                onClick={()=>enviarRecordatorio({pac, fecha, hora})}>
+                                onClick={()=>enviarRecordatorio({pac, fecha, hora, modalidad:c.modalidad})}>
                                 📱 Recordatorio
                               </button>
                             ):(
@@ -10831,7 +10854,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                   <div className="gft-panel__header"><div className="gft-panel__title">Hoy · {citasV2Hoy.length} cita{citasV2Hoy.length!==1?"s":""}</div></div>
                   {citasV2Hoy.length===0 ? <div className="gft-panel__empty">Sin citas hoy</div>
                     : citasV2Hoy.map((c,i)=>{ const {hora}=isoAInputsHmo(c.inicio); const pac=pacById(c.pacienteId);
-                      const col=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const col=colorDeCita(c);
                       const suf={primera_vez:"1ª vez",seguimiento:"Seg."}[c.tipo]||"";
                       return (
                         <div key={c.id} onClick={()=>pac&&onVer(pac)} style={{display:"flex",alignItems:"center",gap:8,
@@ -10846,7 +10869,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                   {esSaltoManana && <div style={{fontSize:10.5,color:"var(--gft-accent)",fontWeight:600,margin:"2px 0 6px"}}>El domingo no hay consulta — recuérdales hoy</div>}
                   {citasV2Manana.length===0 ? <div className="gft-panel__empty">Sin citas {esSaltoManana?"el "+mananaDiaNom.toLowerCase():"mañana"}</div> : (<>
                     {citasV2Manana.map((c)=>{ const {hora}=isoAInputsHmo(c.inicio);
-                      const col=COLOR_TIPO_CITA[c.tipo]||"var(--gft-accent)";
+                      const col=colorDeCita(c);
                       const suf={primera_vez:"1ª vez",seguimiento:"Seg."}[c.tipo]||"";
                       return (
                         <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:"1px solid var(--gft-border)"}}>
@@ -10862,7 +10885,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             );
             return (
               <Calendario citasV2={citasV2} ocupado={ocupadoV2} onEditar={setCitaEditar} onVer={onVer} pacById={pacById}
-                onRecordar={(c)=>{ const pac=pacById(c.pacienteId); const {fecha,hora}=isoAInputsHmo(c.inicio); enviarRecordatorio({pac:pac||{nombre:c.pacienteNombre}, fecha, hora}); }}
+                onRecordar={(c)=>{ const pac=pacById(c.pacienteId); const {fecha,hora}=isoAInputsHmo(c.inicio); enviarRecordatorio({pac:pac||{nombre:c.pacienteNombre}, fecha, hora, modalidad:c.modalidad}); }}
                 onCancelar={(c)=>cancelarCitaV2(c)}
                 onTerminar={(c)=>terminarCita(c)}
                 gcalNode={esAsistente ? null : gcalNode} onNueva={()=>onAgendar&&onAgendar(null)} rail={rail}/>
