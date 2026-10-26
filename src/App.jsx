@@ -9265,13 +9265,13 @@ const calcEstadisticas = (pacientes, citas) => {
   const citasPorPac = {};
   citas.forEach(c => { if (c.pacienteId) (citasPorPac[c.pacienteId]=citasPorPac[c.pacienteId]||[]).push(c); });
 
-  // Paciente ACTIVO: ≥1 cita o consulta real (fecha válida) en los últimos 60 días.
+  // Paciente ACTIVO: agendó una cita (no cancelada) en los últimos 2 meses, O tiene una cita futura.
+  // Quien no haya tenido cita en más de 2 meses y no tenga ninguna próxima agendada → inactivo.
   const activoSet = new Set();
   pacientes.forEach(p => {
     const cs = citasPorPac[p.id] || [];
-    const porCita = cs.some(c => new Date(c.inicio).getTime() >= hace60);
-    const porCons = (p.consultas||[]).some(c => !c.esSoloCita && parseFechaClinica(c.fecha) > 0 && parseFechaClinica(c.fecha) >= hace60);
-    if (porCita || porCons) activoSet.add(p.id);
+    const activa = cs.some(c => c.estado !== "cancelada" && c.inicio && new Date(c.inicio).getTime() >= hace60);
+    if (activa) activoSet.add(p.id);
   });
   const activos = activoSet.size;
   const totales = pacientes.length;
@@ -9964,6 +9964,75 @@ const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
   );
 };
 
+// Mensaje de seguimiento para reactivar a un paciente que dejó de venir (objetivo: que regrese).
+const construirMsgReactivar = (nombre) => {
+  const n = (nombre || "").trim().split(/\s+/)[0] || "";
+  return `Hola${n ? ` ${n}` : ""}, le saluda el equipo del Dr. Gerardo Félix Tapia. 👋\n\n`
+    + `Notamos que ha pasado un tiempo desde su última visita y queremos saber cómo se encuentra y cómo va con su tratamiento.\n\n`
+    + `¿Le gustaría retomar su seguimiento? Con gusto le agendamos una cita en el horario que mejor le acomode. Y si hay algo en lo que podamos apoyarle, aquí estamos para servirle. 😊`;
+};
+
+// Pacientes que dejaron de venir (última cita hace >2 meses y sin cita futura). Permite enviarles un
+// mensaje de seguimiento por WhatsApp para invitarlos a retomar su tratamiento.
+const ReactivarView = ({ pacientes = [], citasV2 = [], onVer }) => {
+  const pedirWA = useWA();
+  const [busca, setBusca] = useState("");
+  const nowTs = Date.now();
+  const hace60 = nowTs - 60 * 24 * 60 * 60 * 1000;
+  const MESES_C = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  // Citas NO canceladas por paciente
+  const porPac = {};
+  (citasV2 || []).forEach(c => { if (c.pacienteId && c.inicio && c.estado !== "cancelada") (porPac[c.pacienteId] = porPac[c.pacienteId] || []).push(c); });
+  const filas = (pacientes || []).map(p => {
+    const cs = porPac[p.id] || [];
+    const tieneFutura = cs.some(c => new Date(c.inicio).getTime() > nowTs);
+    const pasadas = cs.filter(c => new Date(c.inicio).getTime() <= nowTs).map(c => new Date(c.inicio).getTime());
+    const ultPasada = pasadas.length ? Math.max(...pasadas) : 0;
+    const medNom = formatearTratamiento(tratamientoEfectivo(p));
+    return { p, tieneFutura, ultPasada, medNom };
+  })
+    .filter(f => !f.tieneFutura && f.ultPasada > 0 && f.ultPasada < hace60)   // lapsado: última cita hace >2 meses, sin próxima
+    .map(f => ({ ...f, dias: Math.floor((nowTs - f.ultPasada) / 86400000) }))
+    .sort((a, b) => a.ultPasada - b.ultPasada);   // los que llevan más tiempo sin venir, primero
+  const q = (busca || "").trim().toLowerCase();
+  const visibles = filas.filter(f => !q || (f.p.nombre || "").toLowerCase().includes(q) || (f.p.telefono || "").toLowerCase().includes(q));
+  const fmtUlt = (ts) => { const d = new Date(ts); return `${d.getDate()} ${MESES_C[d.getMonth()]} ${d.getFullYear()}`; };
+  const haceTxt = (dias) => dias >= 30 ? `${Math.floor(dias / 30)} ${Math.floor(dias / 30) === 1 ? "mes" : "meses"}` : `${dias} días`;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <div style={{ background: "var(--gft-surface)", border: "1px solid var(--gft-border-md)", borderRadius: 10, padding: "12px 15px", marginBottom: 15, maxWidth: 640 }}>
+        <div style={{ fontSize: 13, color: "var(--gft-text-2)", lineHeight: 1.5 }}>
+          Pacientes que <b>no han tenido cita en más de 2 meses</b> y no tienen ninguna próxima agendada.
+          Envíales un mensaje de seguimiento para invitarlos a retomar su tratamiento.
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--gft-surface)", border: "1px solid var(--gft-border-md)", borderRadius: 10, padding: "8px 13px", marginBottom: 15, maxWidth: 380 }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--gft-text-muted)" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+        <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nombre o teléfono…" style={{ flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: "var(--gft-text)", fontSize: 13 }} />
+        {busca && <span onClick={() => setBusca("")} style={{ cursor: "pointer", color: "var(--gft-text-muted)", fontSize: 14 }}>✕</span>}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--gft-text-muted)", marginBottom: 10, fontWeight: 600 }}>{visibles.length} paciente(s) para reactivar</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, overflowY: "auto", paddingBottom: 8 }}>
+        {visibles.length === 0
+          ? <div style={{ padding: "28px", textAlign: "center", color: "var(--gft-text-muted)", fontSize: 13 }}>Sin pacientes inactivos 🎉</div>
+          : visibles.map(f => (
+            <div key={f.p.id} className="gft-card" style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px" }}>
+              <div className={`gft-avatar gft-avatar--sm gft-avatar--${getAvatarColor(f.p.nombre || "")}`} style={{ flexShrink: 0, cursor: "pointer" }} onClick={() => onVer && onVer(f.p)}>{getIniciales(f.p.nombre)}</div>
+              <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onVer && onVer(f.p)}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gft-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.p.nombre}</div>
+                <div style={{ fontSize: 11, color: "var(--gft-text-muted)" }}>
+                  Última cita: {fmtUlt(f.ultPasada)} · hace {haceTxt(f.dias)}{f.medNom ? ` · ${f.medNom}` : ""}
+                </div>
+              </div>
+              <button className="gft-btn gft-btn--primary gft-btn--sm" style={{ flexShrink: 0 }}
+                onClick={() => pedirWA(f.p, construirMsgReactivar(f.p.nombre))}>💬 Seguimiento</button>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita, firmaB64, onSaveFirma, onMigrarCitas}) => {
   const pedirWA = useWA();  // envío WhatsApp con fallback a modal si el paciente no tiene teléfono
   const [mesOffset, setMesOffset] = useState(0);
@@ -10240,6 +10309,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                       contentView==="estetica"?"Medicina Estética":
                       contentView==="calendario"?"Agenda":
                       contentView==="pacientes"?"Pacientes":
+                      contentView==="reactivar"?"Reactivar pacientes":
                       contentView==="citas"?"Modificar cita":
                       contentView==="admincitas"?"Administrar citas":
                       contentView==="ajustes"?"Ajustes":
@@ -10299,6 +10369,12 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
               onClick={()=>setContentView("pacientes")}>
               <span className="gft-sidebar__icon">👥</span>Pacientes
               {pacientes.length>0 && <span style={{marginLeft:"auto",fontSize:11,color:"var(--gft-text-muted)",fontWeight:600}}>{pacientes.length}</span>}
+            </button>
+          )}
+          {!esAsistente && (
+            <button className={"gft-sidebar__item"+(contentView==="reactivar"?" gft-sidebar__item--active":"")}
+              onClick={()=>setContentView("reactivar")}>
+              <span className="gft-sidebar__icon">💬</span>Reactivar pacientes
             </button>
           )}
           <button className="gft-sidebar__item" onClick={onOrdenRapida}>
@@ -10809,6 +10885,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             />
           )}
           {contentView==="pacientes" && !esAsistente && <PacientesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
+          {contentView==="reactivar" && !esAsistente && <ReactivarView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
 
           {/* ── VISTA AJUSTES (5d) ─────────────────────────────── */}
           {contentView==="ajustes" && !esAsistente && <AjustesView pacientes={pacientes} firmaB64={firmaB64} onSaveFirma={onSaveFirma}
