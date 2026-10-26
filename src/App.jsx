@@ -9306,9 +9306,10 @@ const calcEstadisticas = (pacientes, citas) => {
   const atendidasTotal = citas.filter(c => c.estado==="completada").length;
   const atendidasMes   = citas.filter(c => c.estado==="completada" && mesDe(c.inicio)===mesActual).length;
   const programadasMes = citas.filter(c => mesDe(c.inicio)===mesActual && c.estado!=="cancelada").length;
-  // Canceladas del mes (por fecha de la cita) y nuevas agendadas del mes (por fecha de creación)
+  // Canceladas del mes (por fecha de la cita). "Nuevas agendadas" = citas de PRIMERA VEZ cuya fecha de
+  // cita cae en el mes (sin canceladas), igual criterio de mes que atendidas/programadas.
   const canceladasMes  = citas.filter(c => c.estado==="cancelada" && mesDe(c.inicio)===mesActual).length;
-  const nuevasMes      = citas.filter(c => c.creadoEn && mesDe(c.creadoEn)===mesActual).length;
+  const nuevasMes      = citas.filter(c => c.tipo==="primera_vez" && c.estado!=="cancelada" && mesDe(c.inicio)===mesActual).length;
 
   // Historial mes-con-mes de CITAS, meses CONTINUOS desde la más antigua hasta el mes actual.
   const vacio = (m) => ({ mes:m, atendidas:0, programadas:0, primera_vez:0, seguimiento:0, MOUN:0, WEG:0 });
