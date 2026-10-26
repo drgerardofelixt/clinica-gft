@@ -305,7 +305,7 @@ const CLINICA = {
 
 // Bloque de ubicación para los mensajes al paciente: si la cita es EN LÍNEA no se pone dirección.
 const bloqueUbicacionMsg = (modalidad) => modalidad === "linea"
-  ? `Modalidad: Cita EN LÍNEA 💻 (no necesita acudir al consultorio)\n`
+  ? `Modalidad: Cita en línea (no necesita acudir al consultorio)\n`
   : `Dirección: ${CLINICA.direccion}\nUbicación: ${CLINICA.ubicacionUrl}\n`;
 
 // ── UTILS ────────────────────────────────────────────────────
@@ -9967,9 +9967,9 @@ const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
 // Mensaje de seguimiento para reactivar a un paciente que dejó de venir (objetivo: que regrese).
 const construirMsgReactivar = (nombre) => {
   const n = (nombre || "").trim().split(/\s+/)[0] || "";
-  return `Hola${n ? ` ${n}` : ""}, le saluda el equipo del Dr. Gerardo Félix Tapia. 👋\n\n`
-    + `Notamos que ha pasado un tiempo desde su última visita y queremos saber cómo se encuentra y cómo va con su tratamiento.\n\n`
-    + `¿Le gustaría retomar su seguimiento? Con gusto le agendamos una cita en el horario que mejor le acomode. Y si hay algo en lo que podamos apoyarle, aquí estamos para servirle. 😊`;
+  return `Hola${n ? ` ${n}` : ""}, le saluda el Dr. Gerardo Félix Tapia.\n\n`
+    + `Noté que ha pasado un tiempo desde su última visita y quería saber cómo se encuentra y cómo va con su tratamiento.\n\n`
+    + `¿Le gustaría que retomemos su seguimiento? Con gusto le agendo una cita en el horario que mejor le acomode. Si hay algo en lo que pueda apoyarle, con gusto lo atiendo. Quedo al pendiente.`;
 };
 
 // Pacientes que dejaron de venir (última cita hace >2 meses y sin cita futura). Permite enviarles un
