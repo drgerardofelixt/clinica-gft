@@ -9967,7 +9967,7 @@ const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
 // Mensaje de seguimiento para reactivar a un paciente que dejó de venir (objetivo: que regrese).
 const construirMsgReactivar = (nombre) => {
   const n = (nombre || "").trim().split(/\s+/)[0] || "";
-  return `Hola${n ? ` ${n}` : ""}, te saluda el Dr. Gerardo Félix Tapia.\n\n`
+  return `Hola${n ? ` ${n}` : ""}, soy el Dr. Gerardo Félix Tapia.\n\n`
     + `Noté que ha pasado un tiempo desde tu última visita y quería saber cómo estás y cómo vas con tu tratamiento.\n\n`
     + `¿Te gustaría que retomemos tu seguimiento? Con gusto te agendo una cita en el horario que mejor te acomode. Si hay algo en lo que pueda apoyarte, con gusto te atiendo. Quedo al pendiente.`;
 };
