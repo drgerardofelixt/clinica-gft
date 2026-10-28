@@ -7906,32 +7906,43 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
     const [h,m]=(e.hora||"0:0").split(":").map(Number); const ini=h*60+m;
     return ahoraMin>=ini && ahoraMin<=ini+(e.dur||30);
   };
+  // Cita de paciente que YA terminó y sigue "agendada" (falta marcarla atendida o cancelada).
+  // Los bloqueos personales (sin paciente) no se avisan: no requieren marcarse.
+  const AMBER_WARN = "#E8A33F";
+  const nowMs = Date.now();
+  const sinMarcar = (e) => !!(e.cita && e.cita.pacienteId && e.cita.estado==="agendada" && e.finMs < nowMs);
   // Clic en un bloque → abre el menú contextual (Reagendar/Recordatorio/Editar/Cancelar).
   // Estilo referencia 5a: 2 líneas (hora coloreada + nombre), borde-izq por tipo; en-curso = relleno sólido.
   const Bloque = ({e, compact}) => {
     const suf = TIPO_SUF[e.tipo] || "";
     const enCurso = enCursoDe(e);
+    const pend = !enCurso && sinMarcar(e);   // ya terminó y falta marcarla
     const tint = `color-mix(in srgb, ${e.color} 16%, transparent)`;
     if (compact) {  // vista mes: 1 línea compacta
       return (
-        <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}`}
-          style={{background:tint, borderLeft:`3px solid ${e.color}`, borderRadius:5, padding:"1px 5px", margin:"1px 0",
+        <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={pend?`${e.hora} · ${e.nombre} — sin marcar`:`${e.hora} · ${e.nombre}`}
+          style={{background:pend?`color-mix(in srgb, ${AMBER_WARN} 14%, transparent)`:tint,
+            borderLeft:`3px solid ${pend?AMBER_WARN:e.color}`, borderRadius:5, padding:"1px 5px", margin:"1px 0",
             cursor:"pointer", fontSize:9, color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
-          {e.hora} {e.nombre}
+          {pend && <span style={{color:AMBER_WARN,fontWeight:800}}>● </span>}{e.hora} {e.nombre}
         </div>
       );
     }
     return (
-      <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}`}
+      <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={pend?`${e.hora} · ${e.nombre} — falta marcar (atendida/cancelada)`:`${e.hora} · ${e.nombre}`}
         style={{borderRadius:7, margin:2, padding:"5px 7px", cursor:"pointer", overflow:"hidden",
           ...(enCurso
             ? {background:e.color, boxShadow:`0 4px 14px color-mix(in srgb, ${e.color} 35%, transparent)`,
                outline:`2px solid color-mix(in srgb, ${e.color} 50%, #ffffff)`, outlineOffset:1}
+            : pend
+            ? {background:`color-mix(in srgb, ${AMBER_WARN} 14%, transparent)`, borderLeft:`3px solid ${AMBER_WARN}`,
+               outline:`1.5px dashed ${AMBER_WARN}`, outlineOffset:-1}
             : {background:tint, borderLeft:`3px solid ${e.color}`})}}>
         <div className="d" style={{fontSize:10, fontWeight:700, whiteSpace:"nowrap",
-          color:enCurso?"rgba(255,255,255,.85)":e.color}}>{enCurso ? `${e.hora} · ahora` : e.hora}</div>
+          color:enCurso?"rgba(255,255,255,.85)":pend?AMBER_WARN:e.color}}>{enCurso ? `${e.hora} · ahora` : e.hora}</div>
         <div style={{fontSize:11, fontWeight:enCurso?700:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
           color:enCurso?"#fff":"var(--gft-text)"}}>{e.nombre}{suf && <span style={{opacity:0.6}}> · {suf}</span>}</div>
+        {pend && <div style={{marginTop:2, fontSize:9, fontWeight:800, letterSpacing:".03em", color:AMBER_WARN}}>SIN MARCAR</div>}
       </div>
     );
   };
@@ -8092,6 +8103,23 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
         {onNueva && <button className="gft-btn gft-btn--primary" style={{marginLeft:gcalNode?0:"auto",whiteSpace:"nowrap"}}
           onClick={()=>onNueva()}>+ Nueva cita</button>}
       </div>
+
+      {/* Aviso: citas de pacientes que ya pasaron y siguen sin marcar (atendida/cancelada). */}
+      {(() => {
+        const pend = eventos.filter(sinMarcar).sort((a,b)=>a.iniMs-b.iniMs);
+        if (!pend.length) return null;
+        return (
+          <div onClick={()=>{ setVista("semana"); setRefStr(pend[0].fecha); }}
+            style={{display:"flex",alignItems:"center",gap:9,margin:"8px 0 0",padding:"8px 12px",borderRadius:9,cursor:"pointer",
+              background:`color-mix(in srgb, ${AMBER_WARN} 13%, transparent)`, border:`1px solid ${AMBER_WARN}`}}>
+            <span style={{color:AMBER_WARN,fontWeight:800,fontSize:14,lineHeight:1}}>●</span>
+            <span style={{fontSize:12.5,fontWeight:600,color:"var(--gft-text)"}}>
+              {pend.length} cita{pend.length!==1?"s":""} ya {pend.length!==1?"pasaron":"pasó"} y falta{pend.length!==1?"n":""} por marcar (atendida o cancelada).
+            </span>
+            <span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:AMBER_WARN,whiteSpace:"nowrap"}}>Ir a la primera ›</span>
+          </div>
+        );
+      })()}
 
       {/* Cuerpo: rejilla flexible + rail fijo → rail siempre visible sin scroll horizontal */}
       <div className="gft-agenda-v2__body">
