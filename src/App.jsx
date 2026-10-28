@@ -7910,7 +7910,10 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   // Los bloqueos personales (sin paciente) no se avisan: no requieren marcarse.
   const AMBER_WARN = "#E8A33F";
   const nowMs = Date.now();
-  const sinMarcar = (e) => !!(e.cita && e.cita.pacienteId && e.cita.estado==="agendada" && e.finMs < nowMs);
+  // Amnistía única: las citas anteriores a octubre 2026 quedaron sin marcar por datos viejos, así que el
+  // aviso NO las cuenta. De octubre 2026 en adelante sí avisa todo lo que no se marque (atendida/cancelada).
+  const CORTE_SIN_MARCAR = new Date("2026-10-01T00:00:00-07:00").getTime();
+  const sinMarcar = (e) => !!(e.cita && e.cita.pacienteId && e.cita.estado==="agendada" && e.finMs < nowMs && e.iniMs >= CORTE_SIN_MARCAR);
   // Clic en un bloque → abre el menú contextual (Reagendar/Recordatorio/Editar/Cancelar).
   // Estilo referencia 5a: 2 líneas (hora coloreada + nombre), borde-izq por tipo; en-curso = relleno sólido.
   const Bloque = ({e, compact}) => {
