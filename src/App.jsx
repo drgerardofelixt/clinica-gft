@@ -9302,19 +9302,22 @@ const calcEstadisticas = (pacientes, citas) => {
     farmacia_wegovy_activos:      tratActivos.fw, farmacia_wegovy_totales:      tratTotales.fw,
   };
 
-  // Actividad de citas (todas tienen inicio válido).
-  const atendidasTotal = citas.filter(c => c.estado==="completada").length;
-  const atendidasMes   = citas.filter(c => c.estado==="completada" && mesDe(c.inicio)===mesActual).length;
-  const programadasMes = citas.filter(c => mesDe(c.inicio)===mesActual && c.estado!=="cancelada").length;
+  // Actividad de CONSULTAS reales (con paciente). Excluimos eventos sin paciente: son bloqueos
+  // personales importados de Google Calendar (viajes, piñata, corte, boda, etc.) que ocupan lugar
+  // en la agenda pero NO son consultas, así que no deben inflar los conteos del reporte.
+  const citasC = citas.filter(c => c.pacienteId);
+  const atendidasTotal = citasC.filter(c => c.estado==="completada").length;
+  const atendidasMes   = citasC.filter(c => c.estado==="completada" && mesDe(c.inicio)===mesActual).length;
+  const programadasMes = citasC.filter(c => mesDe(c.inicio)===mesActual && c.estado!=="cancelada").length;
   // Canceladas del mes (por fecha de la cita). "Nuevas agendadas" = citas de PRIMERA VEZ cuya fecha de
   // cita cae en el mes (sin canceladas), igual criterio de mes que atendidas/programadas.
-  const canceladasMes  = citas.filter(c => c.estado==="cancelada" && mesDe(c.inicio)===mesActual).length;
-  const nuevasMes      = citas.filter(c => c.tipo==="primera_vez" && c.estado!=="cancelada" && mesDe(c.inicio)===mesActual).length;
+  const canceladasMes  = citasC.filter(c => c.estado==="cancelada" && mesDe(c.inicio)===mesActual).length;
+  const nuevasMes      = citasC.filter(c => c.tipo==="primera_vez" && c.estado!=="cancelada" && mesDe(c.inicio)===mesActual).length;
 
-  // Historial mes-con-mes de CITAS, meses CONTINUOS desde la más antigua hasta el mes actual.
+  // Historial mes-con-mes de CONSULTAS reales, meses CONTINUOS desde la más antigua hasta el mes actual.
   const vacio = (m) => ({ mes:m, atendidas:0, programadas:0, primera_vez:0, seguimiento:0, MOUN:0, WEG:0 });
   const meses = {}; let minMes = null;
-  citas.forEach(c => {
+  citasC.forEach(c => {
     const m = mesDe(c.inicio); if (!m) return;
     if (!meses[m]) meses[m] = vacio(m);
     if (c.estado==="completada") meses[m].atendidas++;
