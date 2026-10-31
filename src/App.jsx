@@ -8581,6 +8581,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const pedirEleccionPaciente = (candidatos) => new Promise(res => { resolverSimilar.current = res; setSimilarModal({candidatos}); });
   const responderSimilar = (val) => { setSimilarModal(null); const r = resolverSimilar.current; resolverSimilar.current = null; if (r) r(val); };
   const [citasDia,setCitasDia] = useState([]);     // citas del consultorio (tabla citas) del día, para la tira de horarios
+  const [canceladasGId,setCanceladasGId] = useState([]); // googleEventId de citas CANCELADAS del día (para no revivirlas vía lectura en vivo)
   const [gcalDia,setGcalDia]   = useState([]);     // eventos del calendario del consultorio EN VIVO (aún no importados)
 
   const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
@@ -8589,10 +8590,16 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   // Solapando: incluye eventos largos (viajes/vacaciones) que empezaron ANTES pero cubren este día.
   useEffect(()=>{
     let activo = true;
-    if (!fecha) { setCitasDia([]); return; }
+    if (!fecha) { setCitasDia([]); setCanceladasGId([]); return; }
     listarCitasSolapando({ desde:`${fecha}T00:00:00-07:00`, hasta:`${fecha}T23:59:59-07:00` })
-      .then(cs=>{ if(activo) setCitasDia((cs||[]).filter(c=>c.estado!=="cancelada")); })
-      .catch(()=>{ if(activo) setCitasDia([]); });
+      .then(cs=>{ if(activo){
+        const todas = cs||[];
+        setCitasDia(todas.filter(c=>c.estado!=="cancelada"));
+        // Guarda los googleEventId de las canceladas: la lectura EN VIVO de Google aún trae ese evento
+        // (no se borró de Google al cancelar en la app) y lo revivía como "ocupado". Lo filtramos abajo.
+        setCanceladasGId(todas.filter(c=>c.estado==="cancelada" && c.googleEventId).map(c=>c.googleEventId));
+      } })
+      .catch(()=>{ if(activo){ setCitasDia([]); setCanceladasGId([]); } });
     return ()=>{ activo=false; };
   },[fecha]);
 
@@ -8627,7 +8634,8 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   // Citas del día para la tira: tabla + eventos en vivo del consultorio (sin duplicar por googleEventId).
   const citasDiaMerged = [
     ...citasDia,
-    ...gcalDia.filter(g => !citasDia.some(c => c.googleEventId && c.googleEventId===g.googleEventId)),
+    ...gcalDia.filter(g => !citasDia.some(c => c.googleEventId && c.googleEventId===g.googleEventId)
+                        && !(g.googleEventId && canceladasGId.includes(g.googleEventId))),
   ];
   // Aviso claro si el horario elegido choca con una cita/evento del consultorio.
   const choqueCita = (()=>{
