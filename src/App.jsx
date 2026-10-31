@@ -8945,7 +8945,15 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
         actualizarTratamientoPaciente(pacTrat, { medicamento: med, dosis, origen });
       }
       // D2-A — Reflejar en Google (no crítico).
-      if (isGoogleAuthorized()) {
+      if (estado === "cancelada") {
+        // Cancelar desde "Editar cita" → BORRAR el evento en Google (igual que el "Cancelar cita"
+        // rápido de la agenda). Antes se hacía patch y el evento quedaba vivo, reapareciendo como ocupado.
+        if (cita.googleEventId) {
+          const ok = await pushBorrarEventoGCal({ ...cita, ...cambios });
+          // Si no se pudo borrar (sin conexión/token), marca pendiente: la reconciliación lo limpia después.
+          if (!ok) { try { await actualizarCita(cita.id, { pendienteSincronizar:true }); } catch(e){} }
+        }
+      } else if (isGoogleAuthorized()) {
         if (cita.googleEventId) {
           // Cita enlazada → mover el evento en su lugar (patch).
           const ok = await pushActualizarEventoGCal({ ...cita, ...cambios });
