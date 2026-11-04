@@ -1910,6 +1910,47 @@ ${texto}`,
   try { return JSON.parse(raw); } catch(e) { console.error('JSON.parse error:', e, 'raw:', raw); return {}; }
 };
 
+// ── Asistente de nota clínica (Claude) — EXPANDE la taquigrafía del médico a SOAP.
+// NO inventa signos vitales, exploración ni diagnósticos: solo reescribe y estructura lo
+// que el médico capturó, usando los datos ya registrados del paciente. Devuelve JSON con
+// subjetivo/efectos/respuesta/plan para que el médico lo REVISE y edite antes de guardar.
+const redactarNotaIA = async ({ taquigrafia, contexto }) => {
+  const prompt = `Eres asistente de redacción clínica para el Dr. Gerardo Félix Tapia (medicina de obesidad y estética, México). Tu tarea es EXPANDIR la taquigrafía del médico en una nota de evolución SOAP profesional y clara, lista para expediente conforme a la NOM-004.
+
+REGLAS ESTRICTAS:
+- NO inventes signos vitales, exploración física, diagnósticos, cifras ni datos que no estén en la taquigrafía o en el contexto. Si un dato no está, no lo menciones.
+- Usa SOLO la información proporcionada; no agregues cifras de peso/IMC/laboratorio distintas a las del contexto.
+- Español clínico, profesional, sin emojis. Conserva el sentido exacto de lo que escribió el médico; solo redáctalo mejor y dale estructura.
+- Si la taquigrafía está vacía, deja los campos vacíos.
+
+Devuelve ÚNICAMENTE un JSON válido (sin markdown ni texto extra) con esta estructura:
+{
+  "subjetivo": "lo que refiere el paciente, redactado y completo",
+  "efectos": "efectos secundarios referidos (breve); si el paciente los niega, 'Negados'",
+  "respuesta": "respuesta clínica / adherencia (breve)",
+  "plan": "plan e indicaciones, incluyendo medicamento y dosis si aplica"
+}
+
+CONTEXTO DEL PACIENTE:
+${contexto}
+
+TAQUIGRAFÍA DEL MÉDICO:
+${taquigrafia}`;
+  const response = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1200,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!response.ok) throw new Error(`Claude API ${response.status}`);
+  const apiData = await response.json();
+  const raw = (apiData.content?.[0]?.text || "").replace(/^```json\s*/,'').replace(/\s*```$/,'');
+  return JSON.parse(raw);
+};
+
 // ── Parser de labs con Claude Vision para imágenes ────────────
 // Lee múltiples páginas/fotos en un solo llamado → sin errores de Tesseract
 const fileToBase64 = (file) => new Promise((resolve, reject) => {
@@ -4819,6 +4860,8 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   const prev = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica).slice(-1)[0];
   const [confirmarSinCita, setConfirmarSinCita] = useState(false);
   const [guardado, setGuardado] = useState(false); // ¿ya se persistió la consulta?
+  const [iaLoading, setIaLoading] = useState(false);
+  const [iaErr, setIaErr] = useState("");
   const [f, setF] = useState(() => {
     const base = {
       id:Date.now().toString(), fecha:hoy(), hora:ahora(),
@@ -4837,6 +4880,40 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
 
   // Edición: persiste y cierra (editConsulta cierra por su cuenta)
   const guardarConsulta = () => { onSave(f); };
+
+  // Asistente de nota: expande la taquigrafía del campo S (y el Plan, si hay) a SOAP completo.
+  // El médico REVISA y edita el resultado antes de guardar; la IA no inventa datos.
+  const redactarIA = async () => {
+    const sTaq = (f.subjetivo||"").trim();
+    const pTaq = (f.plan||"").trim();
+    if (!sTaq && !pTaq) { setIaErr("Escribe primero tu nota en corto en el campo S (y Plan si quieres)."); return; }
+    setIaErr(""); setIaLoading(true);
+    try {
+      const pesoAct = f.peso || f.comp?.peso || "";
+      const imc = f.comp?.imc || calcIMC(f.peso, p.talla) || "";
+      const pesoPrev = prev?.peso || "";
+      const ctx = [
+        `Nombre: ${p.nombre||""}`,
+        `Edad/Sexo: ${p.edad||"?"} años, ${p.sexo||""}`,
+        pesoAct && `Peso actual: ${pesoAct} kg${pesoPrev?` (consulta previa ${pesoPrev} kg)`:""}`,
+        imc && `IMC: ${imc}`,
+        f.comp?.grasa && `% Grasa: ${f.comp.grasa}`,
+        f.comp?.musculo && `Músculo: ${f.comp.musculo} kg`,
+        f.ca && `Circ. abdominal: ${f.ca} cm`,
+        (f.medicamento||p.ci?.glp1) && `Medicamento: ${f.medicamento||p.ci?.glp1}${f.dosis?` ${f.dosis}`:""}`,
+        f.cambioDosis && `Cambio de dosis: ${f.cambioDosis}`,
+        p.dx?.principal && `Diagnóstico: ${p.dx.principal}`,
+        (p.meta?.objetivo||p.pesoObjetivo) && `Objetivo de peso: ${p.meta?.objetivo||p.pesoObjetivo} kg`,
+      ].filter(Boolean).join("\n");
+      const taq = [sTaq && `S: ${sTaq}`, pTaq && `Plan: ${pTaq}`].filter(Boolean).join("\n");
+      const r = await redactarNotaIA({ taquigrafia: taq, contexto: ctx });
+      if (r.subjetivo) u("subjetivo", r.subjetivo);
+      if (r.efectos)   u("efectos", r.efectos);
+      if (r.respuesta) u("respuesta", r.respuesta);
+      if (r.plan)      u("plan", r.plan);
+    } catch(e){ console.error("redactarIA:", e); setIaErr("No se pudo redactar con IA. Revisa tu conexión e intenta de nuevo."); }
+    finally { setIaLoading(false); }
+  };
 
   // Persiste la consulta una sola vez (botones "Generar reporte" y "Siguiente").
   // Devuelve true si quedó guardada; false si el guardado se canceló (ej. duplicado de fecha).
@@ -5026,6 +5103,13 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               </div>
               <MicBtn onResult={t=>u("subjetivo",(f.subjetivo+" "+t).trim())}/>
             </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+              <Btn onClick={redactarIA} color={C.azul} size="sm" disabled={iaLoading}>
+                {iaLoading ? "Redactando…" : "Redactar con IA"}
+              </Btn>
+              <span style={{fontSize:11,color:C.suave}}>Expande tu nota en corto (S y Plan) a SOAP. Revísala antes de guardar.</span>
+            </div>
+            {iaErr && <div style={{fontSize:11,color:C.rojo,marginBottom:8}}>{iaErr}</div>}
             <Row>
               <Inp label="Efectos secundarios" value={f.efectos} onChange={v=>u("efectos",v)}/>
               <Inp label="Respuesta" value={f.respuesta} onChange={v=>u("respuesta",v)}/>
