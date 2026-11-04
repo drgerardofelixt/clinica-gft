@@ -102,8 +102,8 @@ export const parsearBascula = async (file) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      model: 'claude-opus-5-5',
+      max_tokens: 4096,
       messages: [{ role: 'user', content: [mediaBlock, { type: 'text', text: PROMPT }] }]
     })
   });

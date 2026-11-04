@@ -4162,7 +4162,34 @@ const DocProgreso = ({p}) => {
   );
 };
 
-const TanitaUp = ({nombre, onApply}) => {
+// Verificación determinista de una lectura Tanita (NO depende de la IA): coherencia interna
+// (IMC vs peso/talla, masa grasa vs peso×%grasa) y rangos fisiológicos. Devuelve lista de avisos.
+const validarTanita = (d, talla) => {
+  const avisos = [];
+  const num = v => (v==null||v==="")?null:parseFloat(v);
+  const peso=num(d.peso), grasa=num(d.grasaCorporal), musculo=num(d.masaMuscular),
+        agua=num(d.aguaCorporal), imc=num(d.imc), visceral=num(d.grasaVisceral),
+        edadMet=num(d.edadMetabolica), bmr=num(d.metabolismoBasal),
+        grasaKg=num(d.grasaCorporalKg), tallaN=num(talla);
+  if (peso!=null && tallaN!=null && tallaN>0) {
+    const m=tallaN/100, imcCalc=peso/(m*m);
+    if (imc!=null && Math.abs(imc-imcCalc)>1.2)
+      avisos.push(`IMC leído (${imc}) no coincide con peso/talla (${imcCalc.toFixed(1)}). Revisa peso, talla o IMC.`);
+  }
+  if (peso!=null && grasa!=null && grasaKg!=null) {
+    const calc=peso*grasa/100;
+    if (Math.abs(grasaKg-calc)>Math.max(1.5,calc*0.1))
+      avisos.push(`Masa grasa (${grasaKg} kg) no coincide con peso × %grasa (${calc.toFixed(1)} kg).`);
+  }
+  const rango=(v,l,h,label,u="")=>{ if(v!=null && (v<l||v>h)) avisos.push(`${label} fuera de rango: ${v}${u}.`); };
+  rango(peso,25,350,"Peso"," kg"); rango(grasa,3,75,"% Grasa","%");
+  rango(musculo,10,120,"Masa muscular"," kg"); rango(agua,20,75,"Agua corporal","%");
+  rango(imc,10,90,"IMC"); rango(visceral,1,60,"Grasa visceral");
+  rango(edadMet,10,120,"Edad metabólica"," años"); rango(bmr,600,4000,"BMR"," kcal");
+  return avisos;
+};
+
+const TanitaUp = ({nombre, talla, onApply}) => {
   const [st, setSt] = useState("idle");
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
@@ -4195,6 +4222,7 @@ const TanitaUp = ({nombre, onApply}) => {
 
   const border = {idle:C.grisMedio, loading:C.azul, ok:C.verde, error:C.rojo}[st]||C.grisMedio;
   const bg = {ok:C.verdePale, error:C.rojoPale}[st]||C.gris;
+  const avisos = (st==="ok" && data) ? validarTanita(data, talla) : [];
 
   return (
     <div style={{marginBottom:12,padding:14,borderRadius:10,
@@ -4272,6 +4300,17 @@ const TanitaUp = ({nombre, onApply}) => {
               </div>
             )}
           </div>
+          {avisos.length>0 && (
+            <div style={{background:"#FFF4E5",border:"1px solid "+C.naranja,borderRadius:6,
+              padding:"8px 10px",marginBottom:10}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#B45309",marginBottom:4}}>
+                ⚠️ Revisa estos datos antes de aplicar:
+              </div>
+              {avisos.map((a,i)=>(
+                <div key={i} style={{fontSize:10.5,color:"#92400E",lineHeight:1.4}}>• {a}</div>
+              ))}
+            </div>
+          )}
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
             <Btn onClick={()=>{setSt("idle");setData(null);if(ref.current)ref.current.value="";}}
               outline color={C.suave} size="sm">Cancelar</Btn>
@@ -5077,7 +5116,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
             </div>
           )}
           <Sec title="Datos de báscula" icon="⚖️">
-            <TanitaUp nombre={p.nombre} onApply={applyTanita}/>
+            <TanitaUp nombre={p.nombre} talla={p.talla} onApply={applyTanita}/>
           </Sec>
           <Sec title="Signos vitales" icon="📊">
             <Row>
@@ -5690,7 +5729,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
             <div>
               {/* ── BUG #6 FIX: TanitaUp ahora disponible en alta de paciente ── */}
               <Sec title="Datos de báscula Tanita" icon="⚖️">
-                <TanitaUp nombre={f.nombre||"nuevo paciente"} onApply={(d)=>{
+                <TanitaUp nombre={f.nombre||"nuevo paciente"} talla={f.talla} onApply={(d)=>{
                   // Guarda: si el PDF trae nombre y no coincide con el nombre ya escrito en el alta, avisar.
                   if (d && d.nombre && String(d.nombre).trim() && (f.nombre||"").trim() &&
                       !mismoNombreNormalizado(d.nombre, f.nombre)) {
