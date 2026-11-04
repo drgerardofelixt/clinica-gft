@@ -1905,7 +1905,7 @@ ${texto}`,
   }
   const apiData = await response.json();
   console.log('respuesta API:', JSON.stringify(apiData));
-  const raw = apiData.content[0].text.replace(/^```json\s*/,'').replace(/\s*```$/,'');
+  const raw = ((apiData.content||[]).find(b=>b.type==="text")?.text || "").replace(/^```json\s*/,'').replace(/\s*```$/,'');
   console.log('fecha encontrada:', raw.match(/"fecha"\s*:\s*"([^"]+)"/)?.[1] ?? null);
   try { return JSON.parse(raw); } catch(e) { console.error('JSON.parse error:', e, 'raw:', raw); return {}; }
 };
@@ -1915,20 +1915,27 @@ ${texto}`,
 // que el médico capturó, usando los datos ya registrados del paciente. Devuelve JSON con
 // subjetivo/efectos/respuesta/plan para que el médico lo REVISE y edite antes de guardar.
 const redactarNotaIA = async ({ taquigrafia, contexto }) => {
-  const prompt = `Eres asistente de redacción clínica para el Dr. Gerardo Félix Tapia (medicina de obesidad y estética, México). Tu tarea es EXPANDIR la taquigrafía del médico en una nota de evolución SOAP profesional y clara, lista para expediente conforme a la NOM-004.
+  const prompt = `Eres asistente de redacción clínica para el Dr. Gerardo Félix Tapia (medicina de obesidad y estética, México). Expandes la taquigrafía del médico en una nota de evolución SOAP profesional, lista para expediente conforme a la NOM-004.
+
+FLUJO REAL DE LA CONSULTA (respétalo como orden de la nota):
+1) El médico interroga al paciente: cómo se sintió, qué le pasó, tolerancia, apego. -> va en SUBJETIVO.
+2) Luego mide el peso (báscula Tanita), la circunferencia abdominal y la composición corporal. -> va en OBJETIVO.
+3) Al final define el plan a seguir. -> va en PLAN.
+Redacta la nota en ese orden: Subjetivo -> Objetivo -> Análisis -> Plan.
 
 REGLAS ESTRICTAS:
-- NO inventes signos vitales, exploración física, diagnósticos, cifras ni datos que no estén en la taquigrafía o en el contexto. Si un dato no está, no lo menciones.
-- Usa SOLO la información proporcionada; no agregues cifras de peso/IMC/laboratorio distintas a las del contexto.
-- Español clínico, profesional, sin emojis. Conserva el sentido exacto de lo que escribió el médico; solo redáctalo mejor y dale estructura.
+- NO inventes signos vitales, exploración, diagnósticos ni cifras que no estén en la taquigrafía o en el contexto. Si un dato no está, no lo menciones.
+- Las cifras (peso, cambio, circunferencia, composición) vienen SOLO del contexto; no inventes ni cambies ninguna.
+- NO pongas el peso ni las medidas en el Subjetivo: eso va en el Objetivo. En el Subjetivo va únicamente lo que el paciente refiere.
+- Español clínico, profesional, sin emojis. Conserva el sentido exacto de lo que escribió el médico.
 - Si la taquigrafía está vacía, deja los campos vacíos.
 
 Devuelve ÚNICAMENTE un JSON válido (sin markdown ni texto extra) con esta estructura:
 {
-  "subjetivo": "lo que refiere el paciente, redactado y completo",
-  "efectos": "efectos secundarios referidos (breve); si el paciente los niega, 'Negados'",
-  "respuesta": "respuesta clínica / adherencia (breve)",
-  "plan": "plan e indicaciones, incluyendo medicamento y dosis si aplica"
+  "subjetivo": "Lo que refiere el paciente: cómo se sintió, síntomas, eventos, apego y tolerancia subjetiva. Sin peso, sin medidas y sin plan.",
+  "efectos": "Hallazgos OBJETIVOS en este orden: peso actual y su cambio respecto a la consulta previa; circunferencia abdominal; composición corporal relevante (grasa, músculo); y tolerancia/efectos referidos. Solo con cifras del contexto.",
+  "respuesta": "Análisis clínico breve: evolución y respuesta al tratamiento.",
+  "plan": "Plan e indicaciones a seguir, con medicamento y dosis si aplica."
 }
 
 CONTEXTO DEL PACIENTE:
@@ -1947,7 +1954,7 @@ ${taquigrafia}`;
   });
   if (!response.ok) throw new Error(`Claude API ${response.status}`);
   const apiData = await response.json();
-  const raw = (apiData.content?.[0]?.text || "").replace(/^```json\s*/,'').replace(/\s*```$/,'');
+  const raw = ((apiData.content||[]).find(b=>b.type==="text")?.text || "").replace(/^```json\s*/,'').replace(/\s*```$/,'');
   return JSON.parse(raw);
 };
 
@@ -2139,7 +2146,7 @@ Si "Proteínas Totales" en el documento tiene el mismo valor que "Yodo Proteico"
     throw new Error(`Anthropic Vision API error ${response.status}: ${errBody}`);
   }
   const apiData = await response.json();
-  const raw = apiData.content[0].text.replace(/^```json\s*/,"").replace(/\s*```$/,"");
+  const raw = ((apiData.content||[]).find(b=>b.type==="text")?.text || "").replace(/^```json\s*/,"").replace(/\s*```$/,"");
   try { return validateLabResults(JSON.parse(raw)); } catch(e) { console.error("JSON parse error Vision:", e, raw); return {}; }
 };
 
@@ -5110,11 +5117,11 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               <span style={{fontSize:11,color:C.suave}}>Expande tu nota en corto (S y Plan) a SOAP. Revísala antes de guardar.</span>
             </div>
             {iaErr && <div style={{fontSize:11,color:C.rojo,marginBottom:8}}>{iaErr}</div>}
-            <Row>
-              <Inp label="Efectos secundarios" value={f.efectos} onChange={v=>u("efectos",v)}/>
-              <Inp label="Respuesta" value={f.respuesta} onChange={v=>u("respuesta",v)}/>
-              <div/>
-            </Row>
+            <Txt label="O — Hallazgos (peso, cintura, composición, tolerancia)" value={f.efectos}
+              onChange={v=>u("efectos",v)} rows={2}
+              placeholder="Peso y cambio, circunferencia abdominal, composición, efectos/tolerancia..."/>
+            <Txt label="A — Análisis / respuesta" value={f.respuesta} onChange={v=>u("respuesta",v)} rows={2}
+              placeholder="Evolución y respuesta al tratamiento..."/>
           </Sec>
           <Sec title="Plan" icon="📋">
             <Row>
