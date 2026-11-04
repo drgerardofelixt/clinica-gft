@@ -10318,6 +10318,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
   const [quickAction, setQuickAction] = useState(null); // null | "receta" | "labs"
   const [quickBusq, setQuickBusq] = useState("");
   const [topSearch, setTopSearch] = useState(""); // buscador del topbar → expediente
+  const [showProx, setShowProx] = useState(false); // popover "próximas citas" del topbar
   // Buscador del topbar: substring insensible a acentos (método principal) +
   // buscarPacientesSimilares como fallback SOLO para typos (nombres que no cayeron por includes).
   const buscarTop = (texto) => {
@@ -10477,6 +10478,10 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
   citasV2.filter(c=>c.estado!=="cancelada").forEach(c=>{ const {fecha}=isoAInputsHmo(c.inicio); if(!fecha) return; (citasV2Dia[fecha]=citasV2Dia[fecha]||[]).push(c); });
   const citasV2Hoy = (citasV2Dia[hoyStr]||[]).slice().sort(ordCita);
   const citasV2Manana = (citasV2Dia[mananaStr]||[]).slice().sort(ordCita);
+  // Próximas citas (futuras, no canceladas, con paciente) para el vistazo del topbar.
+  const proximasCitas = (citasV2||[])
+    .filter(c=>c.estado!=="cancelada" && c.pacienteId && c.inicio && new Date(c.inicio).getTime()>Date.now())
+    .sort((a,b)=>new Date(a.inicio)-new Date(b.inicio)).slice(0,8);
   const pacById = (id) => pacientes.find(pp=>pp.id===id) || null;
   // TAREA 1 — Contadores de consultas ATENDIDAS (estado 'completada') desde la tabla `citas`.
   const _mesActualHmo = isoAInputsHmo(new Date().toISOString()).fecha.slice(0,7); // YYYY-MM en Hermosillo
@@ -10726,6 +10731,41 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                 </div>
               );
             })()}
+          </div>
+          <div style={{position:"relative"}}>
+            <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowProx(s=>!s)} title="Próximas citas">
+              📅 Próximas{proximasCitas.length?` · ${proximasCitas.length}`:""}
+            </button>
+            {showProx && (<>
+              <div onClick={()=>setShowProx(false)} style={{position:"fixed",inset:0,zIndex:2900}}/>
+              <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:3000,width:300,
+                background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:10,
+                boxShadow:"0 12px 32px rgba(0,0,0,0.25)",overflow:"hidden"}}>
+                <div style={{padding:"10px 12px",fontWeight:800,fontSize:12,color:"var(--gft-text)",
+                  borderBottom:"1px solid var(--gft-border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span>Próximas citas</span>
+                  <span onClick={()=>{setShowProx(false);setContentView("agenda");}}
+                    style={{fontSize:11,color:"var(--gft-accent)",cursor:"pointer"}}>Ver agenda ›</span>
+                </div>
+                {proximasCitas.length===0
+                  ? <div style={{padding:"14px 12px",fontSize:12,color:"var(--gft-text-muted)"}}>No hay citas próximas.</div>
+                  : <div style={{maxHeight:320,overflowY:"auto"}}>
+                      {proximasCitas.map(c=>{ const {fecha,hora}=isoAInputsHmo(c.inicio); const pac=pacById(c.pacienteId);
+                        const d=new Date(fecha+"T00:00:00");
+                        const dd=isNaN(d)?fecha:`${["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
+                        return (
+                          <div key={c.id} onClick={()=>{ if(pac) onVer(pac); setShowProx(false); }}
+                            style={{padding:"9px 12px",borderBottom:"1px solid var(--gft-border)",cursor:pac?"pointer":"default"}}>
+                            <div style={{fontSize:12,fontWeight:700,color:"var(--gft-text)"}}>{dd} · {hora}</div>
+                            <div style={{fontSize:11,color:"var(--gft-text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                              {c.pacienteNombre||pac?.nombre||"—"}{c.tipo?` · ${({seguimiento:"Seg.",primera_vez:"1ª vez"}[c.tipo]||"")}`:""}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>}
+              </div>
+            </>)}
           </div>
           {!esAsistente && <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>
             + Nuevo paciente
