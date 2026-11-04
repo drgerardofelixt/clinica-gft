@@ -4915,6 +4915,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
       peso:"", ca:"", ta:"", fc:"", fr:"", temp:"", spo2:"", glucosaCapilar:"",
       subjetivo:"", efectos:"Negados", respuesta:"Adecuada",
       plan:"", cambioDosis:"Continúa esquema actual", origenMed:"",
+      cobroMonto:"", cobroForma:"",
       medicamento:(p.ci&&p.ci.glp1)||"", dosis:"", proxCita:"", proxHora:"", proxDuracion:30,
       comp:{peso:"",grasa:"",musculo:"",agua:"",osea:"",visceral:"",bmr:"",edadMet:"",imc:""},
     };
@@ -5205,6 +5206,17 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
                   placeholder="Indicaciones específicas..."/>
               </div>
               <MicBtn onResult={t=>u("plan",(f.plan+" "+t).trim())}/>
+            </div>
+          </Sec>
+          <Sec title="Cobro de la consulta" icon="💲">
+            <Row>
+              <Inp label="Monto cobrado (MXN)" value={f.cobroMonto} onChange={v=>u("cobroMonto",v)} tipo="number"/>
+              <Sel label="Forma de pago" value={f.cobroForma} onChange={v=>u("cobroForma",v)}
+                opts={["","Efectivo","Tarjeta","Transferencia","Cortesía"]}/>
+              <div/>
+            </Row>
+            <div style={{fontSize:10.5,color:C.suave,marginTop:2}}>
+              Opcional. Si lo dejas vacío, la consulta queda como "sin cobro registrado" en el área de Cobros.
             </div>
           </Sec>
         </div>
@@ -6721,6 +6733,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
             <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setShowR(true)}>💊 Receta</button>
             <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setDoc({tipo:"progreso"})}>📊 Reporte</button>
             <button className="gft-action-btn" onClick={()=>setShowAgenda(true)}>📅 Agendar</button>
+            <button className="gft-action-btn" onClick={()=>enviarWA(p.telefono, `Hola ${(p.nombre||"").split(/\s+/)[0]||""}, soy el Dr. Gerardo Félix Tapia. Le marco por videollamada de WhatsApp para su consulta en línea. Quedo al pendiente.`)}>📹 Videollamada</button>
             <button className="gft-action-btn" onClick={()=>setShowL(true)}>🧪 Labs</button>
             <button className="gft-action-btn" onClick={()=>setShowLabs(true)}>📄 PDF labs</button>
             {proxCitaFecha&&(
@@ -10285,6 +10298,99 @@ const ReactivarView = ({ pacientes = [], citasV2 = [], onVer }) => {
   );
 };
 
+// Área de Cobros: agrega el cobro registrado en cada consulta (obesidad) por mes y forma de pago.
+const CobrosView = ({ pacientes = [], onVer }) => {
+  const money = (n)=>"$"+(Number(n)||0).toLocaleString("es-MX");
+  const hoy = new Date();
+  const mesActual = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,"0")}`;
+  const MESN=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  const items = [];
+  (pacientes||[]).forEach(p=>{
+    (p.consultas||[]).filter(c=>!c.esSoloCita).forEach(c=>{
+      const monto = parseFloat(c.cobroMonto);
+      items.push({ id:c.id, fecha:c.fecha||"", mes:(c.fecha||"").slice(0,7),
+        monto:isNaN(monto)?null:monto, forma:c.cobroForma||"", pac:p });
+    });
+  });
+  items.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  const delMes = items.filter(i=>i.mes===mesActual);
+  const cobradoMes = delMes.reduce((a,i)=>a+(i.monto||0),0);
+  const sinCobroMes = delMes.filter(i=>i.monto==null).length;
+  const conCobroMes = delMes.filter(i=>i.monto!=null).length;
+  const porForma = {};
+  delMes.forEach(i=>{ if(i.monto!=null){ const k=i.forma||"Sin especificar"; porForma[k]=(porForma[k]||0)+i.monto; } });
+  const meses=[]; for(let k=5;k>=0;k--){ const d=new Date(hoy.getFullYear(),hoy.getMonth()-k,1); meses.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`); }
+  const serie = meses.map(m=>({ m, label:MESN[parseInt(m.slice(5,7),10)-1],
+    total: items.filter(i=>i.mes===m).reduce((a,i)=>a+(i.monto||0),0) }));
+  const maxSerie = Math.max(1, ...serie.map(s=>s.total));
+  const card = (label,valor,color,sub)=>(
+    <div className="gft-card" style={{padding:"14px 16px"}}>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--gft-text-muted)",textTransform:"uppercase",letterSpacing:".04em"}}>{label}</div>
+      <div style={{fontSize:26,fontWeight:800,color,fontFamily:"var(--gft-font-data)",marginTop:4}}>{valor}</div>
+      {sub && <div style={{fontSize:11,color:"var(--gft-text-muted)",marginTop:2}}>{sub}</div>}
+    </div>
+  );
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16,paddingBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+        {card("Cobrado este mes", money(cobradoMes), "var(--gft-success-text)", `${conCobroMes} consulta(s) cobrada(s)`)}
+        {card("Sin cobro registrado", sinCobroMes, sinCobroMes>0?"#E8A33F":"var(--gft-text)", "consultas de este mes")}
+        {card("Consultas del mes", delMes.length, "var(--gft-accent)", "con y sin cobro")}
+      </div>
+
+      <div className="gft-card" style={{padding:"16px 18px"}}>
+        <div style={{fontWeight:800,fontSize:13,color:"var(--gft-text)",marginBottom:14}}>Cobrado por mes</div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:12,height:160}}>
+          {serie.map(s=>(
+            <div key={s.m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,height:"100%",justifyContent:"flex-end"}}>
+              <div style={{fontSize:10,fontWeight:700,color:"var(--gft-text-2)",fontFamily:"var(--gft-font-data)"}}>{s.total?money(s.total):""}</div>
+              <div title={money(s.total)} style={{width:"100%",maxWidth:46,borderRadius:"6px 6px 0 0",
+                background:s.m===mesActual?"var(--gft-accent)":"color-mix(in srgb, var(--gft-accent) 45%, transparent)",
+                height:`${Math.max(2,(s.total/maxSerie)*120)}px`,transition:"height .2s"}}/>
+              <div style={{fontSize:11,color:"var(--gft-text-muted)",textTransform:"capitalize"}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {Object.keys(porForma).length>0 && (
+        <div className="gft-card" style={{padding:"14px 18px"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"var(--gft-text)",marginBottom:10}}>Por forma de pago (este mes)</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+            {Object.entries(porForma).map(([k,v])=>(
+              <div key={k} style={{background:"var(--gft-surface2)",borderRadius:8,padding:"8px 12px",fontSize:12}}>
+                <span style={{color:"var(--gft-text-muted)"}}>{k}: </span>
+                <b style={{color:"var(--gft-text)",fontFamily:"var(--gft-font-data)"}}>{money(v)}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="gft-card" style={{padding:"8px 0"}}>
+        <div style={{fontWeight:800,fontSize:13,color:"var(--gft-text)",padding:"8px 18px 10px"}}>Consultas recientes</div>
+        <div style={{maxHeight:420,overflowY:"auto"}}>
+          {items.slice(0,40).map(i=>(
+            <div key={i.id} onClick={()=>onVer&&onVer(i.pac)}
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,
+                padding:"9px 18px",borderTop:"1px solid var(--gft-border)",cursor:"pointer"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.pac.nombre}</div>
+                <div style={{fontSize:11,color:"var(--gft-text-muted)"}}>{i.fecha?i.fecha.split("-").reverse().join("/"):"—"}{i.forma?` · ${i.forma}`:""}</div>
+              </div>
+              <div style={{fontFamily:"var(--gft-font-data)",fontWeight:800,fontSize:14,whiteSpace:"nowrap",
+                color:i.monto!=null?"var(--gft-success-text)":"#E8A33F"}}>
+                {i.monto!=null?money(i.monto):"sin cobro"}
+              </div>
+            </div>
+          ))}
+          {items.length===0 && <div style={{padding:"18px",textAlign:"center",fontSize:13,color:"var(--gft-text-muted)"}}>Aún no hay consultas registradas.</div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrdenRapida, onAgendar, onNuevoPaciente, gcalAuthed, gcalEventos, onGcalConnect, onGcalDisconnect, onCancelarCita, onImportarGCal, onAjustes, onRecetaRapida, onLabsRapida, onMoverCita, firmaB64, onSaveFirma, onMigrarCitas}) => {
   const pedirWA = useWA();  // envío WhatsApp con fallback a modal si el paciente no tiene teléfono
   const [mesOffset, setMesOffset] = useState(0);
@@ -10567,6 +10673,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                       contentView==="calendario"?"Agenda":
                       contentView==="pacientes"?"Pacientes":
                       contentView==="reactivar"?"Reactivar pacientes":
+                      contentView==="cobros"?"Cobros":
                       contentView==="citas"?"Modificar cita":
                       contentView==="admincitas"?"Administrar citas":
                       contentView==="ajustes"?"Ajustes":
@@ -10632,6 +10739,12 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             <button className={"gft-sidebar__item"+(contentView==="reactivar"?" gft-sidebar__item--active":"")}
               onClick={()=>setContentView("reactivar")}>
               <span className="gft-sidebar__icon">💬</span>Reactivar pacientes
+            </button>
+          )}
+          {!esAsistente && (
+            <button className={"gft-sidebar__item"+(contentView==="cobros"?" gft-sidebar__item--active":"")}
+              onClick={()=>setContentView("cobros")}>
+              <span className="gft-sidebar__icon">💲</span>Cobros
             </button>
           )}
           <button className="gft-sidebar__item" onClick={onOrdenRapida}>
@@ -11178,6 +11291,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
           )}
           {contentView==="pacientes" && !esAsistente && <PacientesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
           {contentView==="reactivar" && !esAsistente && <ReactivarView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>}
+          {contentView==="cobros" && !esAsistente && <CobrosView pacientes={pacientes} onVer={onVer}/>}
 
           {/* ── VISTA AJUSTES (5d) ─────────────────────────────── */}
           {contentView==="ajustes" && !esAsistente && <AjustesView pacientes={pacientes} firmaB64={firmaB64} onSaveFirma={onSaveFirma}
