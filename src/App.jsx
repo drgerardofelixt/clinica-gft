@@ -2485,14 +2485,14 @@ const ModalComparador = ({p, onClose}) => {
 };
 
 // ── DOCUMENTOS CLÍNICOS ────────────────────────────────────────
-const DocHC = ({p}) => {
+const DocHC = ({p, firmaB64}) => {
   const ul = [...(p.consultas||[])].filter(c=>!c.esSoloCita).sort(porFechaClinica);
   const uc = ul[ul.length-1]||{};
   const hf=p.hf||{}, ant=p.ant||{}, meta=p.meta||{}, ci=p.ci||{}, ef=p.ef||{}, dx=p.dx||{};
   // IMC: la consulta no guarda `imc` en raíz (vive en comp.imc, de la báscula); si no, se calcula de peso/talla.
   const imc = (uc.comp&&uc.comp.imc) || calcIMC(uc.peso, p.talla) || "";
   // Signos vitales: de la consulta y, si no, del expediente (editar el expediente no re-sincroniza la consulta).
-  const ca=uc.ca||ef.ca, ta=uc.ta||ci.ta, fc=uc.fc||ci.fc, spo2=uc.spo2||ef.spo2;
+  const ca=uc.ca||ef.ca, ta=uc.ta||ci.ta, fc=uc.fc||ci.fc, fr=uc.fr||ef.fr, spo2=uc.spo2||ef.spo2;
   const temp=uc.temp||ef.temp, gluc=uc.glucosaCapilar||ef.glucosaCapilar;
   const tit = {fontWeight:700,color:C.azul,marginBottom:3,marginTop:2};
   return (
@@ -2500,17 +2500,24 @@ const DocHC = ({p}) => {
       padding:"40px 48px", background:"white", display:"flex", flexDirection:"column",
       fontFamily:"Arial,sans-serif",fontSize:11,color:C.texto,lineHeight:1.5}}>
       <LogoDoc conCedula={true}/>
-      <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:10}}>
+      <div style={{textAlign:"center",fontWeight:800,fontSize:14,color:C.azul,marginBottom:3}}>
         HISTORIA CLÍNICA
       </div>
+      {uc.fecha && (
+        <div style={{textAlign:"center",fontSize:10,color:"#64748B",marginBottom:8}}>
+          Fecha: {fmtFecha(uc.fecha)}{uc.hora?` · ${uc.hora}`:""}
+        </div>
+      )}
       <G4>
         <CF l="Nombre" v={p.nombre} span={2}/>
         <CF l="Edad" v={p.edad?p.edad+" años":""}/>
         <CF l="Sexo" v={p.sexo}/>
+        <CF l="F. Nacimiento" v={p.fechaNacimiento?fmtFecha(p.fechaNacimiento):""}/>
         <CF l="Peso" v={uc.peso?uc.peso+" kg":""}/>
         <CF l="Talla" v={p.talla?p.talla+" cm":""}/>
         <CF l="IMC" v={imc}/>
         <CF l="Teléfono" v={p.telefono}/>
+        <CF l="Domicilio" v={p.domicilio} span={3}/>
       </G4>
       <hr style={{border:"1px solid "+C.grisMedio,margin:"4px 0 8px"}}/>
       <div style={tit}>Motivo de consulta</div>
@@ -2548,6 +2555,7 @@ const DocHC = ({p}) => {
         <CF l="Circ. Abd." v={ca?ca+" cm":""}/>
         <CF l="TA" v={ta}/>
         <CF l="FC" v={fc}/>
+        <CF l="FR" v={fr}/>
         <CF l="SpO₂" v={spo2}/>
         <CF l="Temperatura" v={temp?temp+" °C":""}/>
         <CF l="Glucosa capilar" v={gluc}/>
@@ -2566,7 +2574,7 @@ const DocHC = ({p}) => {
       <div>{p.pronostico || "—"}</div>
 
       <div style={{marginTop:"auto"}}>
-        <Firma/>
+        <Firma firmaB64={firmaB64}/>
         <FooterDoc/>
       </div>
     </div>
@@ -2599,12 +2607,13 @@ const DocExpediente = ({p}) => {
             padding:"3px 10px",borderRadius:12}}>📅 {fmtFecha(c.fecha)}{c.hora?" · "+c.hora:""}</div>
           {c.medicamento && <div style={{fontSize:10,color:C.suave}}>💊 {c.medicamento}{c.dosis?" · "+c.dosis:""}</div>}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:6}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}}>
           <CF l="Peso" v={c.peso?c.peso+" kg":"—"}/>
           <CF l="IMC" v={imc}/>
           <CF l="Circ. Abd." v={c.ca?c.ca+" cm":"—"}/>
           <CF l="TA" v={c.ta||"—"}/>
           <CF l="FC" v={c.fc||"—"}/>
+          <CF l="FR" v={c.fr||"—"}/>
           <CF l="SpO₂" v={c.spo2||"—"}/>
         </div>
         <div style={{fontSize:10.5,lineHeight:1.5}}>
@@ -2658,7 +2667,7 @@ const DocExpediente = ({p}) => {
   );
 };
 
-const DocNota = ({p, consulta={}}) => {
+const DocNota = ({p, consulta={}, firmaB64}) => {
   const c = consulta;
   // IMC: la consulta no guarda `imc` en raíz (vive en comp.imc); si no, se calcula de peso/talla.
   const imc = (c.comp&&c.comp.imc) || calcIMC(c.peso, p.talla) || "";
@@ -2697,17 +2706,19 @@ const DocNota = ({p, consulta={}}) => {
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
         <div style={{fontWeight:800,fontSize:14,color:C.azul,letterSpacing:0.3}}>NOTA DE EVOLUCIÓN</div>
-        <div style={{fontSize:11,color:"#64748B"}}>Fecha: <b style={{color:C.texto}}>{fmtFecha(c.fecha)}</b></div>
+        <div style={{fontSize:11,color:"#64748B"}}>Fecha: <b style={{color:C.texto}}>{fmtFecha(c.fecha)}{c.hora?` · ${c.hora}`:""}</b></div>
       </div>
 
       {/* Signos vitales — grilla con fondo de campo */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
         <V l="Peso" v={c.peso?c.peso+" kg":""}/>
         <V l="IMC" v={imc}/>
         <V l="Circ. Abd." v={c.ca?c.ca+" cm":""}/>
         <V l="TA" v={c.ta}/>
         <V l="FC" v={c.fc}/>
+        <V l="FR" v={c.fr}/>
         <V l="SpO₂" v={c.spo2}/>
+        <V l="Temp." v={c.temp?c.temp+" °C":""}/>
       </div>
 
       {/* Separador de marca navy→teal (#1D9E75) */}
@@ -2723,7 +2734,7 @@ const DocNota = ({p, consulta={}}) => {
       <div>{c.plan || "—"}</div>
 
       <div style={{marginTop:"auto"}}>
-        <Firma/>
+        <Firma firmaB64={firmaB64}/>
         <FooterDoc/>
         <OlasDoc colores={["#1B3F8B","#1D9E75","#1D9E75"]} opac={[0.35,0.22,0.5]}/>
       </div>
@@ -4811,7 +4822,7 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
   const [f, setF] = useState(() => {
     const base = {
       id:Date.now().toString(), fecha:hoy(), hora:ahora(),
-      peso:"", ca:"", ta:"", fc:"", spo2:"", glucosaCapilar:"",
+      peso:"", ca:"", ta:"", fc:"", fr:"", temp:"", spo2:"", glucosaCapilar:"",
       subjetivo:"", efectos:"Negados", respuesta:"Adecuada",
       plan:"", cambioDosis:"Continúa esquema actual", origenMed:"",
       medicamento:(p.ci&&p.ci.glp1)||"", dosis:"", proxCita:"", proxHora:"", proxDuracion:30,
@@ -4969,6 +4980,16 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               <Inp label="Circ. Abdominal (cm)" value={f.ca} onChange={v=>u("ca",v)} tipo="number"/>
               <Inp label="TA (mmHg)" value={f.ta} onChange={v=>u("ta",v)}/>
               <Inp label="FC (lpm)" value={f.fc} onChange={v=>u("fc",v)} tipo="number"/>
+            </Row>
+            <Row>
+              <Inp label="FR (rpm)" value={f.fr} onChange={v=>u("fr",v)} tipo="number"/>
+              <Inp label="Temp (°C)" value={f.temp} onChange={v=>u("temp",v)} tipo="number"/>
+              <Inp label="SpO₂ (%)" value={f.spo2} onChange={v=>u("spo2",v)} tipo="number"/>
+            </Row>
+            <Row>
+              <Inp label="Glucosa capilar (mg/dL)" value={f.glucosaCapilar} onChange={v=>u("glucosaCapilar",v)} tipo="number"/>
+              <div/>
+              <div/>
             </Row>
             {perd && (
               <div style={{padding:"8px 14px",background:C.verdePale,borderRadius:8,
@@ -5419,7 +5440,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
       fecha: (compInicial && compInicial.fecha) || f.fechaInicio || hoy(),
       hora: (compInicial && compInicial.hora) || f.horaRegistro || ahora(),
       peso: (compInicial && compInicial.peso) || "",
-      ca: f.ef.ca||"", ta: f.ci.ta||"", fc: f.ci.fc||"", spo2: f.ef.spo2||"",
+      ca: f.ef.ca||"", ta: f.ci.ta||"", fc: f.ci.fc||"", fr: f.ef.fr||"", temp: f.ef.temp||"", spo2: f.ef.spo2||"",
       glucosaCapilar: f.ef.glucosaCapilar||"",
       subjetivo: f.motivoConsulta||"", efectos: "", respuesta: "",
       plan: "", cambioDosis: "", origenMed: "",   // el Plan real se captura en ModalConsulta; el Pronóstico vive en p.pronostico
@@ -5643,7 +5664,7 @@ const ModalPaciente = ({pac, onClose, onSave}) => {
                 <Row>
                   <Inp label="SpO2 (%)" value={f.ef.spo2} onChange={v=>s("ef.spo2",v)} tipo="number"/>
                   <Inp label="Glucosa capilar" value={f.ef.glucosaCapilar} onChange={v=>s("ef.glucosaCapilar",v)} tipo="number"/>
-                  <div/>
+                  <Inp label="FR (rpm)" value={f.ef.fr} onChange={v=>s("ef.fr",v)} tipo="number"/>
                 </Row>
               </Sec>
               <Sec title="Medicamento GLP-1" icon="💉">
@@ -7240,9 +7261,9 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
               ✍️ Incluir firma digital
             </label>
           ) : null}>
-          {doc.tipo==="hc" && <DocHC p={p}/>}
+          {doc.tipo==="hc" && <DocHC p={p} firmaB64={firmaB64||IMG_FIRMA}/>}
           {doc.tipo==="expediente" && <DocExpediente p={p}/>}
-          {doc.tipo==="nota" && <DocNota p={p} consulta={doc.consulta}/>}
+          {doc.tipo==="nota" && <DocNota p={p} consulta={doc.consulta} firmaB64={firmaB64||IMG_FIRMA}/>}
           {doc.tipo==="receta" && <DocReceta p={p} rec={doc.receta} firmaB64={firmaB64}/>}
           {doc.tipo==="labs" && <DocLabs p={p} labs={doc.labs} firmaB64={conFirmaLabs?firmaB64:null}/>}
           {doc.tipo==="progreso" && <DocProgreso p={p}/>}
