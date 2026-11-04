@@ -110,7 +110,7 @@ export const parsearBascula = async (file) => {
 
   if (!response.ok) throw new Error(`API error ${response.status}`);
   const apiData = await response.json();
-  const raw = apiData.content[0].text.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+  const raw = ((apiData.content || []).find(b => b.type === 'text')?.text || '').replace(/^```json\s*/, '').replace(/\s*```$/, '');
   try {
     return JSON.parse(raw);
   } catch {

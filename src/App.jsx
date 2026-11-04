@@ -4953,6 +4953,29 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
     ? "No registrado · captúralo en Editar paciente"
     : (_af.hace ? (_nivelLabel[_af.nivel] || "Sí (nivel sin especificar)") : "No hace ejercicio");
 
+  // Arma el texto del OBJETIVO (SOAP) desde la medición Tanita, en el orden del flujo de consulta:
+  // peso y su cambio vs la consulta previa, circunferencia abdominal, y composición corporal.
+  const objetivoDesdeTanita = (d, ca) => {
+    const partes = [];
+    if (d.peso!=null && d.peso!=="") {
+      let s = `Peso ${d.peso} kg`;
+      const pp = parseFloat(prev?.peso), pn = parseFloat(d.peso);
+      if (!isNaN(pp) && !isNaN(pn)) {
+        const diff = Math.round((pn-pp)*10)/10;
+        if (diff<0) s += ` (descenso de ${Math.abs(diff)} kg respecto a la consulta previa)`;
+        else if (diff>0) s += ` (aumento de ${diff} kg respecto a la consulta previa)`;
+      }
+      partes.push(s);
+    }
+    if (ca) partes.push(`circunferencia abdominal ${ca} cm`);
+    if (d.imc!=null && d.imc!=="") partes.push(`IMC ${d.imc}`);
+    if (d.grasaCorporal!=null && d.grasaCorporal!=="") partes.push(`grasa corporal ${d.grasaCorporal} %`);
+    if (d.masaMuscular!=null && d.masaMuscular!=="") partes.push(`masa muscular ${d.masaMuscular} kg`);
+    if (d.grasaVisceral!=null && d.grasaVisceral!=="") partes.push(`grasa visceral ${d.grasaVisceral}`);
+    if (d.aguaCorporal!=null && d.aguaCorporal!=="") partes.push(`agua corporal ${d.aguaCorporal} %`);
+    return partes.length ? partes.join(". ")+"." : "";
+  };
+
   const applyTanita = (d) => {
     // Guarda de verificación: si el PDF trae nombre y NO coincide (tras normalizar) con el
     // expediente abierto, avisar (evita archivar la báscula de otra persona — caso Carmen/Manuel).
@@ -4967,6 +4990,8 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
     setF(x=>({...x,
       fecha:toISODate(d.fecha)||x.fecha, hora:d.hora||x.hora,
       peso:d.peso!=null?String(d.peso):x.peso,
+      // Autollena el Objetivo con la medición SOLO si el médico aún no escribió nada ahí.
+      efectos: (x.efectos && x.efectos.trim()) ? x.efectos : objetivoDesdeTanita(d, x.ca),
       comp:{
         peso:s(d.peso), grasa:s(d.grasaCorporal),
         musculo:s(d.masaMuscular), agua:s(d.aguaCorporal),
