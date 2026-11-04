@@ -1495,7 +1495,15 @@ const CIE10 = [
 const AutocompleteCIE10 = ({value, onChange}) => {
   const [busq, setBusq] = useState(value || "");
   const [mostrar, setMostrar] = useState(false);
+  const [full, setFull] = useState(null);   // catálogo CIE-10 completo (carga diferida)
   const ref = useRef(null);
+
+  // Carga el catálogo completo (~11k códigos) la primera vez que se escribe algo buscable.
+  useEffect(()=>{
+    if (!full && busq.trim().length>=2) {
+      import("./data/cie10-full.js").then(m=>setFull(m.CIE10_FULL)).catch(()=>{});
+    }
+  },[busq, full]);
 
   useEffect(()=>{ setBusq(value||""); },[value]);
 
@@ -1509,12 +1517,21 @@ const AutocompleteCIE10 = ({value, onChange}) => {
     };
   },[]);
 
-  const filtrados = busq.trim().length >= 2
-    ? CIE10.filter(c=>{
-        const q = busq.toLowerCase();
-        return c.c.toLowerCase().includes(q) || c.d.toLowerCase().includes(q);
-      }).slice(0,8)
-    : [];
+  // Busca primero en los más usados (CIE10 curado) y luego en el catálogo completo; dedup por código.
+  const filtrados = (()=>{
+    const q = busq.trim().toLowerCase();
+    if (q.length < 2) return [];
+    const pool = full ? CIE10.concat(full) : CIE10;
+    const res = []; const vistos = new Set();
+    for (const c of pool){
+      if (c.c.toLowerCase().includes(q) || c.d.toLowerCase().includes(q)){
+        if (vistos.has(c.c)) continue; vistos.add(c.c);
+        res.push(c);
+        if (res.length >= 12) break;
+      }
+    }
+    return res;
+  })();
 
   const seleccionar = (c) => {
     const txt = c.c + " - " + c.d;
