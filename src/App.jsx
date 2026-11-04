@@ -2558,6 +2558,7 @@ const DocHC = ({p, firmaB64}) => {
       )}
       <G4>
         <CF l="Nombre" v={p.nombre} span={2}/>
+        <CF l="Expediente" v={(p.id||"").slice(-6).toUpperCase()}/>
         <CF l="Edad" v={p.edad?p.edad+" años":""}/>
         <CF l="Sexo" v={p.sexo}/>
         <CF l="F. Nacimiento" v={p.fechaNacimiento?fmtFecha(p.fechaNacimiento):""}/>
@@ -2748,7 +2749,7 @@ const DocNota = ({p, consulta={}, firmaB64}) => {
         borderRadius:10,padding:"14px 18px",marginBottom:14}}>
         <div style={{fontSize:19,fontWeight:800,letterSpacing:0.2}}>{p.nombre}</div>
         <div style={{fontSize:11,opacity:0.92,marginTop:3}}>
-          {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, trat||null].filter(Boolean).join("   ·   ")}
+          {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, `Exp ${(p.id||"").slice(-6).toUpperCase()}`, trat||null].filter(Boolean).join("   ·   ")}
         </div>
       </div>
 
@@ -2827,7 +2828,7 @@ const DocReceta = ({p, rec={}, firmaB64}) => {
         borderRadius:10,padding:"14px 18px",marginBottom:14}}>
         <div style={{fontSize:19,fontWeight:800,letterSpacing:0.2}}>{p.nombre}</div>
         <div style={{fontSize:11,opacity:0.92,marginTop:3}}>
-          {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, trat||null].filter(Boolean).join("   ·   ")}
+          {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, `Exp ${(p.id||"").slice(-6).toUpperCase()}`, trat||null].filter(Boolean).join("   ·   ")}
         </div>
       </div>
 
@@ -2929,7 +2930,7 @@ const DocLabs = ({p, labs={}, firmaB64}) => {
       borderRadius:10,padding:"14px 18px",marginBottom:14}}>
       <div style={{fontSize:19,fontWeight:800,letterSpacing:0.2}}>{p.nombre}</div>
       <div style={{fontSize:11,opacity:0.92,marginTop:3}}>
-        {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, trat||null].filter(Boolean).join("   ·   ")}
+        {[p.edad?p.edad+" años":null, p.sexo, p.talla?p.talla+" cm":null, `Exp ${(p.id||"").slice(-6).toUpperCase()}`, trat||null].filter(Boolean).join("   ·   ")}
       </div>
     </div>
 
@@ -10116,6 +10117,25 @@ const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
     const tipoCol = f.labsPend ? AMBER : (f.prox.tipo==="primera_vez"?"var(--gft-success-text)":"var(--gft-text-muted)");
     return { l1:`${cuando} · ${hora}`, l1col:"var(--gft-text)", l2:tipoTxt, l2col:tipoCol };
   };
+  // Exporta los pacientes visibles a CSV (se abre en Excel). Columnas seguras, sin datos clínicos.
+  const exportarCSV = () => {
+    const esc = v => { const s = v==null?"":String(v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+    const header = ["Expediente","Nombre","Edad","Sexo","Telefono","Email","Tratamiento","Peso (kg)","IMC","Proxima cita"];
+    const rows = visibles.map(f=>{
+      const exp = (f.p.id||"").slice(-6).toUpperCase();
+      let prox = "";
+      if (f.prox) { const {fecha,hora}=isoAInputsHmo(f.prox.inicio); prox = `${fecha} ${hora}`; }
+      return [exp, f.p.nombre, f.p.edad, f.p.sexo, f.p.telefono, f.p.email, f.medNom, f.peso??"", f.imc??"", prox].map(esc).join(",");
+    });
+    const csv = "﻿"+[header.join(","), ...rows].join("\n");  // BOM para que Excel respete acentos
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `pacientes_${hoyStr}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  };
+
   return (
     <div style={{display:"flex",flexDirection:"column",minHeight:0}}>
       {/* Búsqueda de la lista (filtra la tabla) */}
@@ -10146,6 +10166,12 @@ const PacientesView = ({pacientes=[], citasV2=[], onVer}) => {
             {ORDENES.map(([v,l])=><option key={v} value={v}>{l}</option>)}
           </select>
         </span>
+      </div>
+      {/* Exportar a CSV (Excel) */}
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <Btn onClick={exportarCSV} outline color={C.azul} size="sm" icon="📥">
+          Exportar a Excel ({visibles.length})
+        </Btn>
       </div>
       {/* Encabezado de tabla */}
       <div className="gft-pac-grid" style={{padding:"0 14px 8px",fontFamily:"var(--gft-font-data)",fontSize:10,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",color:"var(--gft-text-muted)"}}>
