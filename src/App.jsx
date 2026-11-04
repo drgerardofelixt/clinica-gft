@@ -5134,8 +5134,20 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               )}
             </div>
           )}
-          <Sec title="Datos de báscula" icon="⚖️">
-            <TanitaUp nombre={p.nombre} talla={p.talla} onApply={applyTanita}/>
+          <Sec title="Nota SOAP" icon="📝">
+            <div style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:8}}>
+              <div style={{flex:1}}>
+                <Txt label="S — Lo que refiere el paciente" value={f.subjetivo}
+                  onChange={v=>u("subjetivo",v)} rows={2}
+                  placeholder="Síntomas, cómo se ha sentido esta semana..."/>
+              </div>
+              <MicBtn onResult={t=>u("subjetivo",(f.subjetivo+" "+t).trim())}/>
+            </div>
+            <Txt label="O — Hallazgos (peso, cintura, composición, tolerancia)" value={f.efectos}
+              onChange={v=>u("efectos",v)} rows={2}
+              placeholder="Peso y cambio, circunferencia abdominal, composición, efectos/tolerancia..."/>
+            <Txt label="A — Análisis / respuesta" value={f.respuesta} onChange={v=>u("respuesta",v)} rows={2}
+              placeholder="Evolución y respuesta al tratamiento..."/>
           </Sec>
           <Sec title="Signos vitales" icon="📊">
             <Row>
@@ -5165,6 +5177,9 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               </div>
             )}
           </Sec>
+          <Sec title="Datos de báscula" icon="⚖️">
+            <TanitaUp nombre={p.nombre} talla={p.talla} onApply={applyTanita}/>
+          </Sec>
           <Sec title="Composición corporal" icon="🔬" badge="Tanita RD-545">
             <div style={{background:C.gris,borderRadius:8,padding:12,
               display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
@@ -5184,28 +5199,6 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               ))}
             </div>
           </Sec>
-          <Sec title="Nota SOAP" icon="📝">
-            <div style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:8}}>
-              <div style={{flex:1}}>
-                <Txt label="S — Lo que refiere el paciente" value={f.subjetivo}
-                  onChange={v=>u("subjetivo",v)} rows={2}
-                  placeholder="Síntomas, cómo se ha sentido esta semana..."/>
-              </div>
-              <MicBtn onResult={t=>u("subjetivo",(f.subjetivo+" "+t).trim())}/>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
-              <Btn onClick={redactarIA} color={C.azul} size="sm" disabled={iaLoading}>
-                {iaLoading ? "Redactando…" : "Redactar con IA"}
-              </Btn>
-              <span style={{fontSize:11,color:C.suave}}>Expande tu nota en corto (S y Plan) a SOAP. Revísala antes de guardar.</span>
-            </div>
-            {iaErr && <div style={{fontSize:11,color:C.rojo,marginBottom:8}}>{iaErr}</div>}
-            <Txt label="O — Hallazgos (peso, cintura, composición, tolerancia)" value={f.efectos}
-              onChange={v=>u("efectos",v)} rows={2}
-              placeholder="Peso y cambio, circunferencia abdominal, composición, efectos/tolerancia..."/>
-            <Txt label="A — Análisis / respuesta" value={f.respuesta} onChange={v=>u("respuesta",v)} rows={2}
-              placeholder="Evolución y respuesta al tratamiento..."/>
-          </Sec>
           <Sec title="Plan" icon="📋">
             <Row>
               <Sel label="Medicamento" value={f.medicamento} onChange={v=>u("medicamento",v)} opts={["",...GLPS]}/>
@@ -5224,6 +5217,15 @@ const ModalConsulta = ({p, onClose, onSave, consultaExistente=null, modoEdicion=
               </div>
               <MicBtn onResult={t=>u("plan",(f.plan+" "+t).trim())}/>
             </div>
+          </Sec>
+          <Sec title="Redactar nota con IA" icon="✨">
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <Btn onClick={redactarIA} color={C.azul} size="sm" disabled={iaLoading}>
+                {iaLoading ? "Redactando…" : "Redactar con IA"}
+              </Btn>
+              <span style={{fontSize:11,color:C.suave}}>Toma todo lo capturado arriba (tu nota en corto, signos vitales, composición y plan) y arma la nota SOAP completa. Revísala antes de guardar.</span>
+            </div>
+            {iaErr && <div style={{fontSize:11,color:C.rojo,marginTop:8}}>{iaErr}</div>}
           </Sec>
           <Sec title="Cobro de la consulta" icon="💲">
             <Row>
