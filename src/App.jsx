@@ -1805,7 +1805,7 @@ const parseLabs = async (texto) => {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-haiku-5-5",
       max_tokens: 1000,
       messages: [{
         role: "user",
@@ -1940,7 +1940,7 @@ ${taquigrafia}`;
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-haiku-5-5",
       max_tokens: 1200,
       messages: [{ role: "user", content: prompt }],
     }),
@@ -2022,7 +2022,7 @@ const parseLabsImagen = async (archivos) => {
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
-      model:"claude-haiku-4-5-20251001",
+      model:"claude-haiku-5-5",
       max_tokens:2000,
       system:"Eres un asistente médico especializado en leer resultados de laboratorio clínico de México. Tienes experiencia con todos los laboratorios mexicanos (Lab San José, Chopo, Médica Sur, Salud Digna, IMSS, ISSSTE, Christus Muguerza, Star Médica, laboratorios privados) y cualquier formato: tablas con columnas Prueba/Resultado/Unidades/Referencia, formatos sin tabla, texto plano, abreviaturas en inglés o español, valores con flechas ↑↓, múltiples páginas, fotos tomadas con iPhone. Extrae TODOS los valores numéricos con máxima precisión. Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.",
       messages:[{
