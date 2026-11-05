@@ -11814,7 +11814,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
           pacientes={pacientes}
           onClose={()=>setCitaEditar(null)}
           onSaved={()=>{ setCitaEditar(null); recargarCitas(); }}
-          onBorrar={()=>borrarCitaV2(citaEditar)}
+          onBorrar={esAsistente ? undefined : ()=>borrarCitaV2(citaEditar)}
         />
       )}
 
