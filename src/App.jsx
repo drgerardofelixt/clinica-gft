@@ -1823,7 +1823,10 @@ const parseLabs = async (texto) => {
     },
     body: JSON.stringify({
       model: "claude-haiku-5-5",
-      max_tokens: 1000,
+      // 4000: el JSON de ~50 analitos + el thinking adaptativo de Haiku no cabían en 1000
+      // (se cortaba a la mitad en labs de 2+ páginas y fallaba el JSON.parse). Los tokens
+      // no usados no se cobran; esto es solo un techo seguro.
+      max_tokens: 4000,
       messages: [{
         role: "user",
         content: `Eres un parser de resultados de laboratorio clínico.
@@ -1965,7 +1968,7 @@ ${taquigrafia}`;
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "claude-haiku-5-5",
-      max_tokens: 1200,
+      max_tokens: 2500,   // nota SOAP (4 campos) + thinking: 1200 se quedaba corto
       messages: [{ role: "user", content: prompt }],
     }),
   });
@@ -2047,7 +2050,7 @@ const parseLabsImagen = async (archivos) => {
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
       model:"claude-haiku-5-5",
-      max_tokens:2000,
+      max_tokens:4000,   // fotos de labs grandes/multipágina + thinking no cabían en 2000
       system:"Eres un asistente médico especializado en leer resultados de laboratorio clínico de México. Tienes experiencia con todos los laboratorios mexicanos (Lab San José, Chopo, Médica Sur, Salud Digna, IMSS, ISSSTE, Christus Muguerza, Star Médica, laboratorios privados) y cualquier formato: tablas con columnas Prueba/Resultado/Unidades/Referencia, formatos sin tabla, texto plano, abreviaturas en inglés o español, valores con flechas ↑↓, múltiples páginas, fotos tomadas con iPhone. Extrae TODOS los valores numéricos con máxima precisión. Responde ÚNICAMENTE con JSON válido, sin texto adicional, sin markdown.",
       messages:[{
         role:"user",

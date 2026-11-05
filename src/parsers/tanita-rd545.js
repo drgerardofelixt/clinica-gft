@@ -103,7 +103,9 @@ export const parsearBascula = async (file) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-opus-5-5',
-      max_tokens: 4096,
+      // 8000: Opus con thinking adaptativo puede razonar largo sobre una báscula con datos
+      // segmentales; 4096 arriesgaba cortar el JSON. Techo seguro (lo no usado no se cobra).
+      max_tokens: 8000,
       messages: [{ role: 'user', content: [mediaBlock, { type: 'text', text: PROMPT }] }]
     })
   });
