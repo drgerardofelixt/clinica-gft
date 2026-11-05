@@ -151,7 +151,7 @@ const CITA_FIELD_MAP = {
   origen: 'origen',
   origenUltimoCambio: 'origen_ultimo_cambio', tituloGenerado: 'titulo_generado',
   pendienteSincronizar: 'pendiente_sincronizar',
-  area: 'area', modalidad: 'modalidad',
+  area: 'area', modalidad: 'modalidad', procedimiento: 'procedimiento',
 }
 
 const citaToRow = (c) => ({
@@ -175,6 +175,7 @@ const citaToRow = (c) => ({
   pendiente_sincronizar: !!c.pendienteSincronizar,
   area: c.area || null,              // 'obesidad' | 'estetica'
   modalidad: c.modalidad || null,    // 'presencial' | 'linea'
+  procedimiento: c.procedimiento || null,  // nota libre: procedimiento estético solicitado
 })
 
 const rowToCita = (r) => ({
@@ -198,6 +199,7 @@ const rowToCita = (r) => ({
   pendienteSincronizar: !!r.pendiente_sincronizar,
   area: r.area || null,
   modalidad: r.modalidad || null,
+  procedimiento: r.procedimiento || null,
   creadoEn: r.creado_en || null,
 })
 

@@ -723,7 +723,7 @@ const buildGCalTitulo = (pac, tipoCita) => {
 
 // ── AGENDA v2 — Modelo de cita + identidad única ─────────────────────────────
 // FASE A: solo define el modelo y los helpers. La UI (ModalAgenda/Calendario) se migra en Fase D.
-const TIPOS_CITA_V2 = ["primera_vez","seguimiento"];
+const TIPOS_CITA_V2 = ["primera_vez","seguimiento","procedimiento"];
 const ESTADOS_CITA_V2 = ["agendada","confirmada","cancelada","completada"];
 
 // Calcula el fin (ISO local naive YYYY-MM-DDTHH:MM:00) sumando la duración al inicio.
@@ -742,7 +742,7 @@ const generarTituloCita = (cita) => {
   if (!cita) return "";
   const ordinal = (n) => { const x=parseInt(n); if(!x) return null;
     return x===1?"1ra":x===2?"2da":x===3?"3ra":x===4?"4ta":x===5?"5ta":x+"a"; };
-  const tipoAbrev = { primera_vez:"PRIM", seguimiento:"SEG" };
+  const tipoAbrev = { primera_vez:"PRIM", seguimiento:"SEG", procedimiento:"PROC" };
   const med = cita.medicamento ? [cita.medicamento, cita.dosis].filter(Boolean).join(" ") : null;
   return [
     cita.pacienteNombre || null,
@@ -756,7 +756,7 @@ const generarTituloCita = (cita) => {
 // Construye una cita v2 con la forma objetivo (sin googleEventId aún).
 const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=null,
   pacienteNombre="", tipo="seguimiento", medicamento=null, dosis=null, origen=null, numeroVisita=null,
-  fecha, hora, estado="agendada", origenUltimoCambio="app", area=null, modalidad=null } = {}) => {
+  fecha, hora, estado="agendada", origenUltimoCambio="app", area=null, modalidad=null, procedimiento=null } = {}) => {
   const dur = tipo === "primera_vez" ? 60 : 30;
   const cita = {
     id: id || crypto.randomUUID(),
@@ -779,6 +779,7 @@ const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=n
     tituloGenerado: "",
     area: area || null,            // 'obesidad' | 'estetica'
     modalidad: modalidad || null,  // 'presencial' | 'linea'
+    procedimiento: procedimiento || null,  // nota libre (estética): procedimiento solicitado
   };
   cita.tituloGenerado = generarTituloCita(cita);
   return cita;
@@ -8135,7 +8136,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
     const tint = `color-mix(in srgb, ${e.color} 16%, transparent)`;
     if (compact) {  // vista mes: 1 línea compacta
       return (
-        <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={pend?`${e.hora} · ${e.nombre} — sin marcar`:`${e.hora} · ${e.nombre}`}
+        <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}${e.cita?.procedimiento?` — ${e.cita.procedimiento}`:""}${pend?" — sin marcar":""}`}
           style={{background:pend?`color-mix(in srgb, ${AMBER_WARN} 14%, transparent)`:tint,
             borderLeft:`3px solid ${pend?AMBER_WARN:e.color}`, borderRadius:5, padding:"1px 5px", margin:"1px 0",
             cursor:"pointer", fontSize:9, color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
@@ -8144,7 +8145,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
       );
     }
     return (
-      <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={pend?`${e.hora} · ${e.nombre} — falta marcar (atendida/cancelada)`:`${e.hora} · ${e.nombre}`}
+      <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}${e.cita?.procedimiento?` — ${e.cita.procedimiento}`:""}${pend?" — falta marcar (atendida/cancelada)":""}`}
         style={{borderRadius:7, margin:2, padding:"5px 7px", cursor:"pointer", overflow:"hidden",
           ...(enCurso
             ? {background:e.color, boxShadow:`0 4px 14px color-mix(in srgb, ${e.color} 35%, transparent)`,
@@ -8416,9 +8417,13 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
                   const {fecha,hora}=isoAInputsHmo(c.inicio);
                   const d=new Date(fecha+"T00:00:00");
                   const dia=isNaN(d)?"":DIAS_SEM[d.getDay()]+" "+d.getDate();
-                  const tipo={primera_vez:"Primera vez",seguimiento:"Seguimiento"}[c.tipo]||"";
+                  const tipo={primera_vez:"Primera vez",seguimiento:"Seguimiento",procedimiento:"Procedimiento"}[c.tipo]||"";
                   return <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{[dia, hora, tipo].filter(Boolean).join(" · ")}</div>;
                 })()}
+                {c.procedimiento && (
+                  <div style={{fontSize:10.5,color:"var(--gft-accent-text)",fontWeight:600,marginTop:3,
+                    whiteSpace:"normal",lineHeight:1.3}}>Procedimiento: {c.procedimiento}</div>
+                )}
               </div>
               {items.map(it=>(
                 <div key={it.l} onClick={()=>{ it.fn(); cerrar(); }}
@@ -8464,7 +8469,7 @@ const fmtCitaHmo = (iso) => {
   return d.toLocaleString("es-MX",{timeZone:"America/Hermosillo",
     weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
 };
-const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG" };
+const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG", procedimiento:"PROC" };
 // Colores por tipo (fuente única, usada en agenda + dashboard): seguimiento AZUL, primera vez TEAL.
 const COLOR_TIPO_CITA = { primera_vez:"var(--gft-success)", seguimiento:"var(--gft-accent)" };
 // Color de la cita en la agenda: Estética tiene su propia paleta (naranja/amarillo oscuros) para
@@ -8784,6 +8789,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const [hora,setHora]       = useState("");
   const [area,setArea]       = useState("obesidad");      // obesidad | estetica
   const [modalidad,setModalidad] = useState("presencial"); // presencial | linea
+  const [procedimiento,setProcedimiento] = useState("");   // estética: procedimiento solicitado (nota libre)
   const [guardando,setGuardando] = useState(false);
   const [mostrarSug,setMostrarSug] = useState(false);
   const [ocupadoDia,setOcupadoDia] = useState([]); // bloques "ocupado" del día elegido (solo lectura)
@@ -8796,7 +8802,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const [canceladasGId,setCanceladasGId] = useState([]); // googleEventId de citas CANCELADAS del día (para no revivirlas vía lectura en vivo)
   const [gcalDia,setGcalDia]   = useState([]);     // eventos del calendario del consultorio EN VIVO (aún no importados)
 
-  const sugerencia = (tipo==="seguimiento") ? sugerirDosisSeguimiento(pacienteLink) : null;
+  const sugerencia = (tipo==="seguimiento" && area==="obesidad") ? sugerirDosisSeguimiento(pacienteLink) : null;
 
   // Carga las citas del consultorio del día elegido (no canceladas) para la tira de horarios libre/ocupado.
   // Solapando: incluye eventos largos (viajes/vacaciones) que empezaron ANTES pero cubren este día.
@@ -8876,7 +8882,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
 
   // Prefijar medicamento/dosis cuando se elige paciente o cambia a seguimiento
   useEffect(()=>{
-    if (tipo==="seguimiento" && pacienteLink) {
+    if (tipo==="seguimiento" && area==="obesidad" && pacienteLink) {
       const t = tratamientoEfectivo(pacienteLink); // canónico, casa directo con los selects de la cita
       const sug = sugerirDosisSeguimiento(pacienteLink);
       if (t.medicamento) setMed(t.medicamento);
@@ -8884,7 +8890,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       if (t.origen) setOrigen(t.origen);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[pacienteLink && pacienteLink.id, tipo]);
+  },[pacienteLink && pacienteLink.id, tipo, area]);
 
   const dosisOpts = [{value:"",label:"—"},
     ...(DOSIS_POR_MED[med]||[]).map(d=>({value:d,label:d.replace("mg"," mg")}))];
@@ -8906,7 +8912,9 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
     if (!fecha) faltan.push("fecha");
     if (!hora) faltan.push("hora");
     if (tipo==="primera_vez") { if(!telefono.trim()) faltan.push("teléfono"); if(!String(edad).trim()) faltan.push("edad"); }
-    if (tipo==="seguimiento") { if(!med) faltan.push("medicamento"); if(!dosis) faltan.push("dosis"); if(!origen) faltan.push("origen"); }
+    // Medicamento/dosis/origen solo son obligatorios en OBESIDAD + seguimiento. En estética (seguimiento o
+    // procedimiento) no se receta nada, así que no se piden.
+    if (tipo==="seguimiento" && area==="obesidad") { if(!med) faltan.push("medicamento"); if(!dosis) faltan.push("dosis"); if(!origen) faltan.push("origen"); }
     if (faltan.length) { alert("Faltan campos obligatorios para "+TIPO_ABREV_CITA[tipo]+": "+faltan.join(", ")); return; }
     setGuardando(true);
     try {
@@ -8934,9 +8942,13 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         catch(e){ console.error("alta paciente:",e); alert("⚠️ No se pudo crear el paciente."); setGuardando(false); return; }
       }
       // C4 — Guardado unificado: construirCitaV2 (genera título) + crearCita
+      const esEstetica = area==="estetica";
       const cita = construirCitaV2({ pacienteId, pacienteNombre:nombre.trim(), tipo,
-        medicamento: med||null, dosis: med?(dosis||null):null, origen: origen||null, fecha, hora,
-        area, modalidad });
+        medicamento: esEstetica ? null : (med||null),
+        dosis: esEstetica ? null : (med?(dosis||null):null),
+        origen: esEstetica ? null : (origen||null),
+        procedimiento: esEstetica ? (procedimiento.trim()||null) : null,
+        fecha, hora, area, modalidad });
       cita.pendienteSincronizar = true; // se baja a false si Google la sincroniza enseguida
       const creada = await crearCita(cita);
       // TAREA 1 — Confirmación por WhatsApp LO ANTES POSIBLE (antes de la sync con Google) para
@@ -8969,10 +8981,18 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
       <div style={{padding:14}}>
         <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={[
           {value:"primera_vez",label:"Primera vez"},
-          {value:"seguimiento",label:"Seguimiento"}]}/>
+          {value:"seguimiento",label:"Seguimiento"},
+          // "Procedimiento" solo aplica a estética: paciente que regresa por algo nuevo (no es seguimiento).
+          ...(area==="estetica" ? [{value:"procedimiento",label:"Procedimiento (nuevo)"}] : [])]}/>
 
         <Row>
-          <Sel label="Área" value={area} onChange={setArea} opts={[
+          <Sel label="Área" value={area} onChange={v=>{
+            setArea(v);
+            // Al cambiar a estética, limpia los campos de obesidad para que no se guarden por error.
+            if (v==="estetica") { setMed(""); setDosis(""); setOrigen(""); }
+            // "Procedimiento" no existe en obesidad: si estaba elegido, vuelve a seguimiento.
+            if (v==="obesidad" && tipo==="procedimiento") setTipo("seguimiento");
+          }} opts={[
             {value:"obesidad",label:"Obesidad"},
             {value:"estetica",label:"Medicina Estética"}]}/>
           <Sel label="Modalidad" value={modalidad} onChange={setModalidad} opts={[
@@ -9007,13 +9027,21 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
           </Row>
         )}
 
-        <Row>
-          <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
-            {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
-          <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
-          <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
-            {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
-        </Row>
+        {/* Medicamento/dosis solo en OBESIDAD. En estética no se receta: se oculta por completo. */}
+        {area==="obesidad" && (
+          <Row>
+            <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
+              {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
+            <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
+            <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
+              {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
+          </Row>
+        )}
+        {/* Estética: nota libre del procedimiento solicitado (opcional). Se ve en la agenda al dar clic/hover. */}
+        {area==="estetica" && (
+          <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
+            placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+        )}
         {sugerencia && (
           <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#EFF6FF",
             border:"1px solid #BFDBFE",fontSize:11,color:"#1E40AF"}}>
@@ -9091,10 +9119,12 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   const pedirWA = useWA();
   const ini = isoAInputsHmo(cita.inicio);
   const [nombre,setNombre] = useState(cita.pacienteNombre||"");
-  const [tipo,setTipo]     = useState(cita.tipo==="primera_vez" ? "primera_vez" : "seguimiento"); // degrada cita_rapida vieja → seguimiento
+  const [tipo,setTipo]     = useState(TIPOS_CITA_V2.includes(cita.tipo) ? cita.tipo : "seguimiento"); // degrada cita_rapida vieja → seguimiento
   const [med,setMed]       = useState(cita.medicamento||"");
   const [dosis,setDosis]   = useState(cita.dosis||"");
   const [origen,setOrigen] = useState(cita.origen||"");
+  const [area,setArea]     = useState(cita.area==="estetica" ? "estetica" : "obesidad");
+  const [procedimiento,setProcedimiento] = useState(cita.procedimiento||"");
   const [fecha,setFecha]   = useState(ini.fecha);
   const [hora,setHora]     = useState(ini.hora);
   const [estado,setEstado] = useState(cita.estado||"agendada");
@@ -9127,12 +9157,15 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
     if (!fecha || !hora) { alert("Falta fecha u hora."); return; }
     setGuardando(true);
     const dur = tipo==="primera_vez" ? 60 : 30;
+    const esEstetica = area==="estetica";
     const cambios = {
       pacienteNombre: nombre.trim(),
       tipo,
-      medicamento: med || null,
-      dosis: med ? (dosis||null) : null,
-      origen: origen || null,
+      area,
+      medicamento: esEstetica ? null : (med || null),
+      dosis: esEstetica ? null : (med ? (dosis||null) : null),
+      origen: esEstetica ? null : (origen || null),
+      procedimiento: esEstetica ? (procedimiento.trim()||null) : null,
       inicio: `${fecha}T${hora}:00`,
       fin: calcFinCitaISO(fecha, hora, dur),
       estado,
@@ -9152,7 +9185,8 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
         } catch(e){ console.warn("WA reprogramación (no crítico):", e); }
       }
       // Fase 1 — Actualiza el tratamiento actual del paciente vinculado desde esta edición. No crítico.
-      if (med) {
+      // Solo en obesidad: en estética no hay medicamento que propagar.
+      if (med && area==="obesidad") {
         const pacTrat = (pacientes||[]).find(pp=>pp.id===cita.pacienteId) || null;
         actualizarTratamientoPaciente(pacTrat, { medicamento: med, dosis, origen });
       }
@@ -9204,19 +9238,32 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
           <Row>
             <Sel label="Tipo" value={tipo} onChange={setTipo} opts={[
               {value:"primera_vez",label:"Primera vez"},
-              {value:"seguimiento",label:"Seguimiento"}]}/>
+              {value:"seguimiento",label:"Seguimiento"},
+              ...(area==="estetica" ? [{value:"procedimiento",label:"Procedimiento (nuevo)"}] : [])]}/>
+            <Sel label="Área" value={area} onChange={v=>{
+              setArea(v);
+              if (v==="estetica") { setMed(""); setDosis(""); setOrigen(""); }
+              if (v==="obesidad" && tipo==="procedimiento") setTipo("seguimiento");
+            }} opts={[
+              {value:"obesidad",label:"Obesidad"},
+              {value:"estetica",label:"Medicina Estética"}]}/>
             <Sel label="Estado" value={estado} onChange={setEstado} opts={[
               {value:"agendada",label:"Agendada"},{value:"confirmada",label:"Confirmada"},
               {value:"cancelada",label:"Cancelada"},{value:"completada",label:"Completada"}]}/>
-            <div/>
           </Row>
-          <Row>
-            <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
-              {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
-            <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
-            <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
-              {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
-          </Row>
+          {area==="obesidad" && (
+            <Row>
+              <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
+                {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
+              <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
+              <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
+                {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
+            </Row>
+          )}
+          {area==="estetica" && (
+            <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
+              placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+          )}
           <Row>
             <CampoFechaCita label="Fecha (Hermosillo)" fecha={fecha} onChange={setFecha}/>
             <Inp label="Hora (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
