@@ -756,8 +756,10 @@ const generarTituloCita = (cita) => {
 // Construye una cita v2 con la forma objetivo (sin googleEventId aún).
 const construirCitaV2 = ({ id, googleEventId=null, calendarId=null, pacienteId=null,
   pacienteNombre="", tipo="seguimiento", medicamento=null, dosis=null, origen=null, numeroVisita=null,
-  fecha, hora, estado="agendada", origenUltimoCambio="app", area=null, modalidad=null, procedimiento=null } = {}) => {
-  const dur = tipo === "primera_vez" ? 60 : 30;
+  fecha, hora, estado="agendada", origenUltimoCambio="app", area=null, modalidad=null, procedimiento=null,
+  duracionMin=null } = {}) => {
+  // Estética: duración variable (la elige el doctor). Obesidad: 60 primera vez / 30 seguimiento.
+  const dur = (duracionMin && duracionMin>0) ? duracionMin : (tipo === "primera_vez" ? 60 : 30);
   const cita = {
     id: id || crypto.randomUUID(),
     googleEventId: googleEventId,
@@ -8415,10 +8417,12 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
                   overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.pacienteNombre||"Cita"}</div>
                 {(()=>{
                   const {fecha,hora}=isoAInputsHmo(c.inicio);
+                  const {hora:horaFin}=isoAInputsHmo(c.fin);
                   const d=new Date(fecha+"T00:00:00");
                   const dia=isNaN(d)?"":DIAS_SEM[d.getDay()]+" "+d.getDate();
                   const tipo={primera_vez:"Primera vez",seguimiento:"Seguimiento",procedimiento:"Procedimiento"}[c.tipo]||"";
-                  return <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{[dia, hora, tipo].filter(Boolean).join(" · ")}</div>;
+                  const rango = horaFin ? `${hora}–${horaFin}` : hora;
+                  return <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{[dia, rango, tipo].filter(Boolean).join(" · ")}</div>;
                 })()}
                 {c.procedimiento && (
                   <div style={{fontSize:10.5,color:"var(--gft-accent-text)",fontWeight:600,marginTop:3,
@@ -8521,7 +8525,7 @@ const sugerirDosisSeguimiento = (pac) => {
 
 // Tira de horarios libre/ocupado del día — vive dentro de ModalAgendarCitaV2 (aparece en los 3 puntos de entrada).
 // Reglas: L-V 9→18, Sáb 9→13, Dom cerrado · slots de 30 min · seguimiento 30 min (1 slot), primera vez 60 min (2 slots).
-const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick }) => {
+const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick, duracion=null, area=null }) => {
   if (!fecha) return (
     <div style={{fontSize:11,color:C.suave,margin:"0 0 12px"}}>Selecciona una fecha para ver horarios.</div>
   );
@@ -8537,6 +8541,9 @@ const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick })
   const iniBloque = 9*60;
   const finBloque = dow===6 ? 13*60 : 18*60;   // Sáb 9→13, L-V 9→18 (continuo, incluye 13-16)
   const esPrim = tipo==="primera_vez";
+  // Duración efectiva en minutos: estética la pasa explícita; si no, 60 primera vez / 30 seguimiento.
+  const durEff = (duracion && duracion>0) ? duracion : (esPrim ? 60 : 30);
+  const esEstetica = area==="estetica";
   const z = n => String(n).padStart(2,"0");
   const minToHhmm = n => `${z(Math.floor(n/60))}:${z(n%60)}`;
   const tsDe = min => new Date(`${fecha}T${minToHhmm(min)}:00-07:00`).getTime();  // instante Hermosillo
@@ -8573,7 +8580,7 @@ const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick })
     <div style={{margin:"0 0 12px"}}>
       <div style={{fontSize:11,fontWeight:800,color:C.azul,marginBottom:6,textTransform:"capitalize"}}>
         🕐 {fechaLarga}
-        <span style={{fontWeight:600,color:C.suave,textTransform:"none"}}> · duración {esPrim?"60":"30"} min</span>
+        <span style={{fontWeight:600,color:C.suave,textTransform:"none"}}> · duración {durEff} min</span>
       </div>
       {persAllDay.length>0 && (
         <div style={{margin:"0 0 8px",padding:"7px 10px",borderRadius:8,background:"#FBF6E3",
@@ -8595,9 +8602,15 @@ const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick })
             hayPersonal = !!persAqui;                    // cita + personal solapado → puntito
           } else if (persAqui) {
             estado = "personal"; nombre = compacto(persAqui.summary);
-          } else if (esPrim) {
-            const cabe = (min+60) <= finBloque;          // primera vez necesita 2 medias horas libres seguidas
+          } else if (!esEstetica && esPrim) {
+            const cabe = (min+60) <= finBloque;          // obesidad primera vez: 2 medias horas libres seguidas
             estado = (cabe && !citaEnSlot(min+30)) ? "libre" : "nodisp";
+          } else if (durEff > 30) {
+            // Duración variable (estética): revisa que quepan todas las medias horas que cubre, libres.
+            const slotsNeeded = Math.ceil(durEff/30);
+            let cabe = true;
+            for (let k=1; k<slotsNeeded; k++){ const m = min + k*30; if (m > finBloque || citaEnSlot(m)) { cabe=false; break; } }
+            estado = cabe ? "libre" : "nodisp";
           } else {
             estado = "libre";
           }
@@ -8613,7 +8626,7 @@ const TiraHorarios = ({ fecha, tipo, citas=[], personales=[], horaSel, onPick })
             (estado==="cita_primera"||estado==="cita_seg")
               ? `${citaAqui.pacienteNombre} · ${estado==="cita_primera"?"primera vez":"seguimiento"}${hayPersonal?` · también: ${persAqui.summary}`:""}`
           : estado==="personal" ? `${persAqui.summary} · ${persAqui.calendario}`
-          : estado==="nodisp"   ? "No caben 60 min desde esta hora"
+          : estado==="nodisp"   ? `No caben ${durEff} min desde esta hora`
           :                       "Disponible";
           const onSlot = () => {
             if (!clickable) return;
@@ -8790,6 +8803,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   const [area,setArea]       = useState("obesidad");      // obesidad | estetica
   const [modalidad,setModalidad] = useState("presencial"); // presencial | linea
   const [procedimiento,setProcedimiento] = useState("");   // estética: procedimiento solicitado (nota libre)
+  const [duracionEst,setDuracionEst] = useState(60);       // estética: duración en minutos (30–120)
   const [guardando,setGuardando] = useState(false);
   const [mostrarSug,setMostrarSug] = useState(false);
   const [ocupadoDia,setOcupadoDia] = useState([]); // bloques "ocupado" del día elegido (solo lectura)
@@ -8855,10 +8869,12 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
     ...gcalDia.filter(g => !citasDia.some(c => c.googleEventId && c.googleEventId===g.googleEventId)
                         && !(g.googleEventId && canceladasGId.includes(g.googleEventId))),
   ];
+  // Duración efectiva: estética la elige el doctor (duracionEst); obesidad = 60 primera / 30 seguimiento.
+  const durEff = area==="estetica" ? (parseInt(duracionEst)||30) : (tipo==="primera_vez"?60:30);
   // Aviso claro si el horario elegido choca con una cita/evento del consultorio.
   const choqueCita = (()=>{
     if (!fecha || !hora) return null;
-    const dur = tipo==="primera_vez"?60:30;
+    const dur = durEff;
     const a = new Date(`${fecha}T${hora}:00-07:00`).getTime();
     const b = a + dur*60000;
     return citasDiaMerged.find(c=>{
@@ -8870,7 +8886,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
   // Advertencia (no bloqueante) si la hora elegida se solapa con un evento personal.
   const choque = (()=>{
     if (!fecha || !hora || !ocupadoDia.length) return null;
-    const dur = tipo==="primera_vez"?60:30;
+    const dur = durEff;
     const ini = new Date(`${fecha}T${hora}:00-07:00`).getTime();
     const fin = ini + dur*60000;
     return ocupadoDia.find(o=>{
@@ -8948,6 +8964,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         dosis: esEstetica ? null : (med?(dosis||null):null),
         origen: esEstetica ? null : (origen||null),
         procedimiento: esEstetica ? (procedimiento.trim()||null) : null,
+        duracionMin: esEstetica ? (parseInt(duracionEst)||30) : null,
         fecha, hora, area, modalidad });
       cita.pendienteSincronizar = true; // se baja a false si Google la sincroniza enseguida
       const creada = await crearCita(cita);
@@ -9037,10 +9054,17 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
               {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
           </Row>
         )}
-        {/* Estética: nota libre del procedimiento solicitado (opcional). Se ve en la agenda al dar clic/hover. */}
+        {/* Estética: nota libre del procedimiento + duración variable (30–120 min). Se ven en la agenda. */}
         {area==="estetica" && (
-          <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
-            placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+          <Row>
+            <div style={{flex:2}}>
+              <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
+                placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+            </div>
+            <Sel label="Duración" value={String(duracionEst)} onChange={v=>setDuracionEst(parseInt(v))} opts={[
+              {value:"30",label:"30 min"},{value:"45",label:"45 min"},{value:"60",label:"1 hora"},
+              {value:"75",label:"1 h 15 min"},{value:"90",label:"1 h 30 min"},{value:"120",label:"2 horas"}]}/>
+          </Row>
         )}
         {sugerencia && (
           <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#EFF6FF",
@@ -9053,11 +9077,12 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
           <CampoFechaCita label="Fecha * (Hermosillo)" fecha={fecha} onChange={setFecha}/>
           <Inp label="Hora * (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
           <div style={{flex:1,display:"flex",alignItems:"flex-end",paddingBottom:12}}>
-            <span style={{fontSize:10,color:C.suave}}>Duración: {esPrim?"60":"30"} min (automática)</span>
+            <span style={{fontSize:10,color:C.suave}}>Duración: {durEff} min{area==="estetica"?"":" (automática)"}</span>
           </div>
         </Row>
 
-        <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDiaMerged} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
+        <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDiaMerged} personales={ocupadoDia} horaSel={hora} onPick={setHora}
+          duracion={durEff} area={area}/>
 
         {choqueCita && (
           <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#FEF2F2",
@@ -9125,6 +9150,9 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   const [origen,setOrigen] = useState(cita.origen||"");
   const [area,setArea]     = useState(cita.area==="estetica" ? "estetica" : "obesidad");
   const [procedimiento,setProcedimiento] = useState(cita.procedimiento||"");
+  // Duración actual (min) tomada de inicio→fin de la cita; editable en estética.
+  const durActual = (()=>{ const d=(new Date(cita.fin)-new Date(cita.inicio))/60000; return (d>0 && !isNaN(d)) ? Math.round(d) : 30; })();
+  const [duracionEst,setDuracionEst] = useState(durActual);
   const [fecha,setFecha]   = useState(ini.fecha);
   const [hora,setHora]     = useState(ini.hora);
   const [estado,setEstado] = useState(cita.estado||"agendada");
@@ -9156,8 +9184,8 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
     if (!nombre.trim()) { alert("El nombre del paciente no puede estar vacío."); return; }
     if (!fecha || !hora) { alert("Falta fecha u hora."); return; }
     setGuardando(true);
-    const dur = tipo==="primera_vez" ? 60 : 30;
     const esEstetica = area==="estetica";
+    const dur = esEstetica ? (parseInt(duracionEst)||30) : (tipo==="primera_vez" ? 60 : 30);
     const cambios = {
       pacienteNombre: nombre.trim(),
       tipo,
@@ -9261,15 +9289,23 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
             </Row>
           )}
           {area==="estetica" && (
-            <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
-              placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+            <Row>
+              <div style={{flex:2}}>
+                <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
+                  placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+              </div>
+              <Sel label="Duración" value={String(duracionEst)} onChange={v=>setDuracionEst(parseInt(v))} opts={[
+                {value:"30",label:"30 min"},{value:"45",label:"45 min"},{value:"60",label:"1 hora"},
+                {value:"75",label:"1 h 15 min"},{value:"90",label:"1 h 30 min"},{value:"120",label:"2 horas"}]}/>
+            </Row>
           )}
           <Row>
             <CampoFechaCita label="Fecha (Hermosillo)" fecha={fecha} onChange={setFecha}/>
             <Inp label="Hora (Hermosillo)" value={hora} onChange={setHora} tipo="time"/>
             <div/>
           </Row>
-          <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} personales={ocupadoDia} horaSel={hora} onPick={setHora}/>
+          <TiraHorarios fecha={fecha} tipo={tipo} citas={citasDia} personales={ocupadoDia} horaSel={hora} onPick={setHora}
+            duracion={area==="estetica"?(parseInt(duracionEst)||30):(tipo==="primera_vez"?60:30)} area={area}/>
           <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8,flexWrap:"wrap"}}>
             {onBorrar && <Btn onClick={onBorrar} outline color={C.rojo} icon="🗑️">Borrar</Btn>}
             <Btn onClick={onClose} outline color={C.suave}>Cancelar</Btn>
