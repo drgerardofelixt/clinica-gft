@@ -3460,11 +3460,11 @@ const DocProgreso = ({p}) => {
             border: `3px solid ${zonaActual.color}`, boxShadow: '0 1px 4px rgba(0,0,0,0.25)', boxSizing: 'border-box',
           }} />
         </div>
-        {/* Etiquetas de zona: columnas IGUALES (no proporcionales) para que nunca se encimen,
-            en el mismo orden ascendente del color. Cada una muestra nombre + rango numérico. */}
+        {/* Etiquetas de zona: cada columna tiene el MISMO ancho proporcional que su color (wz),
+            para que quede centrada justo debajo de su segmento. Nombre + rango numérico. */}
         <div style={{ display: 'flex', marginTop: 6, fontSize: 8, fontWeight: 700, textAlign: 'center' }}>
           {zonas.map((z, i) => { const activa = v >= z.min && v < z.max; return (
-            <div key={i} style={{ flex: 1, minWidth: 0, padding: '0 1px' }}>
+            <div key={i} style={{ width: `${wz(z)}%`, minWidth: 0, padding: '0 1px', boxSizing: 'border-box' }}>
               <div style={{ color: z.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.label}{activa ? ' ●' : ''}</div>
               {z.rango && <div className="d" style={{ color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.rango}</div>}
             </div>
@@ -6428,6 +6428,12 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
     onUpdate({...p,resultadosLabs:[...(p.resultadosLabs||[]),{...r,id:Date.now().toString()}]});
     setShowLabs(false);
   };
+  // Borra un resultado de lab subido al expediente (p. ej. si se subió el del paciente equivocado).
+  // Filtra por identidad del objeto (el índice del render viene ordenado/invertido, no sirve).
+  const eliminarResultado = (r) => {
+    if (!confirm('¿Eliminar este resultado de laboratorio del expediente? Esta acción no se puede deshacer.')) return;
+    onUpdate({...p, resultadosLabs:(p.resultadosLabs||[]).filter(x=>x!==r)});
+  };
 
   const comps = [...(p.composicion||[])].filter(c=>c.peso||c.grasa).sort(porFechaClinica);
   const primera = comps[0];
@@ -7257,7 +7263,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                 {[...(p.resultadosLabs||[])].sort(porFechaClinica).reverse().map((r,i)=>(
                   <div key={i} style={{marginBottom:14,paddingBottom:14,
                     borderBottom:i<(p.resultadosLabs||[]).length-1?"1px solid "+C.grisMedio:"none"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                       <div>
                         <span style={{fontWeight:700,color:C.azul,fontSize:12}}>
                           {r.laboratorio||"Laboratorio"}
@@ -7268,6 +7274,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
                           </span>
                         )}
                       </div>
+                      <button onClick={()=>eliminarResultado(r)} title="Eliminar este resultado del expediente"
+                        style={{background:"transparent",border:"1px solid "+C.rojo+"55",color:C.rojo,
+                          borderRadius:7,padding:"3px 9px",cursor:"pointer",fontSize:11,fontWeight:700,
+                          display:"flex",alignItems:"center",gap:4,flexShrink:0}}>🗑️ Eliminar</button>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"6px 8px"}}>
                       {CAMPOS_LABS.filter(c=>r[c.k]!=null).map(c=>{
@@ -8133,21 +8143,22 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   // Estilo referencia 5a: 2 líneas (hora coloreada + nombre), borde-izq por tipo; en-curso = relleno sólido.
   const Bloque = ({e, compact}) => {
     const suf = TIPO_SUF[e.tipo] || "";
+    const esLinea = e.cita?.modalidad==="linea";   // cita en línea (videollamada): se marca aparte
     const enCurso = enCursoDe(e);
     const pend = !enCurso && sinMarcar(e);   // ya terminó y falta marcarla
     const tint = `color-mix(in srgb, ${e.color} 16%, transparent)`;
     if (compact) {  // vista mes: 1 línea compacta
       return (
-        <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}${e.cita?.procedimiento?` — ${e.cita.procedimiento}`:""}${pend?" — sin marcar":""}`}
+        <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}${esLinea?" · 📹 en línea":""}${e.cita?.procedimiento?` — ${e.cita.procedimiento}`:""}${pend?" — sin marcar":""}`}
           style={{background:pend?`color-mix(in srgb, ${AMBER_WARN} 14%, transparent)`:tint,
             borderLeft:`3px solid ${pend?AMBER_WARN:e.color}`, borderRadius:5, padding:"1px 5px", margin:"1px 0",
             cursor:"pointer", fontSize:9, color:"var(--gft-text)", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis"}}>
-          {pend && <span style={{color:AMBER_WARN,fontWeight:800}}>● </span>}{e.hora} {e.nombre}
+          {pend && <span style={{color:AMBER_WARN,fontWeight:800}}>● </span>}{esLinea && "📹 "}{e.hora} {e.nombre}
         </div>
       );
     }
     return (
-      <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}${e.cita?.procedimiento?` — ${e.cita.procedimiento}`:""}${pend?" — falta marcar (atendida/cancelada)":""}`}
+      <div onClick={(ev)=>{ ev.stopPropagation(); setMenu({cita:e.cita, x:ev.clientX, y:ev.clientY}); }} title={`${e.hora} · ${e.nombre}${esLinea?" · 📹 en línea":""}${e.cita?.procedimiento?` — ${e.cita.procedimiento}`:""}${pend?" — falta marcar (atendida/cancelada)":""}`}
         style={{borderRadius:7, margin:2, padding:"5px 7px", cursor:"pointer", overflow:"hidden",
           ...(enCurso
             ? {background:e.color, boxShadow:`0 4px 14px color-mix(in srgb, ${e.color} 35%, transparent)`,
@@ -8160,6 +8171,9 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
           color:enCurso?"rgba(255,255,255,.85)":pend?AMBER_WARN:e.color}}>{enCurso ? `${e.hora} · ahora` : e.hora}</div>
         <div style={{fontSize:11, fontWeight:enCurso?700:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
           color:enCurso?"#fff":"var(--gft-text)"}}>{e.nombre}{suf && <span style={{opacity:0.6}}> · {suf}</span>}</div>
+        {esLinea && <div style={{marginTop:2, fontSize:8.5, fontWeight:800, letterSpacing:".02em",
+          display:"inline-block", padding:"1px 5px", borderRadius:4,
+          color:enCurso?"#fff":"#1D4ED8", background:enCurso?"rgba(255,255,255,.22)":"#DBEAFE"}}>📹 EN LÍNEA</div>}
         {pend && <div style={{marginTop:2, fontSize:9, fontWeight:800, letterSpacing:".03em", color:AMBER_WARN}}>SIN MARCAR</div>}
       </div>
     );
@@ -8424,9 +8438,13 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
                   const rango = horaFin ? `${hora}–${horaFin}` : hora;
                   return <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{[dia, rango, tipo].filter(Boolean).join(" · ")}</div>;
                 })()}
+                {c.modalidad==="linea" && (
+                  <div style={{fontSize:9.5,fontWeight:800,marginTop:3,display:"inline-block",
+                    padding:"1px 6px",borderRadius:5,color:"#1D4ED8",background:"#DBEAFE"}}>📹 En línea</div>
+                )}
                 {c.procedimiento && (
                   <div style={{fontSize:10.5,color:"var(--gft-accent-text)",fontWeight:600,marginTop:3,
-                    whiteSpace:"normal",lineHeight:1.3}}>Procedimiento: {c.procedimiento}</div>
+                    whiteSpace:"normal",lineHeight:1.3}}>{c.area==="estetica"?"Procedimiento":"Nota"}: {c.procedimiento}</div>
                 )}
               </div>
               {items.map(it=>(
@@ -8963,7 +8981,7 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         medicamento: esEstetica ? null : (med||null),
         dosis: esEstetica ? null : (med?(dosis||null):null),
         origen: esEstetica ? null : (origen||null),
-        procedimiento: esEstetica ? (procedimiento.trim()||null) : null,
+        procedimiento: procedimiento.trim()||null,   // nota libre: aplica a obesidad y estética
         duracionMin: esEstetica ? (parseInt(duracionEst)||30) : null,
         fecha, hora, area, modalidad });
       cita.pendienteSincronizar = true; // se baja a false si Google la sincroniza enseguida
@@ -9046,13 +9064,17 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
 
         {/* Medicamento/dosis solo en OBESIDAD. En estética no se receta: se oculta por completo. */}
         {area==="obesidad" && (
-          <Row>
-            <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
-              {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
-            <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
-            <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
-              {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
-          </Row>
+          <>
+            <Row>
+              <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
+                {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
+              <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
+              <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
+                {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
+            </Row>
+            <Inp label="Comentario (opcional)" value={procedimiento} onChange={setProcedimiento}
+              placeholder="Nota para esta cita: motivo, recordatorio, etc."/>
+          </>
         )}
         {/* Estética: nota libre del procedimiento + duración variable (30–120 min). Se ven en la agenda. */}
         {area==="estetica" && (
@@ -9149,6 +9171,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   const [dosis,setDosis]   = useState(cita.dosis||"");
   const [origen,setOrigen] = useState(cita.origen||"");
   const [area,setArea]     = useState(cita.area==="estetica" ? "estetica" : "obesidad");
+  const [modalidad,setModalidad] = useState(cita.modalidad==="linea" ? "linea" : "presencial");
   const [procedimiento,setProcedimiento] = useState(cita.procedimiento||"");
   // Duración actual (min) tomada de inicio→fin de la cita; editable en estética.
   const durActual = (()=>{ const d=(new Date(cita.fin)-new Date(cita.inicio))/60000; return (d>0 && !isNaN(d)) ? Math.round(d) : 30; })();
@@ -9190,10 +9213,11 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
       pacienteNombre: nombre.trim(),
       tipo,
       area,
+      modalidad,
       medicamento: esEstetica ? null : (med || null),
       dosis: esEstetica ? null : (med ? (dosis||null) : null),
       origen: esEstetica ? null : (origen || null),
-      procedimiento: esEstetica ? (procedimiento.trim()||null) : null,
+      procedimiento: procedimiento.trim()||null,   // nota libre: aplica a obesidad y estética
       inicio: `${fecha}T${hora}:00`,
       fin: calcFinCitaISO(fecha, hora, dur),
       estado,
@@ -9279,14 +9303,24 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
               {value:"agendada",label:"Agendada"},{value:"confirmada",label:"Confirmada"},
               {value:"cancelada",label:"Cancelada"},{value:"completada",label:"Completada"}]}/>
           </Row>
+          <Row>
+            <Sel label="Modalidad" value={modalidad} onChange={setModalidad} opts={[
+              {value:"presencial",label:"Presencial"},
+              {value:"linea",label:"En línea"}]}/>
+            <div/><div/>
+          </Row>
           {area==="obesidad" && (
-            <Row>
-              <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
-                {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
-              <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
-              <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
-                {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
-            </Row>
+            <>
+              <Row>
+                <Sel label="Medicamento" value={med} onChange={cambiarMed} opts={[
+                  {value:"",label:"Ninguno"},{value:"MOUN",label:"Mounjaro (MOUN)"},{value:"WEG",label:"Wegovy (WEG)"}]}/>
+                <Sel label="Dosis" value={dosis} onChange={setDosis} opts={dosisOpts} style={med?{}:{opacity:0.5}}/>
+                <Sel label="Origen del medicamento" value={origen} onChange={setOrigen} opts={[
+                  {value:"",label:"—"},{value:"FARM",label:"Farmacia (FARM)"},{value:"CONS",label:"Consultorio (CONS)"}]}/>
+              </Row>
+              <Inp label="Comentario (opcional)" value={procedimiento} onChange={setProcedimiento}
+                placeholder="Nota para esta cita: motivo, recordatorio, etc."/>
+            </>
           )}
           {area==="estetica" && (
             <Row>
