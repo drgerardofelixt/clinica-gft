@@ -28,7 +28,6 @@ import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import AdminProductos from "./modules/aesthetic";
 import EstheticModule from "./modules/aesthetic/EstheticModule";
 import PanelEstetica from "./modules/aesthetic/PanelEstetica";
-import ResumenMes from "./modules/aesthetic/ResumenMes";
 import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -10014,6 +10013,95 @@ const AjustesView = ({pacientes=[], firmaB64, onSaveFirma, gcalAuthed, gcalEvent
   );
 };
 
+// ── MIS INGRESOS (estética) — lo que le toca al doctor mes con mes, con navegación por meses ──
+// Clínica: 20% de la venta de procedimientos. Consulta del doctor: aparte (100% suya) cuando la cobra.
+// Fuente de dinero: tabla `procedimientos_esteticos` (precio_cobrado_mxn, consulta_cobrada, consulta_monto).
+const COMISION_ESTETICA_PCT = 0.20;
+const MisIngresosMes = ({ pacientes = [] }) => {
+  const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const [off, setOff] = useState(0);               // meses hacia atrás (0 = mes actual)
+  const [procs, setProcs] = useState(null);        // filas de procedimientos_esteticos del mes | null=cargando
+  const base = new Date();
+  const sel = new Date(base.getFullYear(), base.getMonth() - off, 1);
+  const y = sel.getFullYear(), m = sel.getMonth();
+  const pad = n => String(n).padStart(2, "0");
+  const mesIniISO = `${y}-${pad(m + 1)}-01`;
+  const mesFinISO = `${m === 11 ? y + 1 : y}-${pad(m === 11 ? 1 : m + 2)}-01`;
+  const mesTs0 = new Date(y, m, 1).getTime(), mesTs1 = new Date(y, m + 1, 1).getTime();
+
+  useEffect(() => {
+    let vivo = true; setProcs(null);
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("procedimientos_esteticos")
+          .select("fecha_procedimiento, precio_cobrado_mxn, costo_total_mxn, consulta_cobrada, consulta_monto, paciente_id")
+          .gte("fecha_procedimiento", mesIniISO).lt("fecha_procedimiento", mesFinISO);
+        if (vivo) setProcs(data || []);
+      } catch { if (vivo) setProcs([]); }
+    })();
+    return () => { vivo = false; };
+  }, [mesIniISO, mesFinISO]);
+
+  const lista = procs || [];
+  const ventas = lista.reduce((a, p) => a + (Number(p.precio_cobrado_mxn) || 0), 0);
+  const comision = ventas * COMISION_ESTETICA_PCT;
+  const consultas = lista.reduce((a, p) => a + (p.consulta_cobrada ? (Number(p.consulta_monto) || 0) : 0), 0);
+  const miTotal = comision + consultas;
+  const nEstetica = lista.length;
+  const nConsultas = lista.filter(p => p.consulta_cobrada).length;
+
+  // Pacientes de obesidad vistos ese mes = consultas clínicas (no esSoloCita) con fecha en el mes.
+  let nObesidad = 0;
+  (pacientes || []).forEach(p => (p.consultas || []).forEach(c => {
+    if (!c.esSoloCita) { const t = parseFechaClinica(c.fecha); if (t >= mesTs0 && t < mesTs1) nObesidad++; }
+  }));
+
+  const money = n => "$" + Math.round(n).toLocaleString("es-MX");
+  const cargando = procs === null;
+  const Card = ({ label, valor, sub, color }) => (
+    <div className="gft-card" style={{ padding: "14px 16px" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gft-text-muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 800, color, fontFamily: "var(--gft-font-data)", marginTop: 4 }}>{valor}</div>
+      {sub != null && <div style={{ fontSize: 11, color: "var(--gft-text-muted)", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+  const esFuturo = off <= 0;
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      {/* Navegación por mes */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: "var(--gft-text)" }}>💵 Mis ingresos — <span style={{ textTransform: "capitalize" }}>{MESES[m]} {y}</span></div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={() => setOff(o => o + 1)}>← Mes anterior</button>
+          <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={() => setOff(o => Math.max(0, o - 1))} disabled={esFuturo}
+            style={esFuturo ? { opacity: .4, cursor: "default" } : {}}>Mes siguiente →</button>
+          {off !== 0 && <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={() => setOff(0)}>Hoy</button>}
+        </div>
+      </div>
+
+      {/* Pacientes vistos (comparación con el reporte de la clínica) */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12, marginBottom: 14 }}>
+        <Card label="Pacientes estética" valor={cargando ? "…" : nEstetica} sub="procedimientos registrados" color="var(--gft-purple)" />
+        <Card label="Pacientes obesidad" valor={nObesidad} sub="consultas del mes" color="var(--gft-accent)" />
+      </div>
+
+      {/* Dinero que me toca */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px,1fr))", gap: 12 }}>
+        <Card label="Ventas estética" valor={cargando ? "…" : money(ventas)} sub={`${nEstetica} procedimiento(s)`} color="var(--gft-text)" />
+        <Card label="Mi comisión 20%" valor={cargando ? "…" : money(comision)} sub="de la venta" color="var(--gft-purple)" />
+        <Card label="Mis consultas" valor={cargando ? "…" : money(consultas)} sub={`${nConsultas} consulta(s) cobrada(s)`} color="var(--gft-accent)" />
+        <div className="gft-card" style={{ padding: "14px 16px", background: "var(--gft-success)", color: "#fff" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, opacity: .85, textTransform: "uppercase", letterSpacing: ".04em" }}>Mi total del mes</div>
+          <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "var(--gft-font-data)", marginTop: 4 }}>{cargando ? "…" : money(miTotal)}</div>
+          <div style={{ fontSize: 11, opacity: .85, marginTop: 2 }}>20% + mis consultas</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── VISTA REPORTES (5c) — resumen ejecutivo de la clínica (KPIs + gráficas + top) ──
 const ReportesView = ({pacientes=[], citasV2=[], onVer}) => {
   const [periodo, setPeriodo] = useState("trimestre");   // mes | trimestre | año
@@ -11641,8 +11729,8 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             );
             return (
               <>
-                {/* Resumen del mes: citas (nuevas/atendidas/canceladas) + ingresos */}
-                <ResumenMes atendidasMes={est.atendidasMes} canceladasMes={est.canceladasMes} nuevasMes={est.nuevasMes}/>
+                {/* Mis ingresos del mes (estética: 20% + consultas) + pacientes vistos, con navegación por meses */}
+                <MisIngresosMes pacientes={pacientes}/>
                 {/* Vista Reportes (5c) — resumen ejecutivo */}
                 <ReportesView pacientes={pacientes} citasV2={citasV2} onVer={onVer}/>
                 {/* Detalle técnico + snapshots (conservado, colapsable) */}

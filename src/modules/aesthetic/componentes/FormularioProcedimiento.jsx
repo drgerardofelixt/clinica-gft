@@ -3,6 +3,13 @@ import { supabase } from '../../../supabase';
 import MapaFacialAnatomicoToxina from './MapaFacialAnatomicoToxina';
 import SignaturePad from './SignaturePad';
 import { construirConsentimiento, plantillaPorTipo, aplicarNombre, TIPOS_CONSENT } from './consentTemplates';
+import { PROCEDIMIENTOS_ESTETICA } from '../../../data/procedimientos-estetica';
+
+// Comisión del doctor sobre la venta de procedimientos (la clínica le da el 20%).
+export const COMISION_ESTETICA_PCT = 0.20;
+// Búsqueda de precio de lista por nombre exacto del procedimiento (del catálogo).
+const PRECIO_POR_NOMBRE = Object.fromEntries(PROCEDIMIENTOS_ESTETICA.map(p => [p.n.trim().toLowerCase(), p.precio]));
+const precioDeLista = (nombre) => PRECIO_POR_NOMBRE[(nombre || '').trim().toLowerCase()] ?? null;
 
 // Gestos principales para valoración de arrugas dinámicas (toxina botulínica).
 // Todas las fotos son OPCIONALES: se suben solo las que se necesiten según la
@@ -23,6 +30,10 @@ const TERCIOS_ORDEN = ['General', 'Tercio superior', 'Tercio medio', 'Tercio inf
 const mapProcAForm = (r) => ({
   fecha: r.fecha_procedimiento || new Date().toISOString().split('T')[0],
   tipo_procedimiento: r.tipo_procedimiento || '',
+  precio_cobrado_mxn: r.precio_cobrado_mxn ?? '',
+  descuento_pct: 0,  // el precio guardado ya es neto; el descuento se aplica al capturar
+  consulta_cobrada: !!r.consulta_cobrada,
+  consulta_monto: r.consulta_monto ?? 1000,
   paciente_id: r.paciente_id,
   dosis_por_zona: r.dosis_por_zona || {},
   productos_utilizados: (Array.isArray(r.productos_utilizados) && r.productos_utilizados.length)
@@ -75,6 +86,10 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
     // SECCIÓN 1: Datos básicos
     fecha: new Date().toISOString().split('T')[0],
     tipo_procedimiento: '',
+    precio_cobrado_mxn: '',   // precio de la venta (autollenado del catálogo, editable)
+    descuento_pct: 0,         // % de descuento sobre el precio (de 5 en 5)
+    consulta_cobrada: false,  // ¿el doctor cobró su consulta aparte?
+    consulta_monto: 1000,     // monto de la consulta del doctor
     paciente_id: pacienteId,
 
     // SECCIÓN 2: Mapa + Dosis
@@ -264,15 +279,25 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
       setError(null);
       setGuardando(true);
 
-      // Validaciones básicas
-      if (!formData.tipo_procedimiento.trim()) {
-        throw new Error('Tipo de procedimiento es requerido');
+      // Validaciones básicas: debe haber procedimiento O consulta cobrada (visita solo de consulta).
+      if (!formData.tipo_procedimiento.trim() && !formData.consulta_cobrada) {
+        throw new Error('Indica el procedimiento o marca que cobraste consulta');
       }
 
       const datosGuardar = {
         paciente_id: pacienteId,
         fecha_procedimiento: formData.fecha,
         tipo_procedimiento: formData.tipo_procedimiento,
+        // Se guarda el precio NETO (ya con el descuento aplicado): es lo que el paciente pagó
+        // y sobre lo que corre la comisión del 20% en reportes.
+        precio_cobrado_mxn: (() => {
+          if (formData.precio_cobrado_mxn === '' || formData.precio_cobrado_mxn == null) return null;
+          const base = Number(formData.precio_cobrado_mxn);
+          const desc = Number(formData.descuento_pct) || 0;
+          return Math.round(base * (1 - desc / 100));
+        })(),
+        consulta_cobrada: !!formData.consulta_cobrada,
+        consulta_monto: formData.consulta_cobrada ? (Number(formData.consulta_monto) || 0) : null,
         dosis_por_zona: formData.dosis_por_zona,
         productos_utilizados: formData.productos_utilizados.filter(p => p.tipo),
 
@@ -529,13 +554,24 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
 
             <div>
               <label style={{ display: 'block', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>
-                Tipo de procedimiento:
+                Procedimiento (catálogo):
               </label>
               <input
                 type="text"
+                list="catalogo-estetica"
                 value={formData.tipo_procedimiento}
-                onChange={(e) => handleInputChange('tipo_procedimiento', e.target.value)}
-                placeholder="Ej: Botox, Juvéderm, Radiesse"
+                onChange={(e) => {
+                  const nombre = e.target.value;
+                  const precio = precioDeLista(nombre);
+                  // Al elegir del catálogo, autollena el precio. Si escribe algo fuera del catálogo,
+                  // conserva el precio que ya tuviera (lo puede ajustar a mano abajo).
+                  setFormData(prev => ({
+                    ...prev,
+                    tipo_procedimiento: nombre,
+                    ...(precio != null ? { precio_cobrado_mxn: precio } : {})
+                  }));
+                }}
+                placeholder="Escribe o elige del catálogo…"
                 style={{
                   width: '100%',
                   padding: 8,
@@ -544,8 +580,84 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
                   boxSizing: 'border-box'
                 }}
               />
+              <datalist id="catalogo-estetica">
+                {PROCEDIMIENTOS_ESTETICA.map((p, i) => (
+                  <option key={i} value={p.n}>{p.c} · ${p.precio.toLocaleString('es-MX')}</option>
+                ))}
+              </datalist>
             </div>
           </div>
+
+          {/* Precio de la venta + descuento + consulta del doctor + ganancia (20% + consulta) */}
+          {(() => {
+            const base = Number(formData.precio_cobrado_mxn) || 0;
+            const desc = Number(formData.descuento_pct) || 0;
+            const precioNeto = base * (1 - desc / 100);
+            const consultaNum = formData.consulta_cobrada ? (Number(formData.consulta_monto) || 0) : 0;
+            const comision = precioNeto * COMISION_ESTETICA_PCT;
+            const miGanancia = comision + consultaNum;
+            const money = (n) => '$' + Math.round(n).toLocaleString('es-MX');
+            return (
+              <div style={{ background: '#F7F5FF', border: '1px solid #E2DBF5', borderRadius: 8, padding: 12, marginBottom: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>
+                      Precio del procedimiento (venta):
+                    </label>
+                    <input
+                      type="number" inputMode="numeric"
+                      value={formData.precio_cobrado_mxn}
+                      onChange={(e) => handleInputChange('precio_cobrado_mxn', e.target.value)}
+                      placeholder="Se autollena del catálogo"
+                      style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 4, boxSizing: 'border-box' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>
+                      Descuento:
+                    </label>
+                    <select
+                      value={formData.descuento_pct}
+                      onChange={(e) => handleInputChange('descuento_pct', Number(e.target.value))}
+                      style={{ width: '100%', padding: 8, border: '1px solid #ddd', borderRadius: 4, boxSizing: 'border-box', background: '#fff' }}
+                    >
+                      {Array.from({ length: 21 }, (_, i) => i * 5).map(v => (
+                        <option key={v} value={v}>{v === 0 ? 'Sin descuento' : v + '%'}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>
+                      Tu consulta:
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={formData.consulta_cobrada}
+                          onChange={(e) => handleInputChange('consulta_cobrada', e.target.checked)} />
+                        Cobré
+                      </label>
+                      <input
+                        type="number" inputMode="numeric"
+                        value={formData.consulta_monto}
+                        disabled={!formData.consulta_cobrada}
+                        onChange={(e) => handleInputChange('consulta_monto', e.target.value)}
+                        style={{ width: 80, padding: 8, border: '1px solid #ddd', borderRadius: 4, boxSizing: 'border-box',
+                          opacity: formData.consulta_cobrada ? 1 : 0.5 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 12, color: '#4A3B8A', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', alignItems: 'baseline' }}>
+                  {desc > 0 && base > 0 && (
+                    <span>Precio con {desc}% desc.: <b>{money(precioNeto)}</b> <span style={{ textDecoration: 'line-through', opacity: 0.6 }}>{money(base)}</span></span>
+                  )}
+                  <span>Comisión 20%: <b>{money(comision)}</b></span>
+                  {consultaNum > 0 && <span>+ consulta: <b>{money(consultaNum)}</b></span>}
+                  <span style={{ marginLeft: 'auto', fontWeight: 800, color: '#2E7D32', fontSize: 13 }}>Tu ganancia: {money(miGanancia)}</span>
+                </div>
+              </div>
+            );
+          })()}
 
           <div>
             <label style={{ display: 'block', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>
