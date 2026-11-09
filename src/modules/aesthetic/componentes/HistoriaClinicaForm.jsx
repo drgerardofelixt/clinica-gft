@@ -46,24 +46,32 @@ const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = 
     banderas_rojas: []
   });
 
-  // Pre-llenar desde el expediente del paciente — SOLO campos que existen en
-  // la tabla historias_clinicas_estetica y que estén vacíos (no pisa lo escrito
-  // ni una historia ya cargada).
+  // Pre-llenar desde el expediente de OBESIDAD / medicina general, para no recapturar lo
+  // que ya existe. El objeto paciente (p) guarda los antecedentes anidados en `ant`
+  // (p.ant.alergias, p.ant.medicamentos, etc.), así que hay que mapearlos — no viven en la
+  // raíz. Solo rellena campos vacíos: nunca pisa lo que el médico ya escribió ni una historia cargada.
   useEffect(() => {
     if (!paciente || historiaExistente) return;
-    const overlay = {};
-    for (const campo of ['nombre', 'edad', 'telefono', 'email', 'ocupacion', 'alergias', 'medicamentos_actuales']) {
-      if (paciente[campo] != null && paciente[campo] !== '') overlay[campo] = paciente[campo];
-    }
-    if (Object.keys(overlay).length) {
-      setFormData(prev => {
-        const merged = { ...prev };
-        for (const [k, v] of Object.entries(overlay)) {
-          if (prev[k] === '' || prev[k] == null) merged[k] = v;
-        }
-        return merged;
-      });
-    }
+    const ant = paciente.ant || {};
+    // "NINGUNO"/"NINGUNA" es el valor por defecto de obesidad para medicamentos: no vale la pena copiarlo.
+    const esVacioODefault = (v) => { const t = String(v ?? '').trim().toLowerCase(); return t === '' || t === 'ninguno' || t === 'ninguna'; };
+    const overlay = {
+      nombre: paciente.nombre,
+      edad: paciente.edad,
+      telefono: paciente.telefono,
+      email: paciente.email ?? paciente.correo,
+      ocupacion: paciente.ocupacion,
+      alergias: paciente.alergias ?? ant.alergias,                               // obesidad → p.ant.alergias
+      medicamentos_actuales: esVacioODefault(paciente.medicamentos_actuales ?? ant.medicamentos)
+        ? '' : (paciente.medicamentos_actuales ?? ant.medicamentos),             // obesidad → p.ant.medicamentos
+    };
+    setFormData(prev => {
+      const merged = { ...prev };
+      for (const [k, v] of Object.entries(overlay)) {
+        if ((prev[k] === '' || prev[k] == null) && v != null && String(v).trim() !== '') merged[k] = v;
+      }
+      return merged;
+    });
   }, [paciente, historiaExistente]);
 
   const handleInputChange = (field, value) => {
@@ -169,6 +177,38 @@ const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = 
           ❌ Error: {error}
         </div>
       )}
+
+      {/* DATOS YA CAPTURADOS EN EL EXPEDIENTE DE OBESIDAD / MEDICINA GENERAL (solo lectura) */}
+      {paciente && (paciente.ant || paciente.hf) && (() => {
+        const ant = paciente.ant || {};
+        const hf = paciente.hf || {};
+        const hfPos = Object.entries({ 'DM2': hf.dm2, 'HTA': hf.hta, 'Obesidad': hf.obesidad, 'Cardiopatía': hf.cardiopatia, 'Cáncer': hf.cancer })
+          .filter(([, v]) => v && !/negad/i.test(String(v)))
+          .map(([k]) => k);
+        if (hf.otros && String(hf.otros).trim()) hfPos.push(String(hf.otros).trim());
+        const filas = [
+          ['Enf. crónicas', ant.cronicas],
+          ['Cirugías', ant.cirugias],
+          ['Medicamentos', ant.medicamentos],
+          ['Alergias', ant.alergias],
+          ['Tabaquismo', ant.tabaco],
+          ['Alcohol', ant.alcohol],
+          ['Heredofamiliares', hfPos.length ? hfPos.join(', ') : null],
+        ].filter(([, v]) => v != null && String(v).trim() !== '');
+        if (!filas.length) return null;
+        return (
+          <div style={{ background: '#eef6ff', border: '1px solid #bcdcff', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 'bold', color: '#0c447c', marginBottom: 6 }}>
+              📎 Del expediente de obesidad — ya capturado (alergias y medicamentos se copiaron abajo)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '4px 16px', fontSize: 13, color: '#1a1a1a' }}>
+              {filas.map(([k, v]) => (
+                <div key={k}><strong>{k}:</strong> {v}</div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* SECCIÓN 1: DATOS PERSONALES */}
       <div style={{
