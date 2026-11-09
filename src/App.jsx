@@ -8806,9 +8806,9 @@ const CampoFechaCita = ({ label, fecha, onChange }) => {
 // C1 — Formulario UNIFICADO de agendar. Único punto para crear cualquier cita (todos los entry points lo abren).
 const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null, onClose, onCreada }) => {
   const pedirWA = useWA();
-  const tipoInicial = tipoSugerido
-    || (pacientePre && (pacientePre.consultas||[]).filter(c=>!c.esSoloCita).length>0 ? "seguimiento" : "primera_vez");
-  const [tipo,setTipo]       = useState(tipoInicial);
+  // Sin preselección: obliga a elegir el tipo conscientemente (buen control). Solo se
+  // prefija si el punto de entrada manda un tipoSugerido explícito (p. ej. seguimiento desde el expediente).
+  const [tipo,setTipo]       = useState(tipoSugerido || "");
   const [pacienteLink,setPacienteLink] = useState(pacientePre||null);
   const [nombre,setNombre]   = useState(pacientePre?.nombre || "");
   const [telefono,setTelefono] = useState(pacientePre?.telefono || "");
@@ -8942,14 +8942,20 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
 
   const guardar = async () => {
     const faltan = [];
+    if (!tipo) faltan.push("tipo de cita");
     if (!nombre.trim()) faltan.push("nombre");
     if (!fecha) faltan.push("fecha");
     if (!hora) faltan.push("hora");
     if (tipo==="primera_vez") { if(!telefono.trim()) faltan.push("teléfono"); if(!String(edad).trim()) faltan.push("edad"); }
-    // Medicamento/dosis/origen solo son obligatorios en OBESIDAD + seguimiento. En estética (seguimiento o
+    // Medicamento/dosis/origen solo son obligatorios en OBESIDAD + seguimiento. En estética (retoque o
     // procedimiento) no se receta nada, así que no se piden.
     if (tipo==="seguimiento" && area==="obesidad") { if(!med) faltan.push("medicamento"); if(!dosis) faltan.push("dosis"); if(!origen) faltan.push("origen"); }
-    if (faltan.length) { alert("Faltan campos obligatorios para "+TIPO_ABREV_CITA[tipo]+": "+faltan.join(", ")); return; }
+    if (faltan.length) {
+      alert(!tipo
+        ? "Selecciona el tipo de cita (Primera vez, Seguimiento/Retoque o Nuevo procedimiento) antes de agendar."
+        : "Faltan campos obligatorios: "+faltan.join(", "));
+      return;
+    }
     setGuardando(true);
     try {
       // Resolver pacienteId: link explícito, o coincidencia exacta por nombre
@@ -9014,26 +9020,30 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
     <>
     <Modal title="🗓 Agendar cita" onClose={onClose} color={C.azul}>
       <div style={{padding:14}}>
-        {/* Estética maneja sus propios tipos: Primera vez · Retoque (incluido) · Nuevo procedimiento. */}
-        <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={
+        {/* Tipo OBLIGATORIO (sin preselección). Estética: Primera vez · Retoque (incluido) · Nuevo procedimiento. */}
+        <Sel label="Tipo de cita *" value={tipo} onChange={setTipo} opts={
           area==="estetica"
-            ? [{value:"primera_vez",label:"Primera vez"},
+            ? [{value:"",label:"— Selecciona —"},
+               {value:"primera_vez",label:"Primera vez"},
                {value:"retoque",label:"Retoque (incluido, sin costo)"},
                {value:"procedimiento",label:"Nuevo procedimiento"}]
-            : [{value:"primera_vez",label:"Primera vez"},
+            : [{value:"",label:"— Selecciona —"},
+               {value:"primera_vez",label:"Primera vez"},
                {value:"seguimiento",label:"Seguimiento"}]}/>
+        {!tipo && (
+          <div style={{margin:"-4px 0 10px",fontSize:11,color:"#B45309"}}>
+            ⚠️ Elige el tipo de cita para continuar.
+          </div>
+        )}
 
         <Row>
           <Sel label="Área" value={area} onChange={v=>{
             setArea(v);
             // Al cambiar a estética, limpia los campos de obesidad para que no se guarden por error.
-            if (v==="estetica") {
-              setMed(""); setDosis(""); setOrigen("");
-              // "seguimiento" no existe en estética: cae a "nuevo procedimiento" (válido para el select).
-              if (!["primera_vez","retoque","procedimiento"].includes(tipo)) setTipo("procedimiento");
-            }
-            // "retoque"/"procedimiento" no existen en obesidad: vuelven a seguimiento.
-            if (v==="obesidad" && !["primera_vez","seguimiento"].includes(tipo)) setTipo("seguimiento");
+            if (v==="estetica") { setMed(""); setDosis(""); setOrigen(""); }
+            // Si el tipo elegido no aplica al área nueva, se limpia para forzar una elección consciente.
+            const validos = v==="estetica" ? ["primera_vez","retoque","procedimiento"] : ["primera_vez","seguimiento"];
+            if (!validos.includes(tipo)) setTipo("");
           }} opts={[
             {value:"obesidad",label:"Obesidad"},
             {value:"estetica",label:"Medicina Estética"}]}/>
@@ -9181,7 +9191,11 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   const pedirWA = useWA();
   const ini = isoAInputsHmo(cita.inicio);
   const [nombre,setNombre] = useState(cita.pacienteNombre||"");
-  const [tipo,setTipo]     = useState(TIPOS_CITA_V2.includes(cita.tipo) ? cita.tipo : "seguimiento"); // degrada cita_rapida vieja → seguimiento
+  // Tipo válido según el área de la cita. Si el guardado no aplica al área (p. ej. estética antigua
+  // en "seguimiento"), arranca vacío para obligar a reelegir conscientemente.
+  const _areaIni = cita.area==="estetica" ? "estetica" : "obesidad";
+  const _tiposValidosIni = _areaIni==="estetica" ? ["primera_vez","retoque","procedimiento"] : ["primera_vez","seguimiento"];
+  const [tipo,setTipo]     = useState(_tiposValidosIni.includes(cita.tipo) ? cita.tipo : "");
   const [med,setMed]       = useState(cita.medicamento||"");
   const [dosis,setDosis]   = useState(cita.dosis||"");
   const [origen,setOrigen] = useState(cita.origen||"");
@@ -9219,6 +9233,7 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
   };
 
   const guardar = async () => {
+    if (!tipo) { alert("Selecciona el tipo de cita (Primera vez, Seguimiento/Retoque o Nuevo procedimiento) antes de guardar."); return; }
     if (!nombre.trim()) { alert("El nombre del paciente no puede estar vacío."); return; }
     if (!fecha || !hora) { alert("Falta fecha u hora."); return; }
     setGuardando(true);
@@ -9303,20 +9318,20 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
         <div style={{padding:22}}>
           <Inp label="Nombre del paciente" value={nombre} onChange={setNombre}/>
           <Row>
-            <Sel label="Tipo" value={tipo} onChange={setTipo} opts={
+            <Sel label="Tipo *" value={tipo} onChange={setTipo} opts={
               area==="estetica"
-                ? [{value:"primera_vez",label:"Primera vez"},
+                ? [{value:"",label:"— Selecciona —"},
+                   {value:"primera_vez",label:"Primera vez"},
                    {value:"retoque",label:"Retoque (incluido, sin costo)"},
                    {value:"procedimiento",label:"Nuevo procedimiento"}]
-                : [{value:"primera_vez",label:"Primera vez"},
+                : [{value:"",label:"— Selecciona —"},
+                   {value:"primera_vez",label:"Primera vez"},
                    {value:"seguimiento",label:"Seguimiento"}]}/>
             <Sel label="Área" value={area} onChange={v=>{
               setArea(v);
-              if (v==="estetica") {
-                setMed(""); setDosis(""); setOrigen("");
-                if (!["primera_vez","retoque","procedimiento"].includes(tipo)) setTipo("procedimiento");
-              }
-              if (v==="obesidad" && !["primera_vez","seguimiento"].includes(tipo)) setTipo("seguimiento");
+              if (v==="estetica") { setMed(""); setDosis(""); setOrigen(""); }
+              const validos = v==="estetica" ? ["primera_vez","retoque","procedimiento"] : ["primera_vez","seguimiento"];
+              if (!validos.includes(tipo)) setTipo("");
             }} opts={[
               {value:"obesidad",label:"Obesidad"},
               {value:"estetica",label:"Medicina Estética"}]}/>
@@ -9324,6 +9339,11 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
               {value:"agendada",label:"Agendada"},{value:"confirmada",label:"Confirmada"},
               {value:"cancelada",label:"Cancelada"},{value:"completada",label:"Completada"}]}/>
           </Row>
+          {!tipo && (
+            <div style={{margin:"-4px 0 10px",fontSize:11,color:"#B45309"}}>
+              ⚠️ Elige el tipo de cita para poder guardar.
+            </div>
+          )}
           <Row>
             <Sel label="Modalidad" value={modalidad} onChange={setModalidad} opts={[
               {value:"presencial",label:"Presencial"},
