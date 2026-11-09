@@ -722,7 +722,8 @@ const buildGCalTitulo = (pac, tipoCita) => {
 
 // ── AGENDA v2 — Modelo de cita + identidad única ─────────────────────────────
 // FASE A: solo define el modelo y los helpers. La UI (ModalAgenda/Calendario) se migra en Fase D.
-const TIPOS_CITA_V2 = ["primera_vez","seguimiento","procedimiento"];
+// retoque (estética): revisión ~15 días post-procedimiento, INCLUIDA en el procedimiento original (sin costo).
+const TIPOS_CITA_V2 = ["primera_vez","seguimiento","procedimiento","retoque"];
 const ESTADOS_CITA_V2 = ["agendada","confirmada","cancelada","completada"];
 
 // Calcula el fin (ISO local naive YYYY-MM-DDTHH:MM:00) sumando la duración al inicio.
@@ -741,7 +742,7 @@ const generarTituloCita = (cita) => {
   if (!cita) return "";
   const ordinal = (n) => { const x=parseInt(n); if(!x) return null;
     return x===1?"1ra":x===2?"2da":x===3?"3ra":x===4?"4ta":x===5?"5ta":x+"a"; };
-  const tipoAbrev = { primera_vez:"PRIM", seguimiento:"SEG", procedimiento:"PROC" };
+  const tipoAbrev = { primera_vez:"PRIM", seguimiento:"SEG", procedimiento:"PROC", retoque:"RET" };
   const med = cita.medicamento ? [cita.medicamento, cita.dosis].filter(Boolean).join(" ") : null;
   return [
     cita.pacienteNombre || null,
@@ -1233,7 +1234,7 @@ const compararConGoogle = async () => {
 const _instanteHermosillo = (fecha, hora) => new Date(`${fecha}T${(hora||"00:00")}:00-07:00`).getTime();
 
 // ── Confirmación de cita por WhatsApp (una sola función, reutilizada por auto-envío y botón) ──
-const TIPO_LEGIBLE_CITA = { primera_vez:"primera vez", seguimiento:"seguimiento" };
+const TIPO_LEGIBLE_CITA = { primera_vez:"primera vez", seguimiento:"seguimiento", procedimiento:"procedimiento", retoque:"retoque" };
 const construirMsgConfirmacion = (cita, nombre) => {
   const { fecha } = isoAInputsHmo(cita.inicio);
   const fechaLarga = fecha
@@ -8123,7 +8124,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
   const soltar = () => { setOverKey(null); };
 
   // Sufijo de tipo (no "Labs": no existe ese tipo de cita) e indicador de cita en curso.
-  const TIPO_SUF = { primera_vez:"1ª vez", seguimiento:"Seg." };
+  const TIPO_SUF = { primera_vez:"1ª vez", seguimiento:"Seg.", procedimiento:"Proc.", retoque:"Retoque" };
   const ahoraMin = (()=>{ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
   const enCursoDe = (e) => {
     if (e.fecha!==hoyStr) return false;
@@ -8433,7 +8434,7 @@ const Calendario = ({citasV2=[], ocupado=[], onEditar, onVer, onRecordar, onCanc
                   const {hora:horaFin}=isoAInputsHmo(c.fin);
                   const d=new Date(fecha+"T00:00:00");
                   const dia=isNaN(d)?"":DIAS_SEM[d.getDay()]+" "+d.getDate();
-                  const tipo={primera_vez:"Primera vez",seguimiento:"Seguimiento",procedimiento:"Procedimiento"}[c.tipo]||"";
+                  const tipo={primera_vez:"Primera vez",seguimiento:"Seguimiento",procedimiento:"Nuevo procedimiento",retoque:"Retoque (incluido, sin costo)"}[c.tipo]||"";
                   const rango = horaFin ? `${hora}–${horaFin}` : hora;
                   return <div className="d" style={{fontSize:10,color:"var(--gft-text-muted)",marginTop:1}}>{[dia, rango, tipo].filter(Boolean).join(" · ")}</div>;
                 })()}
@@ -8490,14 +8491,14 @@ const fmtCitaHmo = (iso) => {
   return d.toLocaleString("es-MX",{timeZone:"America/Hermosillo",
     weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
 };
-const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG", procedimiento:"PROC" };
+const TIPO_ABREV_CITA = { primera_vez:"PRIM", seguimiento:"SEG", procedimiento:"PROC", retoque:"RET" };
 // Colores por tipo (fuente única, usada en agenda + dashboard): seguimiento AZUL, primera vez TEAL.
 const COLOR_TIPO_CITA = { primera_vez:"var(--gft-success)", seguimiento:"var(--gft-accent)" };
 // Color de la cita en la agenda: Estética tiene su propia paleta (naranja/amarillo oscuros) para
 // distinguirla de Obesidad (verde/azul), tanto en primera vez como en seguimiento.
-const COLOR_ESTETICA_CITA = { primera_vez:"#C2410C", seguimiento:"#CA8A04" };
+const COLOR_ESTETICA_CITA = { primera_vez:"#C2410C", seguimiento:"#CA8A04", procedimiento:"#C2410C", retoque:"#0D9488" };
 const colorDeCita = (c) => {
-  if (c && c.area === "estetica") return COLOR_ESTETICA_CITA[c.tipo] || COLOR_ESTETICA_CITA.seguimiento;
+  if (c && c.area === "estetica") return COLOR_ESTETICA_CITA[c.tipo] || COLOR_ESTETICA_CITA.primera_vez;
   return COLOR_TIPO_CITA[c?.tipo] || "var(--gft-success)";
 };
 const DOSIS_INICIALES = { MOUN:["2.5mg"], WEG:["0.25mg","0.5mg"] };
@@ -9013,19 +9014,26 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
     <>
     <Modal title="🗓 Agendar cita" onClose={onClose} color={C.azul}>
       <div style={{padding:14}}>
-        <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={[
-          {value:"primera_vez",label:"Primera vez"},
-          {value:"seguimiento",label:"Seguimiento"},
-          // "Procedimiento" solo aplica a estética: paciente que regresa por algo nuevo (no es seguimiento).
-          ...(area==="estetica" ? [{value:"procedimiento",label:"Procedimiento (nuevo)"}] : [])]}/>
+        {/* Estética maneja sus propios tipos: Primera vez · Retoque (incluido) · Nuevo procedimiento. */}
+        <Sel label="Tipo de cita" value={tipo} onChange={setTipo} opts={
+          area==="estetica"
+            ? [{value:"primera_vez",label:"Primera vez"},
+               {value:"retoque",label:"Retoque (incluido, sin costo)"},
+               {value:"procedimiento",label:"Nuevo procedimiento"}]
+            : [{value:"primera_vez",label:"Primera vez"},
+               {value:"seguimiento",label:"Seguimiento"}]}/>
 
         <Row>
           <Sel label="Área" value={area} onChange={v=>{
             setArea(v);
             // Al cambiar a estética, limpia los campos de obesidad para que no se guarden por error.
-            if (v==="estetica") { setMed(""); setDosis(""); setOrigen(""); }
-            // "Procedimiento" no existe en obesidad: si estaba elegido, vuelve a seguimiento.
-            if (v==="obesidad" && tipo==="procedimiento") setTipo("seguimiento");
+            if (v==="estetica") {
+              setMed(""); setDosis(""); setOrigen("");
+              // "seguimiento" no existe en estética: cae a "nuevo procedimiento" (válido para el select).
+              if (!["primera_vez","retoque","procedimiento"].includes(tipo)) setTipo("procedimiento");
+            }
+            // "retoque"/"procedimiento" no existen en obesidad: vuelven a seguimiento.
+            if (v==="obesidad" && !["primera_vez","seguimiento"].includes(tipo)) setTipo("seguimiento");
           }} opts={[
             {value:"obesidad",label:"Obesidad"},
             {value:"estetica",label:"Medicina Estética"}]}/>
@@ -9077,15 +9085,23 @@ const ModalAgendarCitaV2 = ({ pacientes=[], pacientePre=null, tipoSugerido=null,
         )}
         {/* Estética: nota libre del procedimiento + duración variable (30–120 min). Se ven en la agenda. */}
         {area==="estetica" && (
-          <Row>
-            <div style={{flex:2}}>
-              <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
-                placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
-            </div>
-            <Sel label="Duración" value={String(duracionEst)} onChange={v=>setDuracionEst(parseInt(v))} opts={[
-              {value:"30",label:"30 min"},{value:"45",label:"45 min"},{value:"60",label:"1 hora"},
-              {value:"75",label:"1 h 15 min"},{value:"90",label:"1 h 30 min"},{value:"120",label:"2 horas"}]}/>
-          </Row>
+          <>
+            {tipo==="retoque" && (
+              <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#F0FDFA",
+                border:"1px solid #99F6E4",fontSize:11,color:"#0F766E",fontWeight:600}}>
+                ✓ Retoque incluido en el procedimiento original — no se cobra.
+              </div>
+            )}
+            <Row>
+              <div style={{flex:2}}>
+                <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
+                  placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+              </div>
+              <Sel label="Duración" value={String(duracionEst)} onChange={v=>setDuracionEst(parseInt(v))} opts={[
+                {value:"30",label:"30 min"},{value:"45",label:"45 min"},{value:"60",label:"1 hora"},
+                {value:"75",label:"1 h 15 min"},{value:"90",label:"1 h 30 min"},{value:"120",label:"2 horas"}]}/>
+            </Row>
+          </>
         )}
         {sugerencia && (
           <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#EFF6FF",
@@ -9287,14 +9303,20 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
         <div style={{padding:22}}>
           <Inp label="Nombre del paciente" value={nombre} onChange={setNombre}/>
           <Row>
-            <Sel label="Tipo" value={tipo} onChange={setTipo} opts={[
-              {value:"primera_vez",label:"Primera vez"},
-              {value:"seguimiento",label:"Seguimiento"},
-              ...(area==="estetica" ? [{value:"procedimiento",label:"Procedimiento (nuevo)"}] : [])]}/>
+            <Sel label="Tipo" value={tipo} onChange={setTipo} opts={
+              area==="estetica"
+                ? [{value:"primera_vez",label:"Primera vez"},
+                   {value:"retoque",label:"Retoque (incluido, sin costo)"},
+                   {value:"procedimiento",label:"Nuevo procedimiento"}]
+                : [{value:"primera_vez",label:"Primera vez"},
+                   {value:"seguimiento",label:"Seguimiento"}]}/>
             <Sel label="Área" value={area} onChange={v=>{
               setArea(v);
-              if (v==="estetica") { setMed(""); setDosis(""); setOrigen(""); }
-              if (v==="obesidad" && tipo==="procedimiento") setTipo("seguimiento");
+              if (v==="estetica") {
+                setMed(""); setDosis(""); setOrigen("");
+                if (!["primera_vez","retoque","procedimiento"].includes(tipo)) setTipo("procedimiento");
+              }
+              if (v==="obesidad" && !["primera_vez","seguimiento"].includes(tipo)) setTipo("seguimiento");
             }} opts={[
               {value:"obesidad",label:"Obesidad"},
               {value:"estetica",label:"Medicina Estética"}]}/>
@@ -9322,15 +9344,23 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
             </>
           )}
           {area==="estetica" && (
-            <Row>
-              <div style={{flex:2}}>
-                <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
-                  placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
-              </div>
-              <Sel label="Duración" value={String(duracionEst)} onChange={v=>setDuracionEst(parseInt(v))} opts={[
-                {value:"30",label:"30 min"},{value:"45",label:"45 min"},{value:"60",label:"1 hora"},
-                {value:"75",label:"1 h 15 min"},{value:"90",label:"1 h 30 min"},{value:"120",label:"2 horas"}]}/>
-            </Row>
+            <>
+              {tipo==="retoque" && (
+                <div style={{margin:"-2px 0 10px",padding:"8px 12px",borderRadius:8,background:"#F0FDFA",
+                  border:"1px solid #99F6E4",fontSize:11,color:"#0F766E",fontWeight:600}}>
+                  ✓ Retoque incluido en el procedimiento original — no se cobra.
+                </div>
+              )}
+              <Row>
+                <div style={{flex:2}}>
+                  <Inp label="Procedimiento solicitado (opcional)" value={procedimiento} onChange={setProcedimiento}
+                    placeholder="Ej. toxina botulínica, ácido hialurónico, peeling…"/>
+                </div>
+                <Sel label="Duración" value={String(duracionEst)} onChange={v=>setDuracionEst(parseInt(v))} opts={[
+                  {value:"30",label:"30 min"},{value:"45",label:"45 min"},{value:"60",label:"1 hora"},
+                  {value:"75",label:"1 h 15 min"},{value:"90",label:"1 h 30 min"},{value:"120",label:"2 horas"}]}/>
+              </Row>
+            </>
           )}
           <Row>
             <CampoFechaCita label="Fecha (Hermosillo)" fecha={fecha} onChange={setFecha}/>
