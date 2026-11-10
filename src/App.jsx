@@ -3022,7 +3022,10 @@ const DocProgreso = ({p}) => {
   // edición/shell-rápido no llega a una consulta). Dedup por fecha (la consulta gana si coincide).
   const caPuntos = (() => {
     const byF = new Map();
-    const add = (fecha, ca) => { if (fecha!=null && ca!=null && ca!=="") byF.set(normDate(fecha), { fecha, ca }); };
+    // Clave canónica en ISO (YYYY-MM-DD): empalma ISO con/sin hora y DD/MM/YYYY para no duplicar el
+    // primer punto cuando el inicial (ef.ca) y la 1ª consulta traen la misma fecha en distinto formato.
+    const canon = (f) => { const s=String(f||"").trim(); if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); return toISODate(s) || s; };
+    const add = (fecha, ca) => { if (fecha!=null && ca!=null && ca!=="") byF.set(canon(fecha), { fecha, ca }); };
     if (p.ef) add(p.fechaInicio || comps[0]?.fecha, p.ef.ca);   // inicial (menor prioridad → se añade primero)
     (p.consultas||[]).forEach(c => add(c.fecha, c.ca));          // consultas sobreescriben si misma fecha
     return [...byF.values()].sort(porFechaClinica);
@@ -3392,6 +3395,29 @@ const DocProgreso = ({p}) => {
   const colorCintura = (v) => { const z = zonaCA(v); return z ? z.color : C.suave; };
   const caChange = difNum(caAct, caIni);
 
+  // ── Índice cintura/altura (ICA = cintura ÷ estatura) ──
+  // Predictor cardiometabólico validado (Ashwell), prácticamente independiente de sexo y etnia.
+  // Cortes: <0.40 bajo · 0.40–0.50 saludable · 0.50–0.60 aumentado · ≥0.60 alto.
+  const ZONAS_ICA = [
+    {label:'Bajo',      rango:'<0.40',     min:0,    max:0.40, color:'#5B8DB8'},
+    {label:'Saludable', rango:'0.40–0.50', min:0.40, max:0.50, color:'#1D9E75'},
+    {label:'Aumentado', rango:'0.50–0.60', min:0.50, max:0.60, color:'#E0A45F'},
+    {label:'Alto',      rango:'≥0.60',     min:0.60, max:2,    color:'#D85A30'},
+  ];
+  const tallaICA = parseFloat(p.talla)||0;
+  const icaDe = (caVal) => { const cc=parseFloat(caVal), t=tallaICA; return (cc>0 && t>0) ? cc/t : null; };
+  const icaAct = icaDe(caAct);
+  const icaIni = icaDe(caIni);
+  const zonaICA = (v) => (v==null ? null : zonaDe(v, ZONAS_ICA));
+  const icaChange = (icaAct!=null && icaIni!=null) ? parseFloat((icaAct-icaIni).toFixed(3)) : null;
+  const sICA = caPuntos.map(c=>({f:normDate(c.fecha), v:icaDe(c.ca)})).filter(d=>d.v!=null&&!isNaN(d.v));
+  const NOTA_ICA = {
+    'Bajo':"Tu relación cintura/estatura es baja. Vigila no perder masa; el objetivo es mantenerte en rango saludable.",
+    'Saludable':"Tu relación cintura/estatura está en rango saludable (menor a 0.5), con bajo riesgo cardiovascular. Mantén tus hábitos.",
+    'Aumentado':"Tu relación cintura/estatura indica riesgo aumentado. Bajar la cintura unos centímetros te regresa al rango saludable (menor a 0.5).",
+    'Alto':"Tu relación cintura/estatura indica riesgo alto. Reducir la cintura es una de las mejoras más importantes para tu salud cardiovascular.",
+  };
+
   // Barra de rango con segmentos de ANCHO PROPORCIONAL al tamaño de zona + marcador blanco
   const RangoProp = ({label, value, unit="", dmin, dmax, zonas}) => {
     const v = parseFloat(value);
@@ -3434,7 +3460,7 @@ const DocProgreso = ({p}) => {
   // Barra de rango con DEGRADADO continuo (píldora) + punto blanco marcador.
   // Medidor de rango (hoja 1): segmentos SÓLIDOS por zona (distinto del degradado CONTINUO de MetaBarra en hoja 2).
   // Compacto para stackear en 1 columna: título + valor en una fila, rango numérico bajo cada color, caja "Qué significa".
-  const RangoGrad = ({ titulo, zonas, valor, domMin, domMax, unidad = '', nota = '', mb = 18 }) => {
+  const RangoGrad = ({ titulo, zonas, valor, domMin, domMax, unidad = '', nota = '', mb = 18, dec = null }) => {
     const v = parseFloat(valor);
     if (valor == null || valor === "" || isNaN(v)) return null;
     const span = (domMax - domMin) || 1;
@@ -3442,7 +3468,7 @@ const DocProgreso = ({p}) => {
     const wz = z => Math.max(0, (Math.min(z.max, domMax) - Math.max(z.min, domMin)) / span * 100);
     const zonaActual = zonas.find(z => v >= z.min && v < z.max) || zonas[zonas.length - 1];
     const pos = Math.min(97, Math.max(3, ((v - domMin) / span) * 100));
-    const fmt = n => Number.isInteger(n) ? String(n) : n.toFixed(1);
+    const fmt = n => dec!=null ? n.toFixed(dec) : (Number.isInteger(n) ? String(n) : n.toFixed(1));
     return (
       <div style={{ marginBottom: mb }}>
         {/* Header: título + valor en la misma fila */}
@@ -3464,9 +3490,9 @@ const DocProgreso = ({p}) => {
             para que quede centrada justo debajo de su segmento. Nombre + rango numérico. */}
         <div style={{ display: 'flex', marginTop: 6, fontSize: 8, fontWeight: 700, textAlign: 'center' }}>
           {zonas.map((z, i) => { const activa = v >= z.min && v < z.max; return (
-            <div key={i} style={{ width: `${wz(z)}%`, minWidth: 0, padding: '0 1px', boxSizing: 'border-box' }}>
-              <div style={{ color: z.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.label}{activa ? ' ●' : ''}</div>
-              {z.rango && <div className="d" style={{ color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.rango}</div>}
+            <div key={i} style={{ width: `${wz(z)}%`, minWidth: 0, padding: '0 2px', boxSizing: 'border-box' }}>
+              <div style={{ color: z.color, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.1 }}>{z.label}{activa ? ' ●' : ''}</div>
+              {z.rango && <div className="d" style={{ color: '#94A3B8', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.1 }}>{z.rango}</div>}
             </div>
           ); })}
         </div>
@@ -3914,8 +3940,11 @@ const DocProgreso = ({p}) => {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",columnGap:20,marginBottom:4}}>
         <RangoGrad titulo="Grasa corporal" zonas={ZONAS_GRASA[sexoKey]} valor={ultima?.grasa} domMin={sexoKey==='H'?6:14} domMax={sexoKey==='H'?40:45} unidad="%" mb={12}
           nota={qs("grasa", zonaDe(ultima?.grasa, ZONAS_GRASA[sexoKey])?.label)}/>
-        <RangoGrad titulo="Cintura (riesgo cardiovascular)" zonas={ZONAS_CA[sexoKey]} valor={caAct} domMin={0} domMax={130} unidad="cm" mb={12}
-          nota={qs("cintura", zonaCA(caAct)?.label)}/>
+        {icaAct!=null
+          ? <RangoGrad titulo="Índice cintura/estatura (riesgo cardiovascular)" zonas={ZONAS_ICA} valor={icaAct} domMin={0.30} domMax={0.70} unidad="" mb={12} dec={2}
+              nota={`${NOTA_ICA[zonaICA(icaAct)?.label]||""} (Cintura ${caAct} cm ÷ estatura ${p.talla} cm.)`}/>
+          : <RangoGrad titulo="Cintura (riesgo cardiovascular)" zonas={ZONAS_CA[sexoKey]} valor={caAct} domMin={0} domMax={130} unidad="cm" mb={12}
+              nota={qs("cintura", zonaCA(caAct)?.label)}/>}
         {ffmi!=null && (
           <RangoGrad titulo="Índice de masa muscular (FFMI)" zonas={ZONAS_FFMI[sexoKey]} valor={ffmi} domMin={sexoKey==='H'?13:11} domMax={sexoKey==='H'?28:22} unidad="kg/m²" mb={12}
             nota={qs("ffmi", zonaDe(ffmi, ZONAS_FFMI[sexoKey])?.label)}/>
@@ -4046,7 +4075,9 @@ const DocProgreso = ({p}) => {
           {label:"Peso", v:ultima?.peso, u:"kg", arr:sPeso, chg:pesoChange, baja:true, color:"#1B3F8B", dec:1},
           {label:"Grasa corporal", v:ultima?.grasa, u:"%", arr:sGrasa, chg:grasaChange, baja:true, color:"#E0A45F", dec:1},
           {label:"Masa muscular", v:ultima?.musculo, u:"kg", arr:sMusc, chg:musculoChange, baja:false, color:"#1D9E75", dec:1},
-          {label:"Circ. abdominal", v:caAct, u:"cm", arr:sCA, chg:caChange, baja:true, color:"#5B8DB8", dec:1},
+          (icaAct!=null
+            ? {label:"Índice cintura/estatura", v:icaAct!=null?icaAct.toFixed(2):"—", u:"", arr:sICA, chg:icaChange, baja:true, color:"#5B8DB8", dec:2}
+            : {label:"Circ. abdominal", v:caAct, u:"cm", arr:sCA, chg:caChange, baja:true, color:"#5B8DB8", dec:1}),
         ].map((m,i)=>{
           const bueno = m.chg==null?null:(m.baja ? m.chg<0 : m.chg>0);
           const flecha = m.chg==null?"":(m.chg<0?"▼":"▲");
@@ -10853,6 +10884,15 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
     return ()=>clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[contentView]);
+  // Dashboard: carga los bloqueos personales (solo lectura) para mostrarlos en "Siguen hoy"
+  // SIN que cuenten como citas de paciente ni en "Programadas del mes".
+  useEffect(()=>{
+    if (contentView!=="dash") return;
+    recargarOcupado();
+    const id = setInterval(recargarOcupado, 120000);
+    return ()=>clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[contentView]);
   useEffect(()=>{ if(!avisoSync) return; const t=setTimeout(()=>setAvisoSync(""), 6000); return ()=>clearTimeout(t); },[avisoSync]);
   const ordCita = (a,b) => new Date(a.inicio) - new Date(b.inicio);
   // Vistas del día (rail HOY/MAÑANA, Cola del día, contadores del dashboard): SOLO citas activas.
@@ -10861,6 +10901,18 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
   citasV2.filter(c=>c.estado!=="cancelada").forEach(c=>{ const {fecha}=isoAInputsHmo(c.inicio); if(!fecha) return; (citasV2Dia[fecha]=citasV2Dia[fecha]||[]).push(c); });
   const citasV2Hoy = (citasV2Dia[hoyStr]||[]).slice().sort(ordCita);
   const citasV2Manana = (citasV2Dia[mananaStr]||[]).slice().sort(ordCita);
+  // Bloqueos personales de HOY (calendarios personales de Google, solo lectura): se muestran en el
+  // listado del dashboard pero NO son citas de paciente — no cuentan en ningún contador.
+  const bloqueosHoy = (ocupadoV2||[])
+    .filter(o=>!o.allDay && o.inicio)
+    .filter(o=>{ try { return isoAInputsHmo(o.inicio).fecha===hoyStr; } catch { return false; } })
+    .map(o=>({ ...o, _hora:(()=>{ try { return isoAInputsHmo(o.inicio).hora; } catch { return ""; } })() }))
+    .sort((a,b)=>new Date(a.inicio)-new Date(b.inicio));
+  // Lista unificada de "Siguen hoy": citas de paciente + bloqueos personales, ordenadas por hora.
+  const itemsHoy = [
+    ...citasV2Hoy.map(c=>({ kind:"cita", c, t:new Date(c.inicio).getTime() })),
+    ...bloqueosHoy.map(o=>({ kind:"bloqueo", o, t:new Date(o.inicio).getTime() })),
+  ].sort((a,b)=>a.t-b.t);
   // Próximas citas (futuras, no canceladas, con paciente) para el vistazo del topbar.
   const proximasCitas = (citasV2||[])
     .filter(c=>c.estado!=="cancelada" && c.pacienteId && c.inicio && new Date(c.inicio).getTime()>Date.now())
@@ -10881,6 +10933,9 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
   };
   // TAREA 2 — Marcar terminada (mantiene el evento de Google; la consulta SÍ ocurrió).
   const terminarCita = async (c) => {
+    const hora = (()=>{ try { return isoAInputsHmo(c.inicio).hora; } catch { return ""; } })();
+    const quien = c.pacienteNombre || "esta cita";
+    if (!confirm(`¿Marcar como ATENDIDA la cita de ${quien}${hora?` (${hora})`:""}?\n\nSe contará en "Atendidas del mes". Si fue por error, puedes revertirla en Administrar citas (estado → Agendada).`)) return;
     try { await actualizarCita(c.id, { estado:"completada" }); recargarCitas(); }
     catch(e){ console.error("terminar:",e); alert("⚠️ No se pudo marcar como terminada."); }
   };
@@ -11124,11 +11179,12 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
           </div>
           <div style={{position:"relative"}}>
             <button className="gft-btn gft-btn--secondary gft-btn--sm" onClick={()=>setShowProx(s=>!s)} title="Próximas citas">
-              📅 Próximas{proximasCitas.length?` · ${proximasCitas.length}`:""}
+              📅 <span className="label-full">Próximas</span>{proximasCitas.length?` · ${proximasCitas.length}`:""}
             </button>
             {showProx && (<>
               <div onClick={()=>setShowProx(false)} style={{position:"fixed",inset:0,zIndex:2900}}/>
-              <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:3000,width:300,
+              <div style={{position:"fixed",top:"60px",right:"8px",zIndex:3000,
+                width:"min(320px, calc(100vw - 16px))",
                 background:"var(--gft-surface)",border:"1px solid var(--gft-border-md)",borderRadius:10,
                 boxShadow:"0 12px 32px rgba(0,0,0,0.25)",overflow:"hidden"}}>
                 <div style={{padding:"10px 12px",fontWeight:800,fontSize:12,color:"var(--gft-text)",
@@ -11139,7 +11195,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                 </div>
                 {proximasCitas.length===0
                   ? <div style={{padding:"14px 12px",fontSize:12,color:"var(--gft-text-muted)"}}>No hay citas próximas.</div>
-                  : <div style={{maxHeight:320,overflowY:"auto"}}>
+                  : <div style={{maxHeight:"min(360px, calc(100vh - 150px))",overflowY:"auto"}}>
                       {proximasCitas.map(c=>{ const {fecha,hora}=isoAInputsHmo(c.inicio); const pac=pacById(c.pacienteId);
                         const d=new Date(fecha+"T00:00:00");
                         const dd=isNaN(d)?fecha:`${["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"][d.getDay()]} ${d.getDate()}/${d.getMonth()+1}`;
@@ -11158,7 +11214,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
             </>)}
           </div>
           {!esAsistente && <button className="gft-btn gft-btn--primary gft-btn--sm" onClick={()=>onNuevoPaciente&&onNuevoPaciente()}>
-            + Nuevo paciente
+            + <span className="label-full">Nuevo paciente</span>
           </button>}
           <button onClick={async()=>{if(confirm("¿Cerrar sesión?")){await supabase.auth.signOut();}}}
             style={{background:"var(--gft-surface2)",border:"1px solid var(--gft-border)",color:"var(--gft-text-2)",
@@ -11403,9 +11459,26 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                       <div className="gft-panel__title">Siguen hoy</div>
                       {pendientesHoy>0&&<span className="gft-panel__count" title="Pendientes de hoy">{pendientesHoy}</span>}
                     </div>
-                    {citasV2Hoy.length===0 ? (
+                    {itemsHoy.length===0 ? (
                       <div className="gft-panel__empty">Sin citas hoy</div>
-                    ) : citasV2Hoy.map((c,i)=>{
+                    ) : itemsHoy.map((it,i)=>{
+                      const ultimo = i===itemsHoy.length-1;
+                      // Bloqueo personal de Google (solo lectura): fila gris con candado, sin botones, no cuenta.
+                      if (it.kind==="bloqueo"){
+                        const o=it.o;
+                        return (
+                          <div key={"blq-"+i} style={{padding:"9px 0",borderBottom:!ultimo?"1px solid var(--gft-border)":"none",
+                            display:"flex",alignItems:"center",gap:10,opacity:0.85}} title={`${o._hora||""} · ${o.summary} — bloqueo personal (no cuenta como cita)`}>
+                            <div style={{fontFamily:"var(--gft-font-data)",fontSize:17,fontWeight:700,color:"var(--gft-text-muted)",minWidth:44,textAlign:"center"}}>{o._hora||"—"}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:600,color:"var(--gft-text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🔒 {o.summary}</div>
+                              <div style={{fontSize:11,color:"var(--gft-text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Personal{o.calendario?` · ${o.calendario}`:""} · no cuenta</div>
+                            </div>
+                            <span style={{flexShrink:0,fontSize:10,fontWeight:700,color:"var(--gft-text-muted)",background:"var(--gft-surface2)",borderRadius:10,padding:"2px 9px"}}>Bloqueo</span>
+                          </div>
+                        );
+                      }
+                      const c=it.c;
                       const hora=isoAInputsHmo(c.inicio).hora;
                       const pac=pacById(c.pacienteId);
                       const chipColor=colorDeCita(c);
@@ -11414,7 +11487,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                       const cancelada = c.estado==="cancelada";
                       return (
                         <div key={c.id} style={{
-                          padding:"9px 0",borderBottom:i<citasV2Hoy.length-1?"1px solid var(--gft-border)":"none",
+                          padding:"9px 0",borderBottom:!ultimo?"1px solid var(--gft-border)":"none",
                           cursor:pac?"pointer":"default",opacity:terminada?0.55:1}}
                           onClick={()=>pac&&onVer(pac)}>
                           <div style={{display:"flex",alignItems:"center",gap:10}}>

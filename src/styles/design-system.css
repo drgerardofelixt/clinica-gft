@@ -1105,9 +1105,12 @@ select.gft-input {
   .gft-paciente-actual { padding: 14px; margin-bottom: 10px; }
 }
 
-@media (max-width: 400px) {
-  /* iPhone SE / mini: ocultar texto del botón "Nuevo paciente", dejar solo "+" */
-  .gft-topbar .gft-btn--primary span.label-full { display: none; }
+@media (max-width: 480px) {
+  /* Móvil: colapsar los textos largos de los botones del topbar (quedan solo íconos)
+     para que el título no se aplaste ni se recorte en tiras. */
+  .gft-topbar .gft-btn span.label-full { display: none; }
+  .gft-topbar__date { display: none; }
+  .gft-topbar__title { font-size: 14px; }
 }
 
 /* Impresión directa de la receta — el contenedor fijo (750×1050px) se adapta a flujo natural en 1 página */
