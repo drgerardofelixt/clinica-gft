@@ -3407,10 +3407,7 @@ const DocProgreso = ({p}) => {
   const tallaICA = parseFloat(p.talla)||0;
   const icaDe = (caVal) => { const cc=parseFloat(caVal), t=tallaICA; return (cc>0 && t>0) ? cc/t : null; };
   const icaAct = icaDe(caAct);
-  const icaIni = icaDe(caIni);
   const zonaICA = (v) => (v==null ? null : zonaDe(v, ZONAS_ICA));
-  const icaChange = (icaAct!=null && icaIni!=null) ? parseFloat((icaAct-icaIni).toFixed(3)) : null;
-  const sICA = caPuntos.map(c=>({f:normDate(c.fecha), v:icaDe(c.ca)})).filter(d=>d.v!=null&&!isNaN(d.v));
   const NOTA_ICA = {
     'Bajo':"Tu relación cintura/estatura es baja. Vigila no perder masa; el objetivo es mantenerte en rango saludable.",
     'Saludable':"Tu relación cintura/estatura está en rango saludable (menor a 0.5), con bajo riesgo cardiovascular. Mantén tus hábitos.",
@@ -4075,9 +4072,7 @@ const DocProgreso = ({p}) => {
           {label:"Peso", v:ultima?.peso, u:"kg", arr:sPeso, chg:pesoChange, baja:true, color:"#1B3F8B", dec:1},
           {label:"Grasa corporal", v:ultima?.grasa, u:"%", arr:sGrasa, chg:grasaChange, baja:true, color:"#E0A45F", dec:1},
           {label:"Masa muscular", v:ultima?.musculo, u:"kg", arr:sMusc, chg:musculoChange, baja:false, color:"#1D9E75", dec:1},
-          (icaAct!=null
-            ? {label:"Índice cintura/estatura", v:icaAct!=null?icaAct.toFixed(2):"—", u:"", arr:sICA, chg:icaChange, baja:true, color:"#5B8DB8", dec:2}
-            : {label:"Circ. abdominal", v:caAct, u:"cm", arr:sCA, chg:caChange, baja:true, color:"#5B8DB8", dec:1}),
+          {label:"Circ. abdominal", v:caAct, u:"cm", arr:sCA, chg:caChange, baja:true, color:"#5B8DB8", dec:1},
         ].map((m,i)=>{
           const bueno = m.chg==null?null:(m.baja ? m.chg<0 : m.chg>0);
           const flecha = m.chg==null?"":(m.chg<0?"▼":"▲");
