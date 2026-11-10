@@ -10865,11 +10865,31 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
     } catch(e){ console.warn("importarSilencioso:", e); }
   };
   // B5 — Carga los bloques "ocupado" (calendarios personales) para el rango visible (±45 días).
+  // Lee la copia compartida de bloqueos personales guardada en Supabase (para sesiones sin Google:
+  // celular, asistente). Devuelve [] si no hay o si está ilegible.
+  const leerOcupadoCache = async () => {
+    try { const raw = await getConfig("ocupado_cache"); const parsed = raw?JSON.parse(raw):null; return Array.isArray(parsed?.eventos)?parsed.eventos:[]; }
+    catch(e){ console.warn("ocupado_cache (lectura):", e); return []; }
+  };
   const recargarOcupado = async () => {
     try {
       const desde = new Date(); desde.setDate(desde.getDate()-7);
       const hasta = new Date(Date.now() + 45*24*60*60*1000);
-      setOcupadoV2(await leerEventosOcupado({ desde:desde.toISOString(), hasta:hasta.toISOString() }));
+      if (isGoogleAuthorized()) {
+        // Sesión CON Google (típicamente la compu del doctor): lee en vivo y deja una copia
+        // compartida en Supabase para que el celular y la asistente la vean sin necesitar Google.
+        const evs = await leerEventosOcupado({ desde:desde.toISOString(), hasta:hasta.toISOString() });
+        if (evs && evs.length) {
+          setOcupadoV2(evs);
+          if (!esAsistente) { try { await setConfig("ocupado_cache", JSON.stringify({ at: Date.now(), eventos: evs })); } catch(e){ console.warn("ocupado_cache (escritura):", e); } }
+        } else {
+          // Autorizado pero sin eventos (o sin acceso a esos calendarios): NO pisar el cache; usarlo.
+          setOcupadoV2(await leerOcupadoCache());
+        }
+      } else {
+        // Sin Google en este dispositivo/sesión: usa la copia compartida de Supabase.
+        setOcupadoV2(await leerOcupadoCache());
+      }
     } catch(e){ console.warn("recargarOcupado:", e); }
   };
   useEffect(()=>{
