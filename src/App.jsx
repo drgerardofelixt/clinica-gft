@@ -1052,9 +1052,12 @@ const importarCambiosConsultorio = async () => {
       const lUpd = new Date(cita.ultimaModificacion||0).getTime();
       if (gUpd > lUpd) {   // Google es más reciente → gana Google
         try {
+          // Si la cita estaba "completada" (atendida) y el evento se movió a una fecha futura,
+          // deja de ser atendida: vuelve a "agendada".
+          const reabrir = (cita.estado==="completada" && new Date(inicioISO).getTime() > Date.now()) ? { estado:"agendada" } : {};
           await actualizarCita(cita.id, { inicio:inicioISO, fin:finISO,
             tituloGenerado: ev.summary||cita.tituloGenerado, pacienteNombre:nombre,
-            origenUltimoCambio:"gcal", pendienteSincronizar:false });
+            origenUltimoCambio:"gcal", pendienteSincronizar:false, ...reabrir });
           actualizadas++;
           avisos.push(`La cita de ${cita.pacienteNombre} se actualizó desde Google Calendar`);
         } catch(e){ console.warn("importar/actualizar:", e); }
@@ -9281,6 +9284,8 @@ const ModalEditarCitaAdmin = ({cita, onClose, onSaved, onBorrar, pacientes=[]}) 
     cambios.tituloGenerado = generarTituloCita({ ...cita, ...cambios });
     // ¿Cambió la fecha u hora respecto a la cita original? (dispara aviso de reprogramación; NO en otros edits)
     const huboCambioFecha = (fecha !== ini.fecha) || (hora !== ini.hora);
+    // Si se reagenda una cita YA atendida a una fecha futura, deja de ser "atendida": vuelve a "agendada".
+    if (huboCambioFecha && cambios.estado==="completada" && new Date(cambios.inicio).getTime() > Date.now()) cambios.estado = "agendada";
     try {
       await actualizarCita(cita.id, cambios); // incrementa version + ultima_modificacion (Fase B)
       // WhatsApp de REPROGRAMACIÓN: solo si cambió fecha/hora y no es cancelación. Temprano (antes del push a
@@ -10832,7 +10837,22 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
   const [citaEditar, setCitaEditar] = useState(null);
   const [ocupadoV2, setOcupadoV2] = useState([]);   // bloques de calendarios personales (solo lectura)
   const [avisoSync, setAvisoSync] = useState("");    // toast discreto de cambios traídos de Google
-  const recargarCitas = async () => { try { setCitasV2(await listarCitas({})); } catch(e){ console.error("listarCitas:",e); } };
+  const recargarCitas = async () => {
+    try {
+      let cs = await listarCitas({});
+      // AUTOCORRECCIÓN: una cita "completada" (atendida) con fecha/hora en el FUTURO es imposible
+      // (no se puede haber atendido algo que aún no ocurre). Pasa cuando una cita ya atendida se
+      // reagenda o se mueve en Google y conserva el estado. La regresamos a "agendada". Colchón de
+      // 3 h por si alguna vez se marca justo antes de la hora.
+      const margen = Date.now() + 3*60*60*1000;
+      const malas = (cs||[]).filter(c => c.estado==="completada" && c.inicio && new Date(c.inicio).getTime() > margen);
+      if (malas.length) {
+        await Promise.all(malas.map(c => actualizarCita(c.id, { estado:"agendada" }).catch(()=>{})));
+        cs = await listarCitas({});
+      }
+      setCitasV2(cs);
+    } catch(e){ console.error("listarCitas:",e); }
+  };
   useEffect(()=>{ recargarCitas(); },[]);
 
   // Estadísticas — snapshots mensuales de pacientes (Fase 2).
