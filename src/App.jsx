@@ -3021,17 +3021,19 @@ const DocProgreso = ({p}) => {
     return pos?(v>0?"#1D9E75":"#D85A30"):(v<0?"#1D9E75":"#D85A30");
   };
 
-  // CA: unifica TODAS las fuentes registradas — consultas[].ca + el inicial p.ef.ca del alta (que en
-  // edición/shell-rápido no llega a una consulta). Dedup por fecha (la consulta gana si coincide).
+  // CA: puntos de circunferencia abdominal para la gráfica de evolución. Las consultas son la fuente
+  // de verdad; el inicial del alta (p.ef.ca) solo entra como respaldo si ninguna consulta tiene CA.
   const caPuntos = (() => {
-    const byF = new Map();
-    // Clave canónica en ISO (YYYY-MM-DD): empalma ISO con/sin hora y DD/MM/YYYY para no duplicar el
-    // primer punto cuando el inicial (ef.ca) y la 1ª consulta traen la misma fecha en distinto formato.
     const canon = (f) => { const s=String(f||"").trim(); if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10); return toISODate(s) || s; };
-    const add = (fecha, ca) => { if (fecha!=null && ca!=null && ca!=="") byF.set(canon(fecha), { fecha, ca }); };
-    if (p.ef) add(p.fechaInicio || comps[0]?.fecha, p.ef.ca);   // inicial (menor prioridad → se añade primero)
-    (p.consultas||[]).forEach(c => add(c.fecha, c.ca));          // consultas sobreescriben si misma fecha
-    return [...byF.values()].sort(porFechaClinica);
+    // Las consultas con CA son la FUENTE DE VERDAD. El inicial del alta (p.ef.ca) describe esa misma
+    // primera visita, así que NO se agrega como punto extra cuando ya hay consultas con CA: hacerlo
+    // duplicaba la primera medición (mismo valor, fechas casi iguales). Solo se usa como respaldo
+    // cuando ninguna consulta registró circunferencia abdominal (alta por shell rápido / edición).
+    const byF = new Map();
+    (p.consultas||[]).forEach(c => { if (c && c.ca!=null && c.ca!=="") byF.set(canon(c.fecha), { fecha:c.fecha, ca:c.ca }); });
+    if (byF.size) return [...byF.values()].sort(porFechaClinica);
+    if (p.ef && p.ef.ca!=null && p.ef.ca!=="") return [{ fecha: p.fechaInicio || comps[0]?.fecha, ca: p.ef.ca }];
+    return [];
   })();
   const caIni = caPuntos[0]?.ca;
   const caAct = caPuntos[caPuntos.length-1]?.ca;
