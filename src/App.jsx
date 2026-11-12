@@ -10659,11 +10659,15 @@ const CobrosView = ({ pacientes = [], onVer }) => {
   (pacientes||[]).forEach(p=>{
     (p.consultas||[]).filter(c=>!c.esSoloCita).forEach(c=>{
       const monto = parseFloat(c.cobroMonto);
-      items.push({ id:c.id, fecha:c.fecha||"", mes:(c.fecha||"").slice(0,7),
+      // Clave de mes SIEMPRE desde ISO: c.fecha llega en formatos mezclados (YYYY-MM-DD y DD/MM/YYYY);
+      // usar slice(0,7) sobre el crudo metía "31/03/2" y dejaba esas consultas fuera de los totales del mes.
+      const iso = toISODate(c.fecha) || (/^\d{4}-\d{2}-\d{2}/.test(c.fecha||"") ? (c.fecha||"").slice(0,10) : "");
+      items.push({ id:c.id, fecha:c.fecha||"", mes:iso.slice(0,7), orden:parseFechaClinica(c.fecha),
         monto:isNaN(monto)?null:monto, forma:c.cobroForma||"", pac:p });
     });
   });
-  items.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  // Orden cronológico real (más reciente arriba), robusto ante formatos de fecha mezclados.
+  items.sort((a,b)=> b.orden - a.orden);
   const delMes = items.filter(i=>i.mes===mesActual);
   const cobradoMes = delMes.reduce((a,i)=>a+(i.monto||0),0);
   const sinCobroMes = delMes.filter(i=>i.monto==null).length;
