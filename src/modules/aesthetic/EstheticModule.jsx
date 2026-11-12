@@ -4,8 +4,11 @@ import VistaPacienteEstetica from './VistaPacienteEstetica';
 import GaleriaAntesDesp from './vistas/GaleriaAntesDesp';
 import ConsentimientosEstetica from './componentes/ConsentimientosEstetica';
 
-const EstheticModule = ({ paciente, firmaB64 = null }) => {
-  const [subpestana, setSubpestana] = useState('expediente');
+const EstheticModule = ({ paciente, firmaB64 = null, vista = null, onVista = null }) => {
+  // Si el perfil del paciente controla la sub-vista (vista/onVista), se usa esa; si no, estado interno.
+  const [subInterna, setSubInterna] = useState('expediente');
+  const subpestana = vista || subInterna;
+  const setSubpestana = (v) => { if (onVista) onVista(v); else setSubInterna(v); };
 
   if (!paciente || !paciente.id) {
     return (

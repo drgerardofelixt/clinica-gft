@@ -28,6 +28,7 @@ import { parsearBascula, pdfToText } from "./parsers/tanita-rd545";
 import AdminProductos from "./modules/aesthetic";
 import EstheticModule from "./modules/aesthetic/EstheticModule";
 import PanelEstetica from "./modules/aesthetic/PanelEstetica";
+import ListaPrecios from "./modules/aesthetic/ListaPrecios";
 import { normalizarNombre, buscarPacientesSimilares, mismoNombreNormalizado } from "./utils/nombres";
 import { AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import logoNavbar from './assets/images/DrGFT-logo-02-trimmed.png';
@@ -6324,6 +6325,10 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
   const [showAgenda, setShowAgenda] = useState(false);
   const [showEditPac, setShowEditPac] = useState(false);
   const [doc, setDoc] = useState(null);
+  const [showTipoConsulta, setShowTipoConsulta] = useState(false); // selector Obesidad / Estética al tocar "Nueva consulta"
+  const [estSub, setEstSub] = useState("expediente"); // sub-vista del módulo de estética (controlada desde el perfil)
+  // Abre la pestaña de estética directo en la sub-vista indicada (expediente | nueva-consulta | galeria | consentimientos)
+  const irAEstetica = (sub) => { setEstSub(sub); setTab("estetica"); };
   const [conFirmaLabs, setConFirmaLabs] = useState(false);
   const [consultaAEditar, setConsultaAEditar] = useState(null);
   const [agendarCita, setAgendarCita] = useState(null); // consulta recién guardada para abrir ModalAgendarCita
@@ -6791,13 +6796,16 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
 
           {/* Acciones — 3 primarias (Nueva consulta / Receta / Reporte) + secundarias */}
           <div className="gft-action-bar" style={{marginBottom:0}}>
-            <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setShowC(true)}>+ Nueva consulta</button>
+            <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setShowTipoConsulta(true)}>+ Nueva consulta</button>
             <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setShowR(true)}>💊 Receta</button>
             <button className="gft-action-btn" style={{background:"var(--gft-accent)",color:"#fff",borderColor:"var(--gft-accent)"}} onClick={()=>setDoc({tipo:"progreso"})}>📊 Reporte</button>
             <button className="gft-action-btn" onClick={()=>setShowAgenda(true)}>📅 Agendar</button>
             <button className="gft-action-btn" onClick={()=>enviarWA(p.telefono, `Hola ${(p.nombre||"").split(/\s+/)[0]||""}, soy el Dr. Gerardo Félix Tapia. Le marco por videollamada de WhatsApp para su consulta en línea. Quedo al pendiente.`)}>📹 Videollamada</button>
             <button className="gft-action-btn" onClick={()=>setShowL(true)}>🧪 Labs</button>
             <button className="gft-action-btn" onClick={()=>setShowLabs(true)}>📄 PDF labs</button>
+            <button className="gft-action-btn" onClick={()=>irAEstetica("expediente")}>💉 Estética</button>
+            <button className="gft-action-btn" onClick={()=>irAEstetica("galeria")}>📸 Fotos</button>
+            <button className="gft-action-btn" onClick={()=>irAEstetica("consentimientos")}>📄 Consentim.</button>
             {proxCitaFecha&&(
               <button className="gft-action-btn" style={{color:"var(--gft-accent)",borderColor:"var(--gft-accent-dim)"}}>
                 📅 {fmtF(proxCitaFecha)} · {diasHasta(proxCitaFecha)}d
@@ -7408,7 +7416,7 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
           )
         )}
         {tab==="estetica" && (
-          <EstheticModule paciente={p} firmaB64={firmaB64||IMG_FIRMA}/>
+          <EstheticModule paciente={p} firmaB64={firmaB64||IMG_FIRMA} vista={estSub} onVista={setEstSub}/>
         )}
 
         {tab==="hc" && (
@@ -7451,6 +7459,39 @@ const VistaPaciente = ({p, firmaB64, onUpdate, onBack, onAgendar, pacientes, onC
       {showC && <ModalConsulta p={p} onReporte={()=>setDoc({tipo:"progreso"})}
         onSiguiente={(consulta)=>{ setShowC(false); setAgendarCita(consulta); }}
         onClose={()=>setShowC(false)} onSave={addConsulta}/>}
+      {showTipoConsulta && (
+        <div onClick={()=>setShowTipoConsulta(false)}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",
+            alignItems:"center",justifyContent:"center",zIndex:10000,padding:16}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{background:"var(--gft-surface,#fff)",color:"var(--gft-text,#1a1a1a)",borderRadius:16,
+              padding:24,maxWidth:420,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.35)"}}>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:4}}>Nueva consulta — {p.nombre}</div>
+            <div style={{fontSize:13,color:"var(--gft-text-muted,#666)",marginBottom:18}}>¿Qué tipo de consulta vas a registrar?</div>
+            <div style={{display:"flex",gap:12}}>
+              <button onClick={()=>{ setShowTipoConsulta(false); setShowC(true); }}
+                style={{flex:1,cursor:"pointer",border:"2px solid var(--gft-accent,#1B3F8B)",borderRadius:14,
+                  padding:"20px 12px",background:"transparent",color:"inherit",textAlign:"center"}}>
+                <div style={{fontSize:34,marginBottom:8}}>🩺</div>
+                <div style={{fontWeight:800,fontSize:15}}>Obesidad</div>
+                <div style={{fontSize:11.5,color:"var(--gft-text-muted,#666)",marginTop:3}}>Peso, composición, GLP-1</div>
+              </button>
+              <button onClick={()=>{ setShowTipoConsulta(false); irAEstetica("nueva-consulta"); }}
+                style={{flex:1,cursor:"pointer",border:"2px solid #C77DAE",borderRadius:14,
+                  padding:"20px 12px",background:"transparent",color:"inherit",textAlign:"center"}}>
+                <div style={{fontSize:34,marginBottom:8}}>💉</div>
+                <div style={{fontWeight:800,fontSize:15}}>Estética</div>
+                <div style={{fontSize:11.5,color:"var(--gft-text-muted,#666)",marginTop:3}}>Procedimiento estético</div>
+              </button>
+            </div>
+            <button onClick={()=>setShowTipoConsulta(false)}
+              style={{marginTop:16,width:"100%",padding:"10px",borderRadius:10,border:"none",
+                background:"var(--gft-border,#eee)",color:"var(--gft-text,#444)",cursor:"pointer",fontWeight:600}}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
       {consultaAEditar && <ModalConsulta p={p} consultaExistente={consultaAEditar} modoEdicion
         onClose={()=>setConsultaAEditar(null)} onSave={editConsulta}/>}
       {editComp && <ModalEditarComposicion comp={editComp.comp}
@@ -10708,6 +10749,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
   const [drawerOpen, setDrawerOpen] = useState(false); // menú lateral en móvil
   const [showImport, setShowImport] = useState(false);
   const [showEstetica, setShowEstetica] = useState(false); // overlay fullscreen del módulo de estética
+  const [showPrecios, setShowPrecios] = useState(false); // overlay de lista de precios de procedimientos
   const [contentView, setContentView] = useState("dash");
   // Área de trabajo: "obesidad" | "estetica" (switch superior; persiste entre sesiones)
   const [area, setArea] = useState(() => { try { return localStorage.getItem("gft_area") || "obesidad"; } catch { return "obesidad"; } });
@@ -11672,6 +11714,7 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
           {contentView==="estetica" && !esAsistente && (
             <PanelEstetica
               onAbrirCatalogo={()=>setShowEstetica(true)}
+              onAbrirPrecios={()=>setShowPrecios(true)}
               onVerPacientes={()=>setContentView("pacientes")}
               onAgendar={()=>onAgendar&&onAgendar(null)}
             />
@@ -12122,6 +12165,20 @@ const Dashboard = ({esAsistente=false, onCerrarSesion, pacientes, onVer, onOrden
                 borderRadius:8,padding:"8px 16px",cursor:"pointer",fontSize:13}}>✕ Cerrar</button>
           </div>
           <AdminProductos/>
+        </div>
+      )}
+
+      {/* Lista de precios de procedimientos — overlay (solo lectura, para cotizar) */}
+      {showPrecios && (
+        <div style={{position:"fixed",inset:0,zIndex:5000,background:"#fff",overflow:"auto"}}>
+          <div style={{position:"sticky",top:0,zIndex:2,display:"flex",alignItems:"center",justifyContent:"space-between",
+            padding:"12px 20px",background:"#0F2C57",color:"#fff",boxShadow:"0 2px 8px rgba(0,0,0,.15)"}}>
+            <div style={{fontWeight:800,fontSize:15}}>💲 Lista de precios</div>
+            <button onClick={()=>setShowPrecios(false)}
+              style={{background:"rgba(255,255,255,.18)",border:"none",color:"#fff",fontWeight:700,
+                borderRadius:8,padding:"8px 16px",cursor:"pointer",fontSize:13}}>✕ Cerrar</button>
+          </div>
+          <ListaPrecios/>
         </div>
       )}
 

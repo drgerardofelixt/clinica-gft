@@ -9,7 +9,7 @@ const fmtFecha = (f) => {
 };
 
 // Panel/dashboard de Medicina Estética (usa tokens --gft-* para integrarse al tema oscuro)
-export default function PanelEstetica({ onAbrirCatalogo, onVerPacientes, onAgendar }) {
+export default function PanelEstetica({ onAbrirCatalogo, onAbrirPrecios, onVerPacientes, onAgendar }) {
   const [loading, setLoading] = useState(true);
   const [kpi, setKpi] = useState({ mes: 0, ingresosMes: 0, total: 0, consent: 0 });
   const [recientes, setRecientes] = useState([]);
@@ -83,7 +83,8 @@ export default function PanelEstetica({ onAbrirCatalogo, onVerPacientes, onAgend
       {/* Accesos rápidos */}
       <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', color: 'var(--gft-text-muted)', margin: '4px 0 10px' }}>ACCESOS RÁPIDOS</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
-        {accion('💊', 'Catálogo de productos', 'Precios, utilidad e inventario', onAbrirCatalogo, 'var(--gft-accent)')}
+        {accion('💲', 'Lista de precios', 'Cotiza procedimientos al momento', onAbrirPrecios, 'var(--gft-success)')}
+        {accion('💊', 'Catálogo de productos', 'Inventario de insumos (costo/stock)', onAbrirCatalogo, 'var(--gft-accent)')}
         {accion('👥', 'Pacientes', 'Abrir expediente → pestaña 💉 Estética', onVerPacientes, 'var(--gft-purple)')}
         {accion('🗓', 'Agendar cita', 'Nueva cita en el calendario', () => onAgendar && onAgendar(), 'var(--gft-success)')}
       </div>
