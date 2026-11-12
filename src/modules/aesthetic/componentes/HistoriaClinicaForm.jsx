@@ -6,6 +6,8 @@ const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = 
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
   const [exito, setExito] = useState(false);
+  const [historiaId, setHistoriaId] = useState(historiaExistente?.id || null); // id de la fila guardada → para ACTUALIZAR, no duplicar
+  const [cargando, setCargando] = useState(!historiaExistente);
 
   const [formData, setFormData] = useState(historiaExistente || {
     // SECCIÓN 1: Datos personales
@@ -74,6 +76,39 @@ const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = 
     });
   }, [paciente, historiaExistente]);
 
+  // Cargar la historia clínica YA guardada del paciente, para poder VERLA y EDITARLA (no empezar en blanco
+  // ni duplicar al guardar). Toma la más reciente si hubiera varias. Si no existe, queda el formulario nuevo.
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      if (historiaExistente) { setCargando(false); return; }   // ya la pasaron por prop
+      if (!pacienteId) { setCargando(false); return; }
+      try {
+        const { data } = await supabase
+          .from('historias_clinicas_estetica')
+          .select('*')
+          .eq('paciente_id', pacienteId);
+        if (!vivo) return;
+        const rows = data || [];
+        const row = rows.length
+          ? [...rows].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0]
+          : null;
+        if (row) {
+          // Quita columnas meta: no se envían en un UPDATE (la PK y el paciente no cambian).
+          const { id, paciente_id, created_at, updated_at, ...campos } = row;
+          setFormData(prev => ({ ...prev, ...campos }));
+          setHistoriaId(id);
+          onGuardado();   // marca la etapa como ya completada (historia existente)
+        }
+      } catch (e) {
+        console.warn('No se pudo cargar la historia estética:', e);
+      } finally {
+        if (vivo) setCargando(false);
+      }
+    })();
+    return () => { vivo = false; };
+  }, [pacienteId, historiaExistente]);
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -88,24 +123,27 @@ const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = 
       setError(null);
       setExito(false);
 
-      if (historiaExistente?.id) {
-        // ACTUALIZAR
+      // Nunca enviamos columnas meta (PK, paciente, timestamps) en el UPDATE.
+      const { id, paciente_id, created_at, updated_at, ...campos } = formData;
+
+      if (historiaId) {
+        // ACTUALIZAR la historia existente (no se crea una nueva fila)
         const { error: err } = await supabase
           .from('historias_clinicas_estetica')
-          .update(formData)
-          .eq('id', historiaExistente.id);
+          .update(campos)
+          .eq('id', historiaId);
 
         if (err) throw err;
       } else {
-        // CREAR
-        const { error: err } = await supabase
+        // CREAR y conservar el id para que los siguientes guardados ACTUALICEN (no dupliquen)
+        const { data: ins, error: err } = await supabase
           .from('historias_clinicas_estetica')
-          .insert({
-            paciente_id: pacienteId,
-            ...formData
-          });
+          .insert({ paciente_id: pacienteId, ...campos })
+          .select('id')
+          .single();
 
         if (err) throw err;
+        if (ins?.id) setHistoriaId(ins.id);
       }
 
       setExito(true);
@@ -151,6 +189,18 @@ const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = 
       <h2 style={{ marginBottom: 16, color: '#1a1a1a' }}>
         📋 Historia Clínica Estética (NOM-004)
       </h2>
+
+      {cargando && (
+        <div style={{ background: '#eef2ff', border: '1px solid #c7d2fe', color: '#3730a3', padding: 10, borderRadius: 6, marginBottom: 16, fontSize: 13 }}>
+          ⏳ Cargando historia guardada…
+        </div>
+      )}
+
+      {!cargando && historiaId && (
+        <div style={{ background: '#ecfdf5', border: '1px solid #86efac', color: '#166534', padding: 10, borderRadius: 6, marginBottom: 16, fontSize: 13 }}>
+          ✓ Historia ya registrada. Edita cualquier sección y guarda los cambios.
+        </div>
+      )}
 
       {exito && (
         <div style={{
@@ -881,7 +931,7 @@ const HistoriaClinicaForm = ({ pacienteId, paciente = null, historiaExistente = 
           cursor: guardando ? 'not-allowed' : 'pointer'
         }}
       >
-        {guardando ? '⏳ Guardando...' : '💾 GUARDAR HISTORIA CLÍNICA'}
+        {guardando ? '⏳ Guardando...' : (historiaId ? '💾 GUARDAR CAMBIOS' : '💾 GUARDAR HISTORIA CLÍNICA')}
       </button>
     </div>
   );
