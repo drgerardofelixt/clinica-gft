@@ -3,6 +3,7 @@ import { supabase } from '../../supabase';
 import HistorialProcedimientos from './HistorialProcedimientos';
 import FormularioProcedimiento from './componentes/FormularioProcedimiento';
 import PlanesTratamiento from './PlanesTratamiento';
+import HistoriaClinicaForm from './componentes/HistoriaClinicaForm';
 
 const C = {
   azul: '#0066cc',
@@ -85,6 +86,21 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
       {/* TABS */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `2px solid ${C.gris}` }}>
         <button
+          onClick={() => setTab('historia')}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            background: tab === 'historia' ? C.azul : 'transparent',
+            color: tab === 'historia' ? 'white' : C.suave,
+            borderBottom: tab === 'historia' ? `3px solid ${C.azul}` : 'none',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontSize: 13,
+          }}
+        >
+          📋 Historia Clínica
+        </button>
+        <button
           onClick={() => setTab('procedimientos')}
           style={{
             padding: '10px 16px',
@@ -97,7 +113,7 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
             fontSize: 13,
           }}
         >
-          📋 Procedimientos ({procedimientos.length})
+          💉 Procedimientos ({procedimientos.length})
         </button>
         <button
           onClick={() => setTab('nuevo-procedimiento')}
@@ -157,6 +173,12 @@ export const VistaPacienteEstetica = ({ paciente, onUpdate }) => {
         </div>
       ) : (
         <>
+          {tab === 'historia' && (
+            <HistoriaClinicaForm
+              pacienteId={paciente.id}
+              paciente={paciente}
+            />
+          )}
           {tab === 'procedimientos' && (
             <HistorialProcedimientos
               procedimientos={procedimientos}

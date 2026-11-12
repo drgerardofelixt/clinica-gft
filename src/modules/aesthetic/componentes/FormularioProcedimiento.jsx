@@ -68,6 +68,7 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
   const [error, setError] = useState(null);
   const [exito, setExito] = useState(false);
   const [gestoSubiendo, setGestoSubiendo] = useState(null);
+  const [fotoProcSubiendo, setFotoProcSubiendo] = useState(null); // 'foto_pre_url' | 'foto_post_url' mientras sube
 
   // Consentimiento informado (se firma con el procedimiento, ligado 1:1)
   const consentInicial = construirConsentimiento('general');
@@ -271,6 +272,28 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
       setError(e.message || 'Error al subir foto de gesto');
     } finally {
       setGestoSubiendo(null);
+    }
+  };
+
+  // Sube una foto Antes/Después del procedimiento al storage y guarda su URL en el formulario.
+  // Funciona para CUALQUIER procedimiento (no solo toxina). La URL se persiste al guardar el procedimiento.
+  const subirFotoProc = async (campo, archivo) => {
+    if (!archivo) return;
+    try {
+      setFotoProcSubiendo(campo);
+      setError(null);
+      const ruta = `fotos-estetica/${pacienteId}/${pacienteId}_${campo}_${Date.now()}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from('clinica-gft-storage')
+        .upload(ruta, archivo, { cacheControl: '3600', upsert: true });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from('clinica-gft-storage').getPublicUrl(ruta);
+      setFormData(prev => ({ ...prev, [campo]: data.publicUrl }));
+    } catch (e) {
+      console.error('Error subiendo foto del procedimiento:', e);
+      setError(e.message || 'Error al subir la foto');
+    } finally {
+      setFotoProcSubiendo(null);
     }
   };
 
@@ -921,22 +944,27 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
 
               <div>
                 <label style={{ display: 'block', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>
-                  Foto pre (URL):
+                  Foto ANTES:
                 </label>
+                {formData.foto_pre_url ? (
+                  <img src={formData.foto_pre_url} alt="Antes" onClick={() => window.open(formData.foto_pre_url, '_blank')}
+                    style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd', cursor: 'pointer', marginBottom: 6 }} />
+                ) : (
+                  <div style={{ width: '100%', height: 150, background: '#e3f2fd', border: '2px dashed #0066cc', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0066cc', fontSize: 12, marginBottom: 6 }}>
+                    Sin foto
+                  </div>
+                )}
                 <input
-                  type="text"
-                  value={formData.foto_pre_url}
-                  onChange={(e) => handleInputChange('foto_pre_url', e.target.value)}
-                  placeholder="URL de foto"
-                  style={{
-                    width: '100%',
-                    padding: 8,
-                    border: '1px solid #ddd',
-                    borderRadius: 4,
-                    boxSizing: 'border-box',
-                    fontSize: 11
-                  }}
+                  type="file" accept="image/*" capture="environment"
+                  disabled={fotoProcSubiendo === 'foto_pre_url'}
+                  onChange={(e) => { if (e.target.files?.[0]) subirFotoProc('foto_pre_url', e.target.files[0]); }}
+                  style={{ width: '100%', fontSize: 11 }}
                 />
+                {fotoProcSubiendo === 'foto_pre_url' && <div style={{ fontSize: 11, color: '#0066cc', marginTop: 4 }}>⏳ Subiendo…</div>}
+                {formData.foto_pre_url && fotoProcSubiendo !== 'foto_pre_url' && (
+                  <button type="button" onClick={() => handleInputChange('foto_pre_url', '')}
+                    style={{ marginTop: 4, fontSize: 11, background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0 }}>✕ Quitar foto</button>
+                )}
               </div>
             </div>
 
@@ -1068,22 +1096,27 @@ const FormularioProcedimiento = ({ pacienteId, pacienteNombre = '', procedimient
 
               <div>
                 <label style={{ display: 'block', fontWeight: 'bold', fontSize: 12, marginBottom: 6 }}>
-                  Foto post (URL):
+                  Foto DESPUÉS:
                 </label>
+                {formData.foto_post_url ? (
+                  <img src={formData.foto_post_url} alt="Después" onClick={() => window.open(formData.foto_post_url, '_blank')}
+                    style={{ width: '100%', height: 150, objectFit: 'cover', borderRadius: 6, border: '1px solid #ddd', cursor: 'pointer', marginBottom: 6 }} />
+                ) : (
+                  <div style={{ width: '100%', height: 150, background: '#e8f5e9', border: '2px dashed #2e7d32', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2e7d32', fontSize: 12, marginBottom: 6 }}>
+                    Sin foto
+                  </div>
+                )}
                 <input
-                  type="text"
-                  value={formData.foto_post_url}
-                  onChange={(e) => handleInputChange('foto_post_url', e.target.value)}
-                  placeholder="URL de foto"
-                  style={{
-                    width: '100%',
-                    padding: 8,
-                    border: '1px solid #ddd',
-                    borderRadius: 4,
-                    boxSizing: 'border-box',
-                    fontSize: 11
-                  }}
+                  type="file" accept="image/*" capture="environment"
+                  disabled={fotoProcSubiendo === 'foto_post_url'}
+                  onChange={(e) => { if (e.target.files?.[0]) subirFotoProc('foto_post_url', e.target.files[0]); }}
+                  style={{ width: '100%', fontSize: 11 }}
                 />
+                {fotoProcSubiendo === 'foto_post_url' && <div style={{ fontSize: 11, color: '#2e7d32', marginTop: 4 }}>⏳ Subiendo…</div>}
+                {formData.foto_post_url && fotoProcSubiendo !== 'foto_post_url' && (
+                  <button type="button" onClick={() => handleInputChange('foto_post_url', '')}
+                    style={{ marginTop: 4, fontSize: 11, background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0 }}>✕ Quitar foto</button>
+                )}
               </div>
             </div>
 
